@@ -1,0 +1,25 @@
+:root {
+  --fa-color-background: #f8f6f1;
+  --fa-color-surface: #ffffff;
+  --fa-color-text: #242722;
+  --fa-color-text-muted: #7b8078;
+  --fa-color-border: #ebe8e1;
+  --fa-color-accent: #58a96b;
+  --fa-color-accent-strong: #347c49;
+  --fa-color-accent-soft: #edf5ed;
+  --fa-radius-sm: 12px;
+  --fa-radius-md: 18px;
+  --fa-radius-lg: 24px;
+  --fa-radius-xl: 32px;
+  --fa-radius-pill: 999px;
+  --fa-shadow-soft: 0 12px 36px rgba(49, 44, 36, 0.08);
+  --fa-space-1: 4px;
+  --fa-space-2: 8px;
+  --fa-space-3: 12px;
+  --fa-space-4: 16px;
+  --fa-space-5: 20px;
+  --fa-space-6: 24px;
+  --fa-space-7: 32px;
+  --fa-space-8: 40px;
+  --fa-space-9: 48px;
+}

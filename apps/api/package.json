@@ -1,0 +1,26 @@
+{
+  "name": "@family-album/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup src/index.ts src/storage-reconcile-cli.ts --format esm --clean",
+    "bootstrap:dev": "tsx src/bootstrap-cli.ts",
+    "storage:reconcile:dev": "node --env-file=../../.env dist/storage-reconcile-cli.js",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@family-album/auth": "workspace:*",
+    "@family-album/config": "workspace:*",
+    "@family-album/contracts": "workspace:*",
+    "@family-album/db": "workspace:*",
+    "@family-album/permissions": "workspace:*",
+    "@family-album/storage": "workspace:*",
+    "@tus/server": "2.4.5",
+    "fastify": "5.12.4",
+    "pino": "10.3.1",
+    "zod": "4.6.5"
+  }
+}

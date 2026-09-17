@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "张家的时光",
+    "slug": "family-album",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "scheme": "familyalbum",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "android": {
+      "package": "local.familyalbum.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    }
+  }
+}

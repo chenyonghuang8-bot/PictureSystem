@@ -1,0 +1,35 @@
+{
+  "name": "family-album",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "dev": "pnpm --parallel --filter @family-album/web --filter @family-album/api --filter @family-album/worker dev",
+    "format": "prettier --write apps packages tests *.json *.yaml *.ts *.mjs",
+    "format:check": "prettier --check apps packages tests *.json *.yaml *.ts *.mjs",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.config.ts tests/integration",
+    "test:e2e": "playwright test",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.5.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "eslint": "10.10.0",
+    "prettier": "3.9.6",
+    "tsx": "4.23.13",
+    "tsup": "8.5.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.0",
+    "vitest": "4.1.11"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@family-album/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:preflight:phase-01a": "tsx scripts/preflight-phase-01a.ts",
+    "db:preflight:phase-02": "tsx scripts/preflight-phase-02.ts",
+    "db:preflight:phase-03": "tsx scripts/preflight-phase-03.ts",
+    "db:preflight:phase-04": "tsx scripts/preflight-phase-04.ts",
+    "db:verify:phase-01a": "tsx scripts/verify-phase-01a.ts",
+    "db:verify:phase-02": "tsx scripts/verify-phase-02.ts",
+    "db:verify:phase-03": "tsx scripts/verify-phase-03.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@family-album/permissions": "workspace:*",
+    "drizzle-orm": "0.45.2",
+    "mysql2": "3.24.4"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.10"
+  }
+}

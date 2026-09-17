@@ -1,0 +1,36 @@
+# Phase 3D — Durable Original Finalize
+
+Status: Phase 3D finalize slice implemented and targeted verification passed. This document describes only the Phase 3 upload receipt and storage object boundary; it does not claim media-item processing or global recovery.
+
+## Protocol and safety boundary
+
+`POST /api/v1/uploads/:uploadId/finalize` accepts only JSON `{}` after exact trusted HTTPS Origin and an active WEB session. The per-upload mutex is the same one used by PATCH, HEAD, status and abort. The API never treats the last tus PATCH or a full offset as a completed original. The response contains only this upload's public ID, `COMPLETE`, committed byte count and completion time; no raw hash, object ID, other uploader, filename or dedupe signal.
+
+The repository locks family → user → session → family member → upload session, then obtains fresh MySQL server time. It rechecks current WEB token hash, absolute and idle expiry, enabled user/member, family and original uploader ownership. Roles do not bypass upload ownership. A first finalize requires `UPLOADING`, `committed_offset = declared_size` and unexpired upload lifetime. `beginFinalize` conditionally commits `FINALIZING`, the server's 32-byte SHA-256 and `finalize_started_at`. PATCH and abort cannot mutate this state. A known `FINALIZING` retry checks the frozen hash but does not reset its timestamp or apply ordinary active-upload expiry.
+
+Before the intent, the upload mutex and OS root writer lock isolate the byte sequence while a validated native fd reads the whole staging file. The native verifier checks regular file, owner, link count, mode, device, inode and size before and after a sequential SHA-256 read. It returns actual byte size and raw 32-byte digest. Initial and retry size/hash mismatches fail closed using application-controlled failure codes; no padding, truncation or client hash is accepted. The native read has a 15-minute monotonic upper bound. The service also checks the overall 15-minute request boundary and client continuation before the irreversible publish and DB completion stages.
+
+## Canonical object and durable ordering
+
+The object identity is `(family_id, sha256 BINARY(32), byte_size, key_version=1)`. The storage path is the existing Phase 3A pure builder `originals/<family>/<digest-prefix>/<digest>-<size>`. A bounded process-local hash queue serializes same-family/same-hash/same-size contenders while the root's OS `flock` excludes another writer process. A different family always gets a different object and path, even for identical bytes.
+
+Under upload/hash mutexes, the service checks the matching `storage_objects` row and fully re-verifies the canonical original. An `AVAILABLE` object with a missing or corrupt final file is not reused; the narrow repository transition records `MISSING` or `CORRUPT` after a controlled integrity classification. Unknown storage/native errors remain fail-closed without claiming a definite missing/corrupt state. If no DB object exists but a trusted `FINALIZING` intent and its canonical final file do, the final file is fully re-verified and may be linked without another publish. Unknown final files without an intent are not adopted.
+
+When a new file is needed, the existing Phase 3A native primitive prepares the staging inode read-only, syncs it, publishes via `renameatx_np(RENAME_EXCL)` without overwrite, syncs source/destination namespace and executes the required `F_FULLFSYNC` barrier. `EEXIST` is followed by full target verification, not automatic success. A post-rename sync or DB failure never deletes or rewrites the published original. Retry re-verifies and re-establishes the required barrier.
+
+Only after this barrier, `completeFinalize` uses the Phase 1B.1 checked transaction helper and the same auth lock order, then locks the upload and canonical storage row. It reads new server time, revalidates current auth and frozen intent, rechecks `@@GLOBAL.innodb_flush_log_at_trx_commit = 1` before the completion writes, inserts or reuses an `AVAILABLE` storage object, and conditionally links the upload receipt as `COMPLETE` with `affectedRows = 1` in the same commit. File I/O is never inside a retryable DB transaction. BIGINT IDs/size travel as decimal strings or bigint, never unsafe JS numbers.
+
+Known DB completion failure leaves a final candidate and a `FINALIZING` receipt. An ambiguous COMMIT is never automatically replayed: that request returns `OUTCOME_UNKNOWN` and freezes the upload in process. The next explicit authenticated finalize first obtains a fresh locking DB snapshot, then resolves `COMPLETE`, `FINALIZING` or still-`UPLOADING` state and re-verifies bytes before any new action. Already-`COMPLETE` retries validate object/file health and return the same upload receipt. Exact loser staging cleanup and `staging_cleaned_at` are attempted after a known successful commit; cleanup failure does not roll back a durable original or completed receipt, and an authorized retry may finish cleanup.
+
+## Evidence
+
+- Native storage tests validate whole-file SHA-256, immutable published-original verification, 32-byte digest, full-sync receipt, and family/size-distinct canonical keys.
+- API tests validate strict `{}`, trusted Origin, no-store, the minimal finalize response and authorized idempotent retry.
+- Service fault tests validate unknown T-intent/T-complete COMMIT without same-request replay, explicit read-based retry, missing canonical object fail-closed, and client discontinuation before T-complete.
+- Real `family_album_dev` + native filesystem tests (24/24) cover full completion and HEAD/status, two independent same-family receipts sharing one object, cross-family isolation, arrival-barrier concurrent finalize, abort/PATCH races, lock-held member disable and session revoke before intent, T-complete auth loss after publish, an absolute-session-expiry race across a storage-object row lock, actual-size mismatch, frozen same-size staging alteration, pre/post-rename simulated failures, existing-object receipt failure, published-file/DB failure, loser cleanup failure and a child-process SIGKILL after publish but before DB completion. All fixtures are synthetic; the suite performs explicit DEV/MySQL/FK/durability preflight and removes its DB rows and temporary storage namespace.
+
+## Deferred and validation limits
+
+Phase 3E remains responsible for startup/global orphan and stale-upload reconciliation. Phase 4 media items, EXIF, derivatives, album-media links and user download routes are absent. No original delete, production media read, production database operation or schema/migration change occurred here.
+
+Fault injection and SIGKILL validate software crash windows, not physical power loss, controller honesty or a real SSD disconnection. Native hashing is synchronous in this initial single-process implementation; the stage-boundary client-disconnect check is tested, but actual browser/network cancellation under a very long hash and API event-loop responsiveness still require operational hardening before production. Persistent audit storage is also not implemented; security logs use a short-field whitelist without tokens, credentials, full digests, filenames, bytes or raw driver/native errors.

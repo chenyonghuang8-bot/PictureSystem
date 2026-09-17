@@ -1,0 +1,861 @@
+{
+  "version": "5",
+  "dialect": "mysql",
+  "id": "6ece11a0-45bc-40fe-a866-a421e17aa415",
+  "prevId": "e8814cb5-6467-4995-a349-3d2156b8ba5f",
+  "tables": {
+    "album_members": {
+      "name": "album_members",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "album_id": {
+          "name": "album_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "member_id": {
+          "name": "member_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "can_view": {
+          "name": "can_view",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "can_upload": {
+          "name": "can_upload",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "can_edit": {
+          "name": "can_edit",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "can_delete": {
+          "name": "can_delete",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "can_manage_members": {
+          "name": "can_manage_members",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_album_members_album_member": {
+          "name": "uq_album_members_album_member",
+          "columns": ["album_id", "member_id"],
+          "isUnique": true
+        },
+        "idx_album_members_family_album": {
+          "name": "idx_album_members_family_album",
+          "columns": ["family_id", "album_id"],
+          "isUnique": false
+        },
+        "idx_album_members_family_member": {
+          "name": "idx_album_members_family_member",
+          "columns": ["family_id", "member_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_album_members_album": {
+          "name": "fk_album_members_album",
+          "tableFrom": "album_members",
+          "tableTo": "albums",
+          "columnsFrom": ["family_id", "album_id"],
+          "columnsTo": ["family_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_album_members_member": {
+          "name": "fk_album_members_member",
+          "tableFrom": "album_members",
+          "tableTo": "family_members",
+          "columnsFrom": ["family_id", "member_id"],
+          "columnsTo": ["family_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "album_members_id": {
+          "name": "album_members_id",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_album_members_view_boolean": {
+          "name": "chk_album_members_view_boolean",
+          "value": "`album_members`.`can_view` IN (0,1)"
+        },
+        "chk_album_members_upload_boolean": {
+          "name": "chk_album_members_upload_boolean",
+          "value": "`album_members`.`can_upload` IN (0,1)"
+        },
+        "chk_album_members_edit_boolean": {
+          "name": "chk_album_members_edit_boolean",
+          "value": "`album_members`.`can_edit` IN (0,1)"
+        },
+        "chk_album_members_delete_boolean": {
+          "name": "chk_album_members_delete_boolean",
+          "value": "`album_members`.`can_delete` IN (0,1)"
+        },
+        "chk_album_members_manage_members_boolean": {
+          "name": "chk_album_members_manage_members_boolean",
+          "value": "`album_members`.`can_manage_members` IN (0,1)"
+        },
+        "chk_album_members_view_required": {
+          "name": "chk_album_members_view_required",
+          "value": "`album_members`.`can_view` = 1 OR (`album_members`.`can_upload` = 0 AND `album_members`.`can_edit` = 0 AND `album_members`.`can_delete` = 0 AND `album_members`.`can_manage_members` = 0)"
+        }
+      }
+    },
+    "albums": {
+      "name": "albums",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_member_id": {
+          "name": "owner_member_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "varchar(2000)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "enum('FAMILY','CUSTOM')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'CUSTOM'"
+        },
+        "revision": {
+          "name": "revision",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "1"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "uq_albums_family_id": {
+          "name": "uq_albums_family_id",
+          "columns": ["family_id", "id"],
+          "isUnique": true
+        },
+        "idx_albums_family_deleted_id": {
+          "name": "idx_albums_family_deleted_id",
+          "columns": ["family_id", "deleted_at", "id"],
+          "isUnique": false
+        },
+        "idx_albums_family_owner": {
+          "name": "idx_albums_family_owner",
+          "columns": ["family_id", "owner_member_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_albums_family": {
+          "name": "fk_albums_family",
+          "tableFrom": "albums",
+          "tableTo": "families",
+          "columnsFrom": ["family_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_albums_owner_member": {
+          "name": "fk_albums_owner_member",
+          "tableFrom": "albums",
+          "tableTo": "family_members",
+          "columnsFrom": ["family_id", "owner_member_id"],
+          "columnsTo": ["family_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "albums_id": {
+          "name": "albums_id",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_albums_revision": {
+          "name": "chk_albums_revision",
+          "value": "`albums`.`revision` >= 1"
+        },
+        "chk_albums_deleted_at": {
+          "name": "chk_albums_deleted_at",
+          "value": "`albums`.`deleted_at` IS NULL OR `albums`.`deleted_at` >= `albums`.`created_at`"
+        }
+      }
+    },
+    "families": {
+      "name": "families",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "families_id": {
+          "name": "families_id",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "family_members": {
+      "name": "family_members",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "enum('SUPER_ADMIN','ADMIN','MEMBER')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'MEMBER'"
+        },
+        "joined_at": {
+          "name": "joined_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "disabled_at": {
+          "name": "disabled_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "left_at": {
+          "name": "left_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_family_members_family_user": {
+          "name": "uq_family_members_family_user",
+          "columns": ["family_id", "user_id"],
+          "isUnique": true
+        },
+        "uq_family_members_family_id": {
+          "name": "uq_family_members_family_id",
+          "columns": ["family_id", "id"],
+          "isUnique": true
+        },
+        "idx_family_members_user": {
+          "name": "idx_family_members_user",
+          "columns": ["user_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "family_members_family_id_families_id_fk": {
+          "name": "family_members_family_id_families_id_fk",
+          "tableFrom": "family_members",
+          "tableTo": "families",
+          "columnsFrom": ["family_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "family_members_user_id_users_id_fk": {
+          "name": "family_members_user_id_users_id_fk",
+          "tableFrom": "family_members",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "family_members_id": {
+          "name": "family_members_id",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "invitations": {
+      "name": "invitations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by_member_id": {
+          "name": "created_by_member_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "enum('ADMIN','MEMBER')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'MEMBER'"
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "binary(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "used_by_member_id": {
+          "name": "used_by_member_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revoked_by_member_id": {
+          "name": "revoked_by_member_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_invitations_token_hash": {
+          "name": "uq_invitations_token_hash",
+          "columns": ["token_hash"],
+          "isUnique": true
+        },
+        "idx_invitations_family_created": {
+          "name": "idx_invitations_family_created",
+          "columns": ["family_id", "created_at"],
+          "isUnique": false
+        },
+        "idx_invitations_expires": {
+          "name": "idx_invitations_expires",
+          "columns": ["expires_at"],
+          "isUnique": false
+        },
+        "idx_invitations_family_creator": {
+          "name": "idx_invitations_family_creator",
+          "columns": ["family_id", "created_by_member_id"],
+          "isUnique": false
+        },
+        "idx_invitations_family_used_by": {
+          "name": "idx_invitations_family_used_by",
+          "columns": ["family_id", "used_by_member_id"],
+          "isUnique": false
+        },
+        "idx_invitations_family_revoked_by": {
+          "name": "idx_invitations_family_revoked_by",
+          "columns": ["family_id", "revoked_by_member_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "invitations_family_id_families_id_fk": {
+          "name": "invitations_family_id_families_id_fk",
+          "tableFrom": "invitations",
+          "tableTo": "families",
+          "columnsFrom": ["family_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_invitations_creator_member": {
+          "name": "fk_invitations_creator_member",
+          "tableFrom": "invitations",
+          "tableTo": "family_members",
+          "columnsFrom": ["family_id", "created_by_member_id"],
+          "columnsTo": ["family_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_invitations_used_by_member": {
+          "name": "fk_invitations_used_by_member",
+          "tableFrom": "invitations",
+          "tableTo": "family_members",
+          "columnsFrom": ["family_id", "used_by_member_id"],
+          "columnsTo": ["family_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_invitations_revoked_by_member": {
+          "name": "fk_invitations_revoked_by_member",
+          "tableFrom": "invitations",
+          "tableTo": "family_members",
+          "columnsFrom": ["family_id", "revoked_by_member_id"],
+          "columnsTo": ["family_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "invitations_id": {
+          "name": "invitations_id",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_invitations_expiry": {
+          "name": "chk_invitations_expiry",
+          "value": "`invitations`.`expires_at` > `invitations`.`created_at`"
+        },
+        "chk_invitations_used_pair": {
+          "name": "chk_invitations_used_pair",
+          "value": "(`invitations`.`used_at` IS NULL AND `invitations`.`used_by_member_id` IS NULL) OR (`invitations`.`used_at` IS NOT NULL AND `invitations`.`used_by_member_id` IS NOT NULL)"
+        },
+        "chk_invitations_used_or_revoked": {
+          "name": "chk_invitations_used_or_revoked",
+          "value": "NOT (`invitations`.`used_at` IS NOT NULL AND `invitations`.`revoked_at` IS NOT NULL)"
+        },
+        "chk_invitations_revoker_requires_revoked_at": {
+          "name": "chk_invitations_revoker_requires_revoked_at",
+          "value": "`invitations`.`revoked_by_member_id` IS NULL OR `invitations`.`revoked_at` IS NOT NULL"
+        }
+      }
+    },
+    "sessions": {
+      "name": "sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "binary(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "client_type": {
+          "name": "client_type",
+          "type": "enum('WEB','ANDROID')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "device_label": {
+          "name": "device_label",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "authenticated_at": {
+          "name": "authenticated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revoke_reason": {
+          "name": "revoke_reason",
+          "type": "enum('LOGOUT','USER_REVOKE','LOGOUT_ALL','PASSWORD_CHANGE','USER_DISABLED')",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "uq_sessions_token_hash": {
+          "name": "uq_sessions_token_hash",
+          "columns": ["token_hash"],
+          "isUnique": true
+        },
+        "idx_sessions_user_revoked_created": {
+          "name": "idx_sessions_user_revoked_created",
+          "columns": ["user_id", "revoked_at", "created_at"],
+          "isUnique": false
+        },
+        "idx_sessions_expires": {
+          "name": "idx_sessions_expires",
+          "columns": ["expires_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "sessions_user_id_users_id_fk": {
+          "name": "sessions_user_id_users_id_fk",
+          "tableFrom": "sessions",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "sessions_id": {
+          "name": "sessions_id",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_sessions_expiry": {
+          "name": "chk_sessions_expiry",
+          "value": "`sessions`.`expires_at` > `sessions`.`created_at`"
+        },
+        "chk_sessions_last_seen": {
+          "name": "chk_sessions_last_seen",
+          "value": "`sessions`.`last_seen_at` >= `sessions`.`created_at`"
+        },
+        "chk_sessions_revoked_pair": {
+          "name": "chk_sessions_revoked_pair",
+          "value": "(`sessions`.`revoked_at` IS NULL AND `sessions`.`revoke_reason` IS NULL) OR (`sessions`.`revoked_at` IS NOT NULL AND `sessions`.`revoke_reason` IS NOT NULL)"
+        }
+      }
+    },
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "username": {
+          "name": "username",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "username_normalized": {
+          "name": "username_normalized",
+          "type": "varbinary(512)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "varchar(255) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "password_changed_at": {
+          "name": "password_changed_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "disabled_at": {
+          "name": "disabled_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_users_username_normalized": {
+          "name": "uq_users_username_normalized",
+          "columns": ["username_normalized"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "users_id": {
+          "name": "users_id",
+          "columns": ["id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    }
+  },
+  "views": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "tables": {},
+    "indexes": {}
+  }
+}

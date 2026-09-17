@@ -1,0 +1,9 @@
+.expo
+.next
+coverage
+dist
+node_modules
+playwright-report
+test-results
+vendor
+pnpm-lock.yaml

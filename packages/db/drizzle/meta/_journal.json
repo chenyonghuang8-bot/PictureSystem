@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1789377513979,
+      "tag": "0000_phase_01a_identity_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1789404988381,
+      "tag": "0001_phase_02_albums_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1789439724515,
+      "tag": "0002_phase_03_storage_uploads",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1789485599325,
+      "tag": "0003_phase_04_media_processing",
+      "breakpoints": true
+    }
+  ]
+}

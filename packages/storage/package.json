@@ -1,0 +1,14 @@
+{
+  "name": "@family-album/storage",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build:native": "node scripts/build-native.mjs",
+    "build": "pnpm build:native && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  }
+}

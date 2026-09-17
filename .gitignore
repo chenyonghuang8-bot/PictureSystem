@@ -1,0 +1,56 @@
+# OS
+.DS_Store
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Secrets: keep only documented examples.
+.env*
+!.env.example
+
+# Build / cache
+.next/
+.expo/
+dist/
+build/
+coverage/
+.cache/
+.turbo/
+*.tsbuildinfo
+*.node
+
+# Native compile output
+packages/storage/build/
+packages/storage/native/build/
+packages/storage/native/*.o
+
+# Test and local tooling output
+playwright-report/
+test-results/
+*.log
+tmp/
+
+# Private media and storage roots.
+# Do not ignore apps/api/src/uploads (application source).
+FamilyAlbumData/
+/data/
+media-data/
+/originals/
+/uploads/
+/temp/
+derived/
+exports/
+backups/
+temp-uploads/
+staging/
+
+# Database dumps and local data files.
+# Versioned Drizzle migrations in packages/db/drizzle/ stay tracked.
+*.sql.gz
+*.sql.bz2
+*.dump
+*.ibd
+*.sqlite
+*.sqlite3
+mysql-data/

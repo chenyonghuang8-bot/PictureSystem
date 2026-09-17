@@ -1,0 +1,2 @@
+6dde3d2fc21a4958546af248cfa7003d18b2dcf5db8f5dabd56910a2125e4266  codex-bridge-chatgpt-hardened-skill.zip
+ac0ab9cde3d90cd612a448dd352a64b4dc50f98287f7cede7313da80eeb9db49  SECURITY_RELEVANT_SKILL_FINGERPRINT

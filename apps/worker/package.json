@@ -1,0 +1,16 @@
+{
+  "name": "@family-album/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@family-album/config": "workspace:*",
+    "pino": "10.3.1"
+  }
+}

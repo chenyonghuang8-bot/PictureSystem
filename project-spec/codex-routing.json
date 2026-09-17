@@ -1,0 +1,34 @@
+{
+  "profile": "PRO_SPARK_BALANCED",
+  "small_targeted": {
+    "model": "GPT-5.3-Codex-Spark",
+    "use_for": [
+      "small targeted edits",
+      "UI tweaks",
+      "simple tests",
+      "mechanical changes"
+    ]
+  },
+  "routine": {
+    "model": "GPT-5.6 Terra",
+    "reasoning": "Medium"
+  },
+  "core": {
+    "model": "GPT-5.6 Sol",
+    "reasoning": "Medium"
+  },
+  "high_risk": {
+    "model": "GPT-6 Astra",
+    "reasoning": "Low"
+  },
+  "bridge": {
+    "skill": "codex-bridge-chatgpt",
+    "web_model": "GPT-5.6 Sol",
+    "reasoning": "High",
+    "policy": "R4_ONLY"
+  },
+  "testing": {
+    "development": "targeted",
+    "milestone": "full"
+  }
+}

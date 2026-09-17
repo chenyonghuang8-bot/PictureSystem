@@ -1,0 +1,32 @@
+import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
+export { validateDatabaseHealth } from "./health.js";
+export * from "./connection.js";
+export * from "./auth-repository.js";
+export * from "./bootstrap.js";
+export * from "./migration-readiness.js";
+export * from "./phase1c-repository.js";
+export * from "./album-repository.js";
+export * from "./transaction.js";
+export * from "./upload-repository.js";
+
+export const databaseConnectionDefaults = Object.freeze({
+  connectionLimit: 5,
+  enableKeepAlive: true,
+  multipleStatements: false,
+  supportBigNumbers: true,
+  bigNumberStrings: true,
+  timezone: "Z",
+});
+
+export function createDatabase(databaseUrl: string) {
+  const pool = mysql.createPool({
+    uri: databaseUrl,
+    ...databaseConnectionDefaults,
+  });
+
+  return {
+    db: drizzle({ client: pool }),
+    pool,
+  };
+}
