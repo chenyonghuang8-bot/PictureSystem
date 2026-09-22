@@ -1,5 +1,18 @@
 import { sql } from "drizzle-orm";
 import {
+  phase4CapturedSources,
+  phase4CapturedTimeStatuses,
+  phase4DerivedKinds,
+  phase4DerivedStates,
+  phase4FailureCodes,
+  phase4JobStates,
+  phase4JobTypes,
+  phase4MediaTypes,
+  phase4ProcessingStates,
+  phase4TimelineBases,
+  phase4WarningFlags,
+} from "@family-album/contracts";
+import {
   bigint,
   boolean,
   check,
@@ -91,34 +104,10 @@ const workerIdentity = customType<{
   fromDriver: toBuffer,
 });
 
-export const phase4FailureCodes = [
-  "UNSUPPORTED_FORMAT",
-  "CAPABILITY_UNAVAILABLE",
-  "MALFORMED_MEDIA",
-  "INPUT_LIMIT",
-  "OUTPUT_LIMIT",
-  "PROCESS_TIMEOUT",
-  "RESOURCE_LIMIT",
-  "TEMPORARY_IO",
-  "STORAGE_UNAVAILABLE",
-  "ORIGINAL_MISSING",
-  "ORIGINAL_CORRUPT",
-  "DERIVED_INTEGRITY",
-  "WORKER_LOST",
-  "DB_UNAVAILABLE",
-  "COMMIT_OUTCOME_UNKNOWN",
-] as const;
-
-export const phase4WarningFlags = {
-  INVALID_CAPTURE_TIME: 1n,
-  INVALID_CAPTURE_OFFSET: 2n,
-  INVALID_GPS: 4n,
-  INVALID_ORIENTATION: 8n,
-  PARTIAL_METADATA: 16n,
-  UNSUPPORTED_DECODER: 32n,
-  UNSUPPORTED_TRANSFORM: 64n,
-  MOTION_UNPAIRED: 128n,
-} as const;
+const phase4WarningMask = Object.values(phase4WarningFlags).reduce(
+  (mask, flag) => mask | flag,
+  0n,
+);
 
 const asciiPasswordHash = customType<{ data: string; driverData: string }>({
   dataType: () => "varchar(255) CHARACTER SET ascii COLLATE ascii_bin",
@@ -639,18 +628,11 @@ export const mediaItems = mysqlTable(
     storageObjectId: foreignId("storage_object_id").notNull(),
     sourceUploadId: foreignId("source_upload_id").notNull(),
     uploadedAt: timestamp("uploaded_at").notNull(),
-    mediaType: mysqlEnum("media_type", ["UNKNOWN", "IMAGE", "VIDEO", "OTHER"])
+    mediaType: mysqlEnum("media_type", phase4MediaTypes)
       .notNull()
       .default("UNKNOWN"),
     detectedMime: varchar("detected_mime", { length: 127 }),
-    processingState: mysqlEnum("processing_state", [
-      "PENDING",
-      "PROCESSING",
-      "READY",
-      "PARTIAL",
-      "FAILED",
-      "BLOCKED",
-    ])
+    processingState: mysqlEnum("processing_state", phase4ProcessingStates)
       .notNull()
       .default("PENDING"),
     generation: bigint("generation", { mode: "bigint", unsigned: true })
@@ -670,26 +652,17 @@ export const mediaItems = mysqlTable(
     capturedLocalAt: timestamp("captured_local_at"),
     capturedAtUtc: timestamp("captured_at_utc"),
     capturedOffsetMinutes: smallint("captured_offset_minutes"),
-    capturedSource: mysqlEnum("captured_source", [
-      "NONE",
-      "EXIF_ORIGINAL",
-      "EXIF_CREATE",
-      "XMP_ORIGINAL",
-      "XMP_CREATE",
-      "QUICKTIME_CREATION",
-      "CONTAINER_CREATION",
-    ])
+    capturedSource: mysqlEnum("captured_source", phase4CapturedSources)
       .notNull()
       .default("NONE"),
-    capturedTimeStatus: mysqlEnum("captured_time_status", [
-      "ABSENT",
-      "OFFSET_KNOWN",
-      "OFFSET_UNKNOWN",
-    ])
+    capturedTimeStatus: mysqlEnum(
+      "captured_time_status",
+      phase4CapturedTimeStatuses,
+    )
       .notNull()
       .default("ABSENT"),
     timelineKey: timestamp("timeline_key").notNull(),
-    timelineBasis: mysqlEnum("timeline_basis", ["CAPTURE_LOCAL", "UPLOAD_UTC"])
+    timelineBasis: mysqlEnum("timeline_basis", phase4TimelineBases)
       .notNull()
       .default("UPLOAD_UTC"),
     gpsLatitude: decimal("gps_latitude", { precision: 9, scale: 6 }),
@@ -767,7 +740,10 @@ export const mediaItems = mysqlTable(
       "chk_media_items_video_rotation",
       sql`${table.videoRotationDegrees} IS NULL OR ${table.videoRotationDegrees} IN (0,90,180,270)`,
     ),
-    check("chk_media_items_animated_boolean", sql`${table.isAnimated} IN (0,1)`),
+    check(
+      "chk_media_items_animated_boolean",
+      sql`${table.isAnimated} IN (0,1)`,
+    ),
     check("chk_media_items_motion_boolean", sql`${table.motionHint} IN (0,1)`),
     check(
       "chk_media_items_gps",
@@ -785,7 +761,10 @@ export const mediaItems = mysqlTable(
       "chk_media_items_ready_metadata",
       sql`${table.processingState} <> 'READY' OR (${table.metadataGeneration} IS NOT NULL AND ${table.metadataGeneration} = ${table.generation})`,
     ),
-    check("chk_media_items_warning_flags", sql`${table.warningFlags} <= 255`),
+    check(
+      "chk_media_items_warning_flags",
+      sql`${table.warningFlags} <= ${sql.raw(phase4WarningMask.toString())}`,
+    ),
     check(
       "chk_media_items_failure",
       sql`(${table.processingState} IN ('FAILED','BLOCKED') AND ${table.lastFailureCode} IS NOT NULL) OR (${table.processingState} NOT IN ('FAILED','BLOCKED') AND (${table.processingState} = 'PARTIAL' OR ${table.lastFailureCode} IS NULL))`,
@@ -799,25 +778,17 @@ export const backgroundJobs = mysqlTable(
     id: id(),
     familyId: foreignId("family_id").notNull(),
     mediaId: foreignId("media_id").notNull(),
-    generation: bigint("generation", { mode: "bigint", unsigned: true }).notNull(),
+    generation: bigint("generation", {
+      mode: "bigint",
+      unsigned: true,
+    }).notNull(),
     recipeId: smallint("recipe_id", { unsigned: true }).notNull(),
-    jobType: mysqlEnum("job_type", [
-      "MEDIA_PROBE",
-      "IMAGE_DERIVATIVES",
-      "VIDEO_POSTER",
-    ]).notNull(),
-    state: mysqlEnum("state", [
-      "QUEUED",
-      "RUNNING",
-      "RETRY_WAIT",
-      "SUCCEEDED",
-      "FAILED",
-      "CANCELLED",
-    ])
-      .notNull()
-      .default("QUEUED"),
+    jobType: mysqlEnum("job_type", phase4JobTypes).notNull(),
+    state: mysqlEnum("state", phase4JobStates).notNull().default("QUEUED"),
     attempts: tinyint("attempts", { unsigned: true }).notNull().default(0),
-    maxAttempts: tinyint("max_attempts", { unsigned: true }).notNull().default(3),
+    maxAttempts: tinyint("max_attempts", { unsigned: true })
+      .notNull()
+      .default(3),
     availableAt: timestamp("available_at").notNull(),
     lockedAt: timestamp("locked_at"),
     heartbeatAt: timestamp("heartbeat_at"),
@@ -893,16 +864,13 @@ export const derivedAssets = mysqlTable(
     id: id(),
     familyId: foreignId("family_id").notNull(),
     mediaId: foreignId("media_id").notNull(),
-    generation: bigint("generation", { mode: "bigint", unsigned: true }).notNull(),
+    generation: bigint("generation", {
+      mode: "bigint",
+      unsigned: true,
+    }).notNull(),
     recipeId: smallint("recipe_id", { unsigned: true }).notNull(),
-    kind: mysqlEnum("kind", ["THUMBNAIL", "PREVIEW", "VIDEO_POSTER"]).notNull(),
-    state: mysqlEnum("state", [
-      "RESERVED",
-      "PUBLISHING",
-      "READY",
-      "MISSING",
-      "FAILED",
-    ])
+    kind: mysqlEnum("kind", phase4DerivedKinds).notNull(),
+    state: mysqlEnum("state", phase4DerivedStates)
       .notNull()
       .default("RESERVED"),
     reservedBytes: foreignId("reserved_bytes").notNull(),

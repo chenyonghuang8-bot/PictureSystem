@@ -66,6 +66,7 @@ export type SchemaIndex = {
   name: string;
   unique: boolean;
   columns: string[];
+  hasPartialOrExpression: boolean;
 };
 
 export type SchemaForeignKey = {
@@ -209,10 +210,12 @@ export function assertExactSchema(
   expected: SchemaSnapshot,
   actual: SchemaSnapshot,
 ) {
-  if (
-    JSON.stringify(canonicalizeSchema(actual)) !==
-    JSON.stringify(canonicalizeSchema(expected))
-  ) {
+  const canonicalExpected = canonicalizeSchema(expected);
+  const canonicalActual = removeRedundantFkSupportingIndexes(
+    canonicalExpected,
+    canonicalizeSchema(actual),
+  );
+  if (JSON.stringify(canonicalActual) !== JSON.stringify(canonicalExpected)) {
     throw new MigrationReadinessError("SCHEMA_MISMATCH");
   }
 }
@@ -261,7 +264,8 @@ export async function readActualSchemaSnapshot(
   const [indexRows] = await connection.query<RowDataPacket[]>(
     `SELECT table_name AS tableName, index_name AS indexName,
             non_unique AS nonUnique, seq_in_index AS sequence,
-            column_name AS columnName
+            column_name AS columnName, sub_part AS subPart,
+            expression AS indexExpression
        FROM information_schema.statistics
       WHERE table_schema = DATABASE()
       ORDER BY table_name, index_name, seq_in_index`,
@@ -358,6 +362,7 @@ function expectedTable(table: MySqlTable): SchemaTable {
       name: "PRIMARY",
       unique: true,
       columns: columnsForPrimaryKey(config.columns),
+      hasPartialOrExpression: false,
     },
     ...config.indexes.map((index) => ({
       name: index.config.name,
@@ -368,6 +373,7 @@ function expectedTable(table: MySqlTable): SchemaTable {
         }
         return column.name;
       }),
+      hasPartialOrExpression: false,
     })),
   ];
   return {
@@ -407,8 +413,18 @@ function journalTable(): SchemaTable {
       column("created_at", "bigint", true, null, false, null, null),
     ],
     indexes: [
-      { name: "PRIMARY", unique: true, columns: ["id"] },
-      { name: "id", unique: true, columns: ["id"] },
+      {
+        name: "PRIMARY",
+        unique: true,
+        columns: ["id"],
+        hasPartialOrExpression: false,
+      },
+      {
+        name: "id",
+        unique: true,
+        columns: ["id"],
+        hasPartialOrExpression: false,
+      },
     ],
     foreignKeys: [],
     checks: [],
@@ -443,8 +459,12 @@ function groupIndexes(rows: RowDataPacket[]): SchemaIndex[] {
       name,
       unique: String(row.nonUnique) === "0",
       columns: [],
+      hasPartialOrExpression: false,
     };
     current.columns.push(String(row.columnName));
+    if (row.subPart !== null || row.indexExpression !== null) {
+      current.hasPartialOrExpression = true;
+    }
     grouped.set(name, current);
   }
   return [...grouped.values()];
@@ -518,6 +538,7 @@ function normalizeCheck(value: string) {
     .replace(/\b[a-z_][a-z0-9_]*\./gi, "")
     .replace(/_utf8mb4\\?'/gi, "'")
     .replace(/\\'/g, "'")
+    .replace(/\bmod\s*\(\s*([a-z_][a-z0-9_]*)\s*,\s*(-?[0-9]+)\s*\)/gi, "$1%$2")
     .replace(/\s+/g, "")
     .replaceAll("(", "")
     .replaceAll(")", "")
@@ -526,6 +547,56 @@ function normalizeCheck(value: string) {
     normalized = "used_atisnullorrevoked_atisnull";
   }
   return normalized;
+}
+
+function removeRedundantFkSupportingIndexes(
+  expected: SchemaSnapshot,
+  actual: SchemaSnapshot,
+): SchemaSnapshot {
+  const expectedTables = new Map(
+    expected.tables.map((table) => [table.name, table]),
+  );
+  return {
+    tables: actual.tables.map((actualTable) => {
+      const expectedTable = expectedTables.get(actualTable.name);
+      if (!expectedTable) return actualTable;
+      const expectedIndexNames = new Set(
+        expectedTable.indexes.map((index) => index.name),
+      );
+      return {
+        ...actualTable,
+        indexes: actualTable.indexes.filter((index) => {
+          if (
+            expectedIndexNames.has(index.name) ||
+            index.name === "PRIMARY" ||
+            index.unique ||
+            index.hasPartialOrExpression
+          ) {
+            return true;
+          }
+          const actualForeignKey = actualTable.foreignKeys.find((foreignKey) =>
+            arraysEqual(foreignKey.columns, index.columns),
+          );
+          if (!actualForeignKey) return true;
+          const expectedForeignKey = expectedTable.foreignKeys.find(
+            (foreignKey) => foreignKey.name === actualForeignKey.name,
+          );
+          return !(
+            expectedForeignKey !== undefined &&
+            JSON.stringify(expectedForeignKey) ===
+              JSON.stringify(actualForeignKey)
+          );
+        }),
+      };
+    }),
+  };
+}
+
+function arraysEqual(left: readonly string[], right: readonly string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 function columnsForPrimaryKey(

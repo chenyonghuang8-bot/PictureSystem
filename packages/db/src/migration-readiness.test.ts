@@ -226,6 +226,172 @@ describe("bootstrap migration readiness", () => {
     );
   });
 
+  it("accepts only an exact redundant non-unique FK-supporting index", () => {
+    const expected = buildExpectedSchemaSnapshot();
+    const actual = structuredClone(expected);
+    const media = actual.tables.find((table) => table.name === "media_items")!;
+    const sourceForeignKey = media.foreignKeys.find(
+      (foreignKey) => foreignKey.name === "fk_media_items_source_upload",
+    )!;
+    media.indexes.push({
+      name: sourceForeignKey.name,
+      unique: false,
+      columns: [...sourceForeignKey.columns],
+      hasPartialOrExpression: false,
+    });
+    expect(() => assertExactSchema(expected, actual)).not.toThrow();
+  });
+
+  it.each([
+    [
+      "arbitrary columns",
+      {
+        name: "unexpected_index",
+        unique: false,
+        columns: ["processing_state"],
+        hasPartialOrExpression: false,
+      },
+    ],
+    [
+      "unexpected unique",
+      {
+        name: "unexpected_unique",
+        unique: true,
+        columns: ["family_id", "source_upload_id", "storage_object_id"],
+        hasPartialOrExpression: false,
+      },
+    ],
+    [
+      "missing FK column",
+      {
+        name: "fk_media_items_source_upload",
+        unique: false,
+        columns: ["family_id", "source_upload_id"],
+        hasPartialOrExpression: false,
+      },
+    ],
+    [
+      "reordered FK columns",
+      {
+        name: "fk_media_items_source_upload",
+        unique: false,
+        columns: ["source_upload_id", "family_id", "storage_object_id"],
+        hasPartialOrExpression: false,
+      },
+    ],
+    [
+      "extra FK column",
+      {
+        name: "fk_media_items_source_upload",
+        unique: false,
+        columns: [
+          "family_id",
+          "source_upload_id",
+          "storage_object_id",
+          "uploaded_at",
+        ],
+        hasPartialOrExpression: false,
+      },
+    ],
+    [
+      "prefix or expression index",
+      {
+        name: "fk_media_items_source_upload",
+        unique: false,
+        columns: ["family_id", "source_upload_id", "storage_object_id"],
+        hasPartialOrExpression: true,
+      },
+    ],
+  ])("rejects a non-equivalent extra index: %s", (_name, index) => {
+    const expected = buildExpectedSchemaSnapshot();
+    const actual = structuredClone(expected);
+    actual.tables
+      .find((table) => table.name === "media_items")!
+      .indexes.push(index);
+    expect(() => assertExactSchema(expected, actual)).toThrow(
+      MigrationReadinessError,
+    );
+  });
+
+  it("does not let an implicit index hide missing explicit index contracts or FK drift", () => {
+    const expected = buildExpectedSchemaSnapshot();
+    for (const mutate of [
+      (actual: SchemaSnapshot) => {
+        const media = actual.tables.find(
+          (table) => table.name === "media_items",
+        )!;
+        media.indexes = media.indexes.filter(
+          (index) => index.name !== "idx_media_items_processing",
+        );
+      },
+      (actual: SchemaSnapshot) => {
+        const media = actual.tables.find(
+          (table) => table.name === "media_items",
+        )!;
+        media.indexes = media.indexes.filter(
+          (index) => index.name !== "uq_media_items_family_storage_object",
+        );
+      },
+      (actual: SchemaSnapshot) => {
+        const source = actual.tables
+          .find((table) => table.name === "media_items")!
+          .foreignKeys.find(
+            (foreignKey) => foreignKey.name === "fk_media_items_source_upload",
+          )!;
+        source.referencedColumns = ["family_id", "id", "family_id"];
+      },
+      (actual: SchemaSnapshot) => {
+        const source = actual.tables
+          .find((table) => table.name === "media_items")!
+          .foreignKeys.find(
+            (foreignKey) => foreignKey.name === "fk_media_items_source_upload",
+          )!;
+        source.columns = ["source_upload_id", "family_id", "storage_object_id"];
+      },
+    ]) {
+      const actual = structuredClone(expected);
+      mutate(actual);
+      expect(() => assertExactSchema(expected, actual)).toThrow(
+        MigrationReadinessError,
+      );
+    }
+  });
+
+  it("normalizes only simple equivalent MOD and percent CHECK expressions", () => {
+    const expected = buildExpectedSchemaSnapshot();
+    const capture = (snapshot: SchemaSnapshot) =>
+      snapshot.tables
+        .find((table) => table.name === "media_items")!
+        .checks.find((check) => check.name === "chk_media_items_capture")!;
+    const equivalent = structuredClone(expected);
+    capture(equivalent).expression = capture(equivalent).expression.replace(
+      "captured_offset_minutes%60",
+      "(( MOD( `captured_offset_minutes` , 60 ) ))",
+    );
+    expect(() => assertExactSchema(expected, equivalent)).not.toThrow();
+
+    for (const expression of [
+      capture(expected).expression.replace(
+        "captured_offset_minutes%60",
+        "MOD(captured_offset_minutes,30)",
+      ),
+      capture(expected).expression.replace(
+        "captured_offset_minutes%60",
+        "MOD(generation,60)",
+      ),
+      capture(expected).expression.replace(
+        "captured_time_status='absent'",
+        "captured_time_status='offset_known'",
+      ),
+    ]) {
+      const drift = structuredClone(expected);
+      capture(drift).expression = expression;
+      expect(() => assertExactSchema(expected, drift)).toThrow(
+        MigrationReadinessError,
+      );
+    }
+  });
+
   it.each([
     ["missing table", (schema: SchemaSnapshot) => schema.tables.pop()],
     [

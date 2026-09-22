@@ -1,42 +1,69 @@
 import { getTableConfig, MySqlDialect } from "drizzle-orm/mysql-core";
 import { describe, expect, it } from "vitest";
+import {
+  phase4FailureCodes,
+  phase4WarningFlags,
+} from "@family-album/contracts";
 
 import { databaseConnectionDefaults } from "./index.js";
 import {
   backgroundJobs,
   derivedAssets,
   mediaItems,
-  phase4FailureCodes,
-  phase4WarningFlags,
   uploadSessions,
 } from "./schema.js";
 
 const dialect = new MySqlDialect();
 
+function indexColumnName(column: unknown): string {
+  if (
+    typeof column !== "object" ||
+    column === null ||
+    !("name" in column) ||
+    typeof column.name !== "string"
+  ) {
+    throw new Error("Phase 4 indexes must use named columns");
+  }
+  return column.name;
+}
+
 describe("Phase 4A Drizzle schema", () => {
   it("gives one logical media to each family-scoped canonical original", () => {
-    expect([mediaItems, backgroundJobs, derivedAssets].map((table) =>
-      getTableConfig(table).name,
-    )).toEqual(["media_items", "background_jobs", "derived_assets"]);
     expect(
-      getTableConfig(mediaItems).indexes.find(
-        (item) => item.config.name === "uq_media_items_family_storage_object",
-      )?.config.columns.map((column) => column.name),
+      [mediaItems, backgroundJobs, derivedAssets].map(
+        (table) => getTableConfig(table).name,
+      ),
+    ).toEqual(["media_items", "background_jobs", "derived_assets"]);
+    expect(
+      getTableConfig(mediaItems)
+        .indexes.find(
+          (item) => item.config.name === "uq_media_items_family_storage_object",
+        )
+        ?.config.columns.map(indexColumnName),
     ).toEqual(["family_id", "storage_object_id"]);
     expect(
-      getTableConfig(uploadSessions).indexes.find(
-        (item) => item.config.name === "uq_upload_sessions_family_id_object",
-      )?.config.columns.map((column) => column.name),
+      getTableConfig(uploadSessions)
+        .indexes.find(
+          (item) => item.config.name === "uq_upload_sessions_family_id_object",
+        )
+        ?.config.columns.map(indexColumnName),
     ).toEqual(["family_id", "id", "storage_object_id"]);
     expect(
       getTableConfig(mediaItems).foreignKeys.map((key) => key.getName()),
-    ).toEqual(["fk_media_items_storage_object", "fk_media_items_source_upload"]);
+    ).toEqual([
+      "fk_media_items_storage_object",
+      "fk_media_items_source_upload",
+    ]);
     const source = getTableConfig(mediaItems).foreignKeys[1]!.reference();
     expect(source.columns.map((column) => column.name)).toEqual([
-      "family_id", "source_upload_id", "storage_object_id",
+      "family_id",
+      "source_upload_id",
+      "storage_object_id",
     ]);
     expect(source.foreignColumns.map((column) => column.name)).toEqual([
-      "family_id", "id", "storage_object_id",
+      "family_id",
+      "id",
+      "storage_object_id",
     ]);
   });
 
@@ -108,33 +135,33 @@ describe("Phase 4A Drizzle schema", () => {
     expect(expression).toContain("`gps_longitude` IS NOT NULL");
     expect(expression).toContain("BETWEEN -90 AND 90");
     expect(expression).toContain("BETWEEN -180 AND 180");
-    expect(
-      getTableConfig(mediaItems).checks.map((item) => item.name),
-    ).toEqual(expect.arrayContaining([
-      "chk_media_items_raw_dimensions",
-      "chk_media_items_display_dimensions",
-      "chk_media_items_orientation",
-      "chk_media_items_capture",
-      "chk_media_items_timeline",
-      "chk_media_items_ready_metadata",
-    ]));
+    expect(getTableConfig(mediaItems).checks.map((item) => item.name)).toEqual(
+      expect.arrayContaining([
+        "chk_media_items_raw_dimensions",
+        "chk_media_items_display_dimensions",
+        "chk_media_items_orientation",
+        "chk_media_items_capture",
+        "chk_media_items_timeline",
+        "chk_media_items_ready_metadata",
+      ]),
+    );
   });
 
   it("gives derived and jobs same-family references and generation-scoped identity", () => {
     expect(
-      getTableConfig(backgroundJobs).indexes.find(
-        (item) => item.config.name === "uq_background_jobs_identity",
-      )?.config.columns.map((column) => column.name),
-    ).toEqual([
-      "family_id", "media_id", "generation", "recipe_id", "job_type",
-    ]);
+      getTableConfig(backgroundJobs)
+        .indexes.find(
+          (item) => item.config.name === "uq_background_jobs_identity",
+        )
+        ?.config.columns.map(indexColumnName),
+    ).toEqual(["family_id", "media_id", "generation", "recipe_id", "job_type"]);
     expect(
-      getTableConfig(derivedAssets).indexes.find(
-        (item) => item.config.name === "uq_derived_assets_identity",
-      )?.config.columns.map((column) => column.name),
-    ).toEqual([
-      "family_id", "media_id", "generation", "recipe_id", "kind",
-    ]);
+      getTableConfig(derivedAssets)
+        .indexes.find(
+          (item) => item.config.name === "uq_derived_assets_identity",
+        )
+        ?.config.columns.map(indexColumnName),
+    ).toEqual(["family_id", "media_id", "generation", "recipe_id", "kind"]);
     expect(
       getTableConfig(backgroundJobs).foreignKeys.map((key) => key.getName()),
     ).toEqual(["fk_background_jobs_media"]);
@@ -150,10 +177,14 @@ describe("Phase 4A Drizzle schema", () => {
       expect(key.reference().columns[0]?.name).toBe("family_id");
     }
     expect(backgroundJobs.jobType.enumValues).toEqual([
-      "MEDIA_PROBE", "IMAGE_DERIVATIVES", "VIDEO_POSTER",
+      "MEDIA_PROBE",
+      "IMAGE_DERIVATIVES",
+      "VIDEO_POSTER",
     ]);
     expect(derivedAssets.kind.enumValues).toEqual([
-      "THUMBNAIL", "PREVIEW", "VIDEO_POSTER",
+      "THUMBNAIL",
+      "PREVIEW",
+      "VIDEO_POSTER",
     ]);
   });
 
@@ -171,8 +202,15 @@ describe("Phase 4A Drizzle schema", () => {
       Object.values(phase4WarningFlags).reduce((mask, flag) => mask | flag, 0n),
     ).toBe(255n);
     const forbidden = [
-      "raw_exif", "raw_xmp", "absolute_path", "client_filename", "source_url",
-      "original_delete", "album_id", "ai_embedding", "transcode_path",
+      "raw_exif",
+      "raw_xmp",
+      "absolute_path",
+      "client_filename",
+      "source_url",
+      "original_delete",
+      "album_id",
+      "ai_embedding",
+      "transcode_path",
     ];
     const columns = [mediaItems, backgroundJobs, derivedAssets].flatMap(
       (table) => getTableConfig(table).columns.map((column) => column.name),

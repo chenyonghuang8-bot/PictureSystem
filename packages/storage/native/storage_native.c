@@ -27,6 +27,34 @@ typedef struct {
   char canonical_path[PATH_MAX];
 } storage_root_t;
 
+#define ORIGINAL_READER_MAGIC UINT64_C(0x4f52454144455231)
+#define ORIGINAL_HANDLE_MAGIC UINT64_C(0x4f48414e444c4531)
+
+typedef struct {
+  uint64_t magic;
+  int root_fd;
+  int originals_fd;
+  dev_t device;
+  ino_t root_inode;
+  ino_t originals_inode;
+  char marker[33];
+  char canonical_path[PATH_MAX];
+} original_reader_t;
+
+typedef struct {
+  uint64_t magic;
+  int file_fd;
+  int parent_fd;
+  int consumed;
+  dev_t device;
+  ino_t inode;
+  off_t size;
+  mode_t mode;
+  struct timespec mtime;
+  char base[NAME_MAX + 1];
+  char root_path[PATH_MAX];
+} original_handle_t;
+
 typedef struct {
   pthread_mutex_t mutex;
   pthread_cond_t condition;
@@ -113,6 +141,28 @@ static storage_root_t *get_root(napi_env env, napi_value value) {
     return NULL;
   }
   return root;
+}
+
+static original_reader_t *get_original_reader(napi_env env, napi_value value) {
+  original_reader_t *reader = NULL;
+  if (napi_get_value_external(env, value, (void **)&reader) != napi_ok ||
+      reader == NULL || reader->magic != ORIGINAL_READER_MAGIC ||
+      reader->root_fd < 0 || reader->originals_fd < 0) {
+    throw_code(env, "ORIGINAL_READER_CLOSED", "Original reader is closed.");
+    return NULL;
+  }
+  return reader;
+}
+
+static original_handle_t *get_original_handle(napi_env env, napi_value value) {
+  original_handle_t *handle = NULL;
+  if (napi_get_value_external(env, value, (void **)&handle) != napi_ok ||
+      handle == NULL || handle->magic != ORIGINAL_HANDLE_MAGIC ||
+      handle->file_fd < 0 || handle->parent_fd < 0 || handle->consumed) {
+    throw_code(env, "ORIGINAL_HANDLE_CLOSED", "Original handle is closed or consumed.");
+    return NULL;
+  }
+  return handle;
 }
 
 static int validate_path_component(const char *component) {
@@ -380,6 +430,24 @@ static int open_validated_readonly(storage_root_t *root, int parent_fd,
          ((status->st_mode & 0777) != 0400 &&
           (status->st_mode & 0777) != 0600) :
          (status->st_mode & 0777) != expected_mode) ||
+      validate_no_extended_acl(fd) != 0) {
+    int saved = errno == 0 ? EPERM : errno;
+    close(fd);
+    errno = saved;
+    return -1;
+  }
+  return fd;
+}
+
+static int open_validated_original_reader(storage_root_t *root, int parent_fd,
+                                          const char *base,
+                                          struct stat *status) {
+  int fd = openat(parent_fd, base,
+                  O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_UNIQUE | O_CLOEXEC);
+  if (fd < 0) return -1;
+  if (fstat(fd, status) != 0 || !S_ISREG(status->st_mode) ||
+      status->st_uid != geteuid() || status->st_nlink != 1 ||
+      status->st_dev != root->device || (status->st_mode & 0777) != 0400 ||
       validate_no_extended_acl(fd) != 0) {
     int saved = errno == 0 ? EPERM : errno;
     close(fd);
@@ -1734,6 +1802,359 @@ static napi_value directory_device(napi_env env, napi_callback_info info) {
   return value;
 }
 
+static int validate_decimal_identifier(const char *value) {
+  if (value[0] < '1' || value[0] > '9') return -1;
+  for (size_t i = 1; value[i] != '\0'; i += 1)
+    if (value[i] < '0' || value[i] > '9') return -1;
+  return 0;
+}
+
+static int validate_sha256_hex(const char *value) {
+  if (strlen(value) != 64) return -1;
+  for (size_t i = 0; i < 64; i += 1)
+    if (!((value[i] >= '0' && value[i] <= '9') ||
+          (value[i] >= 'a' && value[i] <= 'f')))
+      return -1;
+  return 0;
+}
+
+static int digest_open_fd(int fd, off_t size,
+                          unsigned char digest[CC_SHA256_DIGEST_LENGTH]) {
+  CC_SHA256_CTX context;
+  if (size <= 0 || CC_SHA256_Init(&context) != 1) {
+    errno = EINVAL;
+    return -1;
+  }
+  unsigned char buffer[64 * 1024];
+  off_t offset = 0;
+  while (offset < size) {
+    size_t wanted = sizeof(buffer);
+    off_t remaining = size - offset;
+    if (remaining < (off_t)wanted) wanted = (size_t)remaining;
+    ssize_t received = pread(fd, buffer, wanted, offset);
+    if (received < 0) {
+      if (errno == EINTR) continue;
+      return -1;
+    }
+    if (received == 0 ||
+        CC_SHA256_Update(&context, buffer, (CC_LONG)received) != 1) {
+      errno = EIO;
+      return -1;
+    }
+    offset += received;
+  }
+  if (CC_SHA256_Final(digest, &context) != 1) {
+    errno = EIO;
+    return -1;
+  }
+  return 0;
+}
+
+static int reader_identity_is_current(original_reader_t *reader) {
+  int current_root = open_absolute_directory(reader->canonical_path, 0);
+  if (current_root < 0) return -1;
+  struct stat root_status;
+  char marker[33];
+  int failure = 0;
+  if (validate_directory_fd(current_root, &root_status) != 0 ||
+      root_status.st_uid != geteuid() || (root_status.st_mode & 077) != 0 ||
+      root_status.st_dev != reader->device ||
+      root_status.st_ino != reader->root_inode ||
+      read_marker(current_root, marker, sizeof(marker), 0) != 0 ||
+      strcmp(marker, reader->marker) != 0)
+    failure = errno == 0 ? ESTALE : errno;
+  int current_originals = -1;
+  if (failure == 0) {
+    current_originals = secure_open_child_directory(current_root, "originals", 0, 1);
+    struct stat originals_status;
+    if (current_originals < 0 || fstat(current_originals, &originals_status) != 0 ||
+        originals_status.st_dev != reader->device ||
+        originals_status.st_ino != reader->originals_inode)
+      failure = errno == 0 ? ESTALE : errno;
+  }
+  if (current_originals >= 0 && close(current_originals) != 0 && failure == 0)
+    failure = errno;
+  if (close(current_root) != 0 && failure == 0) failure = errno;
+  if (failure != 0) {
+    errno = failure;
+    return -1;
+  }
+  return 0;
+}
+
+static void finalize_original_reader(napi_env env, void *data, void *hint) {
+  (void)env;
+  (void)hint;
+  original_reader_t *reader = (original_reader_t *)data;
+  if (reader == NULL) return;
+  if (reader->originals_fd >= 0) close(reader->originals_fd);
+  if (reader->root_fd >= 0) close(reader->root_fd);
+  reader->magic = 0;
+  free(reader);
+}
+
+static void finalize_original_handle(napi_env env, void *data, void *hint) {
+  (void)env;
+  (void)hint;
+  original_handle_t *handle = (original_handle_t *)data;
+  if (handle == NULL) return;
+  if (handle->file_fd >= 0) close(handle->file_fd);
+  if (handle->parent_fd >= 0) close(handle->parent_fd);
+  handle->magic = 0;
+  free(handle);
+}
+
+static napi_value open_original_reader(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value args[2];
+  napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  char path[PATH_MAX], expected_marker[33];
+  if (argc != 2 || get_string(env, args[0], path, sizeof(path)) != 0 ||
+      get_string(env, args[1], expected_marker, sizeof(expected_marker)) != 0 ||
+      strlen(expected_marker) != 32) {
+    if (argc == 2) throw_code(env, "STORAGE_INVALID_ARGUMENT", "Invalid reader identity.");
+    return NULL;
+  }
+  int root_fd = open_absolute_directory(path, 0);
+  struct stat root_status;
+  char marker[33];
+  int failure = root_fd < 0 ? errno : 0;
+  if (failure == 0 &&
+      (validate_directory_fd(root_fd, &root_status) != 0 ||
+       root_status.st_uid != geteuid() || (root_status.st_mode & 077) != 0 ||
+       read_marker(root_fd, marker, sizeof(marker), 0) != 0 ||
+       strcmp(marker, expected_marker) != 0))
+    failure = errno == 0 ? EPERM : errno;
+  int originals_fd = -1;
+  struct stat originals_status;
+  if (failure == 0) {
+    originals_fd = secure_open_child_directory(root_fd, "originals", 0, 1);
+    if (originals_fd < 0 || fstat(originals_fd, &originals_status) != 0 ||
+        originals_status.st_dev != root_status.st_dev)
+      failure = errno == 0 ? EXDEV : errno;
+  }
+  if (failure != 0) {
+    if (originals_fd >= 0) close(originals_fd);
+    if (root_fd >= 0) close(root_fd);
+    errno = failure;
+    throw_errno(env, "open original reader");
+    return NULL;
+  }
+  original_reader_t *reader = calloc(1, sizeof(*reader));
+  if (reader == NULL) {
+    close(originals_fd);
+    close(root_fd);
+    throw_code(env, "STORAGE_NATIVE_ERROR", "Allocation failed.");
+    return NULL;
+  }
+  reader->magic = ORIGINAL_READER_MAGIC;
+  reader->root_fd = root_fd;
+  reader->originals_fd = originals_fd;
+  reader->device = root_status.st_dev;
+  reader->root_inode = root_status.st_ino;
+  reader->originals_inode = originals_status.st_ino;
+  strcpy(reader->marker, marker);
+  if (fcntl(root_fd, F_GETPATH, reader->canonical_path) != 0) {
+    finalize_original_reader(env, reader, NULL);
+    throw_errno(env, "resolve original reader root");
+    return NULL;
+  }
+  napi_value external, result, marker_value, device_value;
+  napi_create_external(env, reader, finalize_original_reader, NULL, &external);
+  napi_create_object(env, &result);
+  napi_create_string_utf8(env, reader->marker, NAPI_AUTO_LENGTH, &marker_value);
+  char device[32];
+  (void)snprintf(device, sizeof(device), "%llu",
+                 (unsigned long long)reader->device);
+  napi_create_string_utf8(env, device, NAPI_AUTO_LENGTH, &device_value);
+  napi_set_named_property(env, result, "handle", external);
+  napi_set_named_property(env, result, "markerId", marker_value);
+  napi_set_named_property(env, result, "device", device_value);
+  return result;
+}
+
+static napi_value close_original_reader(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value arg;
+  napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
+  original_reader_t *reader = get_original_reader(env, arg);
+  if (reader == NULL) return NULL;
+  int failure = 0;
+  if (close(reader->originals_fd) != 0) failure = errno;
+  reader->originals_fd = -1;
+  if (close(reader->root_fd) != 0 && failure == 0) failure = errno;
+  reader->root_fd = -1;
+  if (failure != 0) {
+    errno = failure;
+    throw_errno(env, "close original reader");
+    return NULL;
+  }
+  return undefined_value(env);
+}
+
+static napi_value open_verified_original(napi_env env, napi_callback_info info) {
+  size_t argc = 4;
+  napi_value args[4];
+  napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  original_reader_t *reader = get_original_reader(env, args[0]);
+  char family[32], sha[65], size_text[32];
+  off_t expected_size;
+  if (reader == NULL || argc != 4 ||
+      get_string(env, args[1], family, sizeof(family)) != 0 ||
+      get_string(env, args[2], sha, sizeof(sha)) != 0 ||
+      get_string(env, args[3], size_text, sizeof(size_text)) != 0)
+    return NULL;
+  if (validate_decimal_identifier(family) != 0 ||
+      validate_sha256_hex(sha) != 0 || parse_offset(size_text, &expected_size) != 0) {
+    throw_code(env, "STORAGE_INVALID_ARGUMENT", "Invalid original identity.");
+    return NULL;
+  }
+  if (reader_identity_is_current(reader) != 0) {
+    throw_errno(env, "verify original reader identity");
+    return NULL;
+  }
+  int family_fd = secure_open_child_directory(reader->originals_fd, family, 0, 1);
+  char first[3] = {sha[0], sha[1], '\0'};
+  char second[3] = {sha[2], sha[3], '\0'};
+  int first_fd = family_fd < 0 ? -1 : secure_open_child_directory(family_fd, first, 0, 1);
+  int parent_fd = first_fd < 0 ? -1 : secure_open_child_directory(first_fd, second, 0, 1);
+  char base[NAME_MAX + 1];
+  int base_length = snprintf(base, sizeof(base), "%s-%s", sha, size_text);
+  struct stat before, after, named;
+  int file_fd = -1;
+  int failure = 0;
+  if (family_fd < 0 || first_fd < 0 || parent_fd < 0 || base_length <= 0 ||
+      (size_t)base_length >= sizeof(base))
+    failure = errno == 0 ? EINVAL : errno;
+  if (failure == 0) {
+    storage_root_t root_view = {.root_fd = reader->root_fd,
+                                .lock_fd = -1,
+                                .device = reader->device,
+                                .inode = reader->root_inode};
+    file_fd = open_validated_original_reader(&root_view, parent_fd, base, &before);
+    if (file_fd < 0) failure = errno;
+  }
+  int flags = 0;
+  unsigned char digest[CC_SHA256_DIGEST_LENGTH], expected_digest[CC_SHA256_DIGEST_LENGTH];
+  if (failure == 0 &&
+      (before.st_size != expected_size ||
+       (flags = fcntl(file_fd, F_GETFL)) < 0 || (flags & O_ACCMODE) != O_RDONLY ||
+       lseek(file_fd, 0, SEEK_CUR) < 0 || digest_open_fd(file_fd, before.st_size, digest) != 0))
+    failure = errno == 0 ? EIO : errno;
+  for (size_t i = 0; failure == 0 && i < sizeof(expected_digest); i += 1) {
+    char byte[3] = {sha[i * 2], sha[i * 2 + 1], '\0'};
+    expected_digest[i] = (unsigned char)strtoul(byte, NULL, 16);
+  }
+  if (failure == 0 && memcmp(digest, expected_digest, sizeof(digest)) != 0)
+    failure = EIO;
+  if (failure == 0 &&
+      (fstat(file_fd, &after) != 0 ||
+       fstatat(parent_fd, base, &named, AT_SYMLINK_NOFOLLOW) != 0 ||
+       !S_ISREG(named.st_mode) || before.st_dev != after.st_dev ||
+       before.st_ino != after.st_ino || before.st_size != after.st_size ||
+       before.st_mtimespec.tv_sec != after.st_mtimespec.tv_sec ||
+       before.st_mtimespec.tv_nsec != after.st_mtimespec.tv_nsec ||
+       named.st_dev != before.st_dev || named.st_ino != before.st_ino ||
+       named.st_size != before.st_size || named.st_uid != before.st_uid ||
+       named.st_nlink != 1 || (named.st_mode & 0777) != 0400 ||
+       lseek(file_fd, 0, SEEK_SET) != 0))
+    failure = errno == 0 ? ESTALE : errno;
+  if (family_fd >= 0 && close(family_fd) != 0 && failure == 0) failure = errno;
+  if (first_fd >= 0 && close(first_fd) != 0 && failure == 0) failure = errno;
+  if (failure != 0) {
+    if (file_fd >= 0) close(file_fd);
+    if (parent_fd >= 0) close(parent_fd);
+    errno = failure;
+    throw_errno(env, "open verified original");
+    return NULL;
+  }
+  original_handle_t *handle = calloc(1, sizeof(*handle));
+  if (handle == NULL) {
+    close(file_fd);
+    close(parent_fd);
+    throw_code(env, "STORAGE_NATIVE_ERROR", "Allocation failed.");
+    return NULL;
+  }
+  handle->magic = ORIGINAL_HANDLE_MAGIC;
+  handle->file_fd = file_fd;
+  handle->parent_fd = parent_fd;
+  handle->device = before.st_dev;
+  handle->inode = before.st_ino;
+  handle->size = before.st_size;
+  handle->mode = before.st_mode & 0777;
+  handle->mtime = before.st_mtimespec;
+  strcpy(handle->base, base);
+  strcpy(handle->root_path, reader->canonical_path);
+  napi_value external;
+  napi_create_external(env, handle, finalize_original_handle, NULL, &external);
+  return external;
+}
+
+static napi_value close_original_handle(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value arg;
+  napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
+  original_handle_t *handle = NULL;
+  if (napi_get_value_external(env, arg, (void **)&handle) != napi_ok ||
+      handle == NULL || handle->magic != ORIGINAL_HANDLE_MAGIC) {
+    throw_code(env, "ORIGINAL_HANDLE_INVALID", "Invalid original handle.");
+    return NULL;
+  }
+  int failure = 0;
+  if (handle->file_fd >= 0 && close(handle->file_fd) != 0) failure = errno;
+  handle->file_fd = -1;
+  if (handle->parent_fd >= 0 && close(handle->parent_fd) != 0 && failure == 0)
+    failure = errno;
+  handle->parent_fd = -1;
+  handle->consumed = 1;
+  if (failure != 0) {
+    errno = failure;
+    throw_errno(env, "close original handle");
+    return NULL;
+  }
+  return undefined_value(env);
+}
+
+static napi_value consume_original_handle(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value arg;
+  napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
+  original_handle_t *handle = get_original_handle(env, arg);
+  if (handle == NULL) return NULL;
+  struct stat current, named;
+  if (fstat(handle->file_fd, &current) != 0 ||
+      fstatat(handle->parent_fd, handle->base, &named, AT_SYMLINK_NOFOLLOW) != 0 ||
+      current.st_dev != handle->device || current.st_ino != handle->inode ||
+      current.st_size != handle->size || (current.st_mode & 0777) != handle->mode ||
+      current.st_mtimespec.tv_sec != handle->mtime.tv_sec ||
+      current.st_mtimespec.tv_nsec != handle->mtime.tv_nsec ||
+      named.st_dev != handle->device || named.st_ino != handle->inode ||
+      named.st_nlink != 1 || (named.st_mode & 0777) != 0400 ||
+      lseek(handle->file_fd, 0, SEEK_SET) != 0) {
+    throw_errno(env, "revalidate original handoff");
+    return NULL;
+  }
+  int transferred = handle->file_fd;
+  handle->file_fd = -1;
+  handle->consumed = 1;
+  if (close(handle->parent_fd) != 0) {
+    int saved = errno;
+    close(transferred);
+    handle->parent_fd = -1;
+    errno = saved;
+    throw_errno(env, "consume original handle");
+    return NULL;
+  }
+  handle->parent_fd = -1;
+  napi_value result, fd_value, root_value;
+  napi_create_object(env, &result);
+  napi_create_int32(env, transferred, &fd_value);
+  napi_create_string_utf8(env, handle->root_path, NAPI_AUTO_LENGTH, &root_value);
+  napi_set_named_property(env, result, "fd", fd_value);
+  napi_set_named_property(env, result, "rootPath", root_value);
+  return result;
+}
+
 static napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
       {"openRoot", NULL, open_root, NULL, NULL, NULL, napi_default, NULL},
@@ -1764,6 +2185,16 @@ static napi_value init(napi_env env, napi_value exports) {
        napi_default, NULL},
       {"directoryDevice", NULL, directory_device, NULL, NULL, NULL,
        napi_default, NULL},
+      {"openOriginalReader", NULL, open_original_reader, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"closeOriginalReader", NULL, close_original_reader, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"openVerifiedOriginal", NULL, open_verified_original, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"closeOriginalHandle", NULL, close_original_handle, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"consumeOriginalHandle", NULL, consume_original_handle, NULL, NULL,
+       NULL, napi_default, NULL},
   };
   napi_define_properties(env, exports,
                          sizeof(properties) / sizeof(properties[0]), properties);

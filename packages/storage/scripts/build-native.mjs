@@ -36,3 +36,52 @@ if (result.status !== 0) {
     `Native storage build failed (${result.status ?? "signal"}): ${result.stderr.trim()}`,
   );
 }
+
+for (const source of ["original_probe_supervisor", "original_probe_child"]) {
+  const executable = spawnSync(
+    "clang",
+    [
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-O2",
+      join(packageRoot, `native/${source}.c`),
+      "-o",
+      join(outputDirectory, source),
+    ],
+    { encoding: "utf8" },
+  );
+  if (executable.status !== 0) {
+    throw new Error(
+      `Native ${source} build failed (${executable.status ?? "signal"}): ${executable.stderr.trim()}`,
+    );
+  }
+}
+
+const metadataParser = spawnSync(
+  "clang",
+  [
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    "-fobjc-arc",
+    join(packageRoot, "native/metadata_parser_child.m"),
+    "-framework",
+    "Foundation",
+    "-framework",
+    "CoreGraphics",
+    "-framework",
+    "ImageIO",
+    "-o",
+    join(outputDirectory, "metadata_parser_child"),
+  ],
+  { encoding: "utf8" },
+);
+
+if (metadataParser.status !== 0) {
+  throw new Error(
+    `Native metadata parser build failed (${metadataParser.status ?? "signal"}): ${metadataParser.stderr.trim()}`,
+  );
+}

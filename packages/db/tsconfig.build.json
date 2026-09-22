@@ -6,6 +6,8 @@
     "outDir": "dist",
     "rootDir": "src",
     "paths": {
+      "@family-album/contracts": ["../contracts/dist/index.d.ts"],
+      "@family-album/media": ["../media/dist/index.d.ts"],
       "@family-album/permissions": ["../permissions/dist/index.d.ts"]
     }
   },

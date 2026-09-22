@@ -9,6 +9,9 @@ export * from "./phase1c-repository.js";
 export * from "./album-repository.js";
 export * from "./transaction.js";
 export * from "./upload-repository.js";
+export * from "./media-repository.js";
+export * from "./job-repository.js";
+export * from "./metadata-repository.js";
 
 export const databaseConnectionDefaults = Object.freeze({
   connectionLimit: 5,

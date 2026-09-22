@@ -34,3 +34,14 @@ FK enforcement, exact Phase 1/2 journal and schema readiness, and no existing
 Phase 3 tables. Do not import `database/schema.sql`, and do not run this
 migration in Production without a separate Production review and explicit
 approval.
+
+`0003_phase_04_media_processing` is the Phase 4A media-processing foundation
+migration. It creates only `media_items`, `background_jobs`, and
+`derived_assets`, and adds the reviewed source-receipt unique key to
+`upload_sessions`. It does not implement workers, metadata extraction,
+derivative generation, APIs, or Phase 5 tables. Before execution, run
+`pnpm --filter @family-album/db db:preflight:phase-04`. The preflight requires
+`family_album_dev`, MySQL 9.7.2, a non-root account, Native FK enforcement,
+the exact Phase 1-3 migration journal and schema, and no existing Phase 4
+tables. Do not import `database/schema.sql`, and do not execute this migration
+in Production without a separate Production review and explicit approval.

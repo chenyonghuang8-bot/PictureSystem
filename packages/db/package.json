@@ -25,6 +25,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@family-album/contracts": "workspace:*",
+    "@family-album/media": "workspace:*",
     "@family-album/permissions": "workspace:*",
     "drizzle-orm": "0.45.2",
     "mysql2": "3.24.4"

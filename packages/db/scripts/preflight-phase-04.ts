@@ -114,7 +114,9 @@ try {
       ORDER BY TABLE_NAME`,
   );
   const existing = tableRows.map((row) => row.tableName);
-  const unexpected = createdTables.filter((table) => existing.includes(table));
+  const unexpected = createdTables.filter(
+    (table): table is string => table !== undefined && existing.includes(table),
+  );
   if (unexpected.length > 0) {
     throw new Error(`Phase 4 tables already exist: ${unexpected.join(", ")}`);
   }

@@ -3,8 +3,16 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@family-album/storage": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

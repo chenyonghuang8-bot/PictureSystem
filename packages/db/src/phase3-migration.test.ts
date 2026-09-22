@@ -143,7 +143,7 @@ describe("Phase 3B versioned migration", () => {
         columnsTo: ["family_id", "id"],
       },
     );
-    expect(journal.entries.at(-1)).toEqual({
+    expect(journal.entries.find((entry) => entry.idx === 2)).toEqual({
       idx: 2,
       version: "5",
       when: expect.any(Number),

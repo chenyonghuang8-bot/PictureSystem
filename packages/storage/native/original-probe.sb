@@ -1,0 +1,16 @@
+(version 1)
+
+; Apple system.sb supplies the minimum dyld/libmalloc/runtime rules used by
+; native sandboxed processes. No application or user-home path is included.
+(deny default)
+(import "system.sb")
+
+(allow process-exec (literal (param "CHILD")))
+(allow file-read* (literal (param "CHILD")))
+(allow file-read-metadata (path-ancestors (param "CHILD")))
+
+; Override any common-profile convenience permissions which are outside this
+; parser capability.
+(deny network*)
+(deny file-write*)
+(deny process-fork)

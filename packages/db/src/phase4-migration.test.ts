@@ -19,24 +19,36 @@ const migration = readFileSync(
 );
 const snapshot = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL("../drizzle/meta/0003_snapshot.json", import.meta.url)),
+    fileURLToPath(
+      new URL("../drizzle/meta/0003_snapshot.json", import.meta.url),
+    ),
     "utf8",
   ),
 ) as {
   id: string;
   prevId: string;
-  tables: Record<string, {
-    columns: Record<string, { type: string; notNull: boolean }>;
-    indexes: Record<string, { columns: string[]; isUnique: boolean }>;
-    foreignKeys: Record<string, {
-      columnsFrom: string[]; columnsTo: string[]; tableTo: string;
-    }>;
-    checkConstraint: Record<string, { value: string }>;
-  }>;
+  tables: Record<
+    string,
+    {
+      columns: Record<string, { type: string; notNull: boolean }>;
+      indexes: Record<string, { columns: string[]; isUnique: boolean }>;
+      foreignKeys: Record<
+        string,
+        {
+          columnsFrom: string[];
+          columnsTo: string[];
+          tableTo: string;
+        }
+      >;
+      checkConstraint: Record<string, { value: string }>;
+    }
+  >;
 };
 const previous = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL("../drizzle/meta/0002_snapshot.json", import.meta.url)),
+    fileURLToPath(
+      new URL("../drizzle/meta/0002_snapshot.json", import.meta.url),
+    ),
     "utf8",
   ),
 ) as { id: string; tables: Record<string, unknown> };
@@ -50,14 +62,19 @@ const journal = JSON.parse(
 describe("Phase 4A versioned migration", () => {
   it("creates only the three reviewed InnoDB utf8mb4 tables and one source index", () => {
     expect(
-      [...migration.matchAll(/CREATE TABLE `([^`]+)`/g)].map((match) => match[1]),
+      [...migration.matchAll(/CREATE TABLE `([^`]+)`/g)].map(
+        (match) => match[1],
+      ),
     ).toEqual(["background_jobs", "derived_assets", "media_items"]);
     expect(migration.match(/ENGINE=InnoDB/g)).toHaveLength(3);
     expect(migration.match(/DEFAULT CHARACTER SET=utf8mb4/g)).toHaveLength(3);
     expect(migration.match(/COLLATE=utf8mb4_0900_ai_ci/g)).toHaveLength(3);
     expect(
-      [...migration.matchAll(/ALTER TABLE `([^`]+)` ADD CONSTRAINT `uq_[^`]+`/g)]
-        .map((match) => match[1]),
+      [
+        ...migration.matchAll(
+          /ALTER TABLE `([^`]+)` ADD CONSTRAINT `uq_[^`]+`/g,
+        ),
+      ].map((match) => match[1]),
     ).toEqual(["upload_sessions"]);
     expect(migration).toContain(
       "ALTER TABLE `upload_sessions` ADD CONSTRAINT `uq_upload_sessions_family_id_object` UNIQUE(`family_id`,`id`,`storage_object_id`)",
@@ -92,13 +109,20 @@ describe("Phase 4A versioned migration", () => {
   it("encodes the approved GPS, captured-time, lease, retry and READY prerequisites", () => {
     expect(migration.match(/ CHECK\(/g)).toHaveLength(31);
     for (const required of [
-      "chk_media_items_gps", "chk_media_items_capture",
-      "chk_media_items_timeline", "chk_media_items_raw_dimensions",
-      "chk_media_items_ready_metadata", "chk_media_items_warning_flags",
-      "chk_derived_assets_reservation", "chk_derived_assets_bytes_digest",
-      "chk_derived_assets_published_payload", "chk_derived_assets_ready",
-      "chk_background_jobs_attempts", "chk_background_jobs_lease",
-      "chk_background_jobs_terminal", "chk_background_jobs_failure",
+      "chk_media_items_gps",
+      "chk_media_items_capture",
+      "chk_media_items_timeline",
+      "chk_media_items_raw_dimensions",
+      "chk_media_items_ready_metadata",
+      "chk_media_items_warning_flags",
+      "chk_derived_assets_reservation",
+      "chk_derived_assets_bytes_digest",
+      "chk_derived_assets_published_payload",
+      "chk_derived_assets_ready",
+      "chk_background_jobs_attempts",
+      "chk_background_jobs_lease",
+      "chk_background_jobs_terminal",
+      "chk_background_jobs_failure",
     ]) {
       expect(migration).toContain(`CONSTRAINT \`${required}\` CHECK`);
     }
@@ -107,8 +131,12 @@ describe("Phase 4A versioned migration", () => {
     expect(migration).toContain("`duration_ms` bigint unsigned");
     expect(migration).toContain("`worker_id` binary(16)");
     expect(migration).toContain("`sha256` binary(32)");
-    expect(migration).toContain("`attempts` tinyint unsigned NOT NULL DEFAULT 0");
-    expect(migration).toContain("`lease_epoch` bigint unsigned NOT NULL DEFAULT 0");
+    expect(migration).toContain(
+      "`attempts` tinyint unsigned NOT NULL DEFAULT 0",
+    );
+    expect(migration).toContain(
+      "`lease_epoch` bigint unsigned NOT NULL DEFAULT 0",
+    );
   });
 
   it("keeps schema, SQL, snapshot and ordered journal in exact agreement", () => {
@@ -129,14 +157,18 @@ describe("Phase 4A versioned migration", () => {
         config.checks.map((item) => item.name).sort(),
       );
       for (const [name, check] of Object.entries(snap.checkConstraint)) {
-        expect(migration).toContain(`CONSTRAINT \`${name}\` CHECK(${check.value})`);
+        expect(migration).toContain(
+          `CONSTRAINT \`${name}\` CHECK(${check.value})`,
+        );
       }
     }
-    expect(snapshot.tables.upload_sessions!.indexes.uq_upload_sessions_family_id_object)
-      .toMatchObject({
-        columns: ["family_id", "id", "storage_object_id"],
-        isUnique: true,
-      });
+    expect(
+      snapshot.tables.upload_sessions!.indexes
+        .uq_upload_sessions_family_id_object,
+    ).toMatchObject({
+      columns: ["family_id", "id", "storage_object_id"],
+      isUnique: true,
+    });
     expect(getTableConfig(uploadSessions).indexes).toHaveLength(6);
     expect(snapshot.prevId).toBe(previous.id);
     expect(journal.entries).toHaveLength(4);
