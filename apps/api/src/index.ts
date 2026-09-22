@@ -11,6 +11,7 @@ import {
 } from "@family-album/db";
 import { resolve } from "node:path";
 import {
+  CapacityGate,
   probeStorageCapability,
   type StorageCapability,
 } from "@family-album/storage";
@@ -40,6 +41,7 @@ let storageCapability: StorageCapability = {
   state: "UNAVAILABLE",
   reason: "STORAGE_NOT_CONFIGURED",
 };
+let sharedCapacityGate: CapacityGate | undefined;
 const uploadRepository = new MySqlUploadRepository(database.pool);
 const uploadMutex = new UploadMutex();
 let startupRecoveryReport: ReconciliationResult | null = null;
@@ -61,11 +63,29 @@ if (env.DEV_STORAGE_MARKER_ID) {
       storageCapability = assessed.capability;
       startupRecoveryReport = assessed.report;
     }
+    if (storageCapability.state === "READ_WRITE") {
+      try {
+        sharedCapacityGate = CapacityGate.open({
+          mediaRoot: storageCapability.root.canonicalPath,
+          expectedMarkerId: storageCapability.root.markerId,
+        });
+      } catch {
+        storageCapability = {
+          state: "READ_ONLY",
+          root: storageCapability.root,
+          reason: "CAPACITY_GATE_UNAVAILABLE",
+        };
+      }
+    }
   } finally {
     connection.release();
   }
 }
-const uploadService = new UploadService(uploadRepository, storageCapability);
+const uploadService = new UploadService(
+  uploadRepository,
+  storageCapability,
+  sharedCapacityGate,
+);
 const app = createApp({
   authService,
   phase1cService,

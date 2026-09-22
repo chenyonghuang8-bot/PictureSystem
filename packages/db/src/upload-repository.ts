@@ -12,24 +12,23 @@ import {
   readServerTime,
   runCheckedTransaction,
 } from "./connection.js";
+import {
+  readDerivedCapacityInventory,
+  readUploadCapacityInventory,
+  RESERVED_FUTURE_SQL,
+  RETAINED_STAGING_SQL,
+} from "./capacity-inventory.js";
+import { runCapacityTransaction } from "./capacity-transaction.js";
 import { assertMigrationReadiness } from "./migration-readiness.js";
 import type { Phase1CActor } from "./phase1c-repository.js";
+import { CommitOutcomeUnknownError } from "./transaction.js";
 
 const IDLE_TIMEOUT_MS = 7 * 24 * 60 * 60_000;
 const UPLOAD_LIFETIME_MS = 7 * 24 * 60 * 60_000;
 const ACTIVE_STATES = ["CREATED", "UPLOADING"] as const;
-
-// An active receipt reserves the whole declared upload exactly once: the
-// committed prefix is retained staging, the remainder is future write space.
-// A non-active receipt with unconfirmed cleanup still reserves a conservative
-// full staging copy. Storage objects account for canonical originals separately.
-const RESERVED_FUTURE_SQL = `CASE WHEN state IN ('CREATED','UPLOADING')
-  THEN declared_size - committed_offset ELSE 0 END`;
-const RETAINED_STAGING_SQL = `CASE
-  WHEN state IN ('CREATED','UPLOADING') THEN committed_offset
-  WHEN state IN ('FINALIZING','COMPLETE','FAILED','ABORTED','EXPIRED')
-    AND staging_cleaned_at IS NULL THEN declared_size
-  ELSE 0 END`;
+const GLOBAL_ACTIVE_DECLARED_BUDGET = 128n * 1_024n ** 3n;
+const SCRATCH_RESERVE = 64n * 1_024n ** 2n;
+const MIN_FREE_RESERVE = 10n * 1_024n ** 3n;
 
 export const uploadFailureCodes = [
   "STAGING_CREATE_FAILED",
@@ -70,6 +69,15 @@ export type UploadRecord = {
   terminalAt?: Date | null;
 };
 
+export type CreateUploadInput = {
+  actor: Phase1CActor;
+  familyId: string;
+  publicId: Buffer;
+  originalFilename: string;
+  reportedMime: string | null;
+  declaredSize: bigint;
+};
+
 export class UploadRepositoryError extends Error {
   constructor(
     readonly reason:
@@ -79,6 +87,7 @@ export class UploadRepositoryError extends Error {
       | "UPLOAD_STATE_CONFLICT"
       | "UPLOAD_EXPIRED"
       | "QUOTA_EXCEEDED"
+      | "CAPACITY_EXCEEDED"
       | "CONFLICT",
     readonly currentOffset?: bigint,
   ) {
@@ -329,104 +338,148 @@ export class MySqlUploadRepository {
   async admissionUsage() {
     const connection = await acquireCheckedConnection(this.pool);
     try {
-      const [rows] = await connection.query<RowDataPacket[]>(
-        `SELECT
-           CAST(COALESCE(SUM(${RESERVED_FUTURE_SQL}),0) AS CHAR) AS reservedFutureBytes,
-           CAST(COALESCE(SUM(${RETAINED_STAGING_SQL}),0) AS CHAR) AS retainedStagingBytes,
-           CAST((SELECT COALESCE(SUM(byte_size),0) FROM storage_objects) AS CHAR) AS storedBytes
-         FROM upload_sessions`,
-      );
-      const reservedFutureBytes = BigInt(
-        String(rows[0]?.reservedFutureBytes ?? "0"),
-      );
-      const retainedStagingBytes = BigInt(
-        String(rows[0]?.retainedStagingBytes ?? "0"),
-      );
-      return {
-        reservedFutureBytes,
-        retainedStagingBytes,
-        outstanding: reservedFutureBytes + retainedStagingBytes,
-        stored: BigInt(String(rows[0]?.storedBytes ?? "0")),
-      };
+      return await readUploadCapacityInventory(connection);
     } finally {
       connection.release();
     }
   }
 
-  async createUpload(input: {
-    actor: Phase1CActor;
-    familyId: string;
-    publicId: Buffer;
-    originalFilename: string;
-    reportedMime: string | null;
-    declaredSize: bigint;
-  }): Promise<UploadRecord> {
-    return runCheckedTransaction(this.pool, async (connection) => {
-      const memberId = await locateMemberId(
-        connection,
-        input.familyId,
-        input.actor.userId,
-      );
-      if (!memberId) throw new UploadRepositoryError("NOT_FOUND");
-      await lockFamily(connection, input.familyId);
-      const auth = await lockActor(
-        connection,
-        input.familyId,
-        memberId,
-        input.actor,
-      );
-      const now = await readServerTime(connection);
-      assertActor(auth, input.actor, now);
+  async createUpload(input: CreateUploadInput): Promise<UploadRecord> {
+    return runCheckedTransaction(this.pool, (connection) =>
+      this.createUploadInTransaction(connection, input),
+    );
+  }
 
-      const [counts] = await connection.query<RowDataPacket[]>(
-        `SELECT
+  /**
+   * Shared-barrier variant used only when an API coordinator already owns the
+   * root-local capacity gate. The final statfs callback is invoked after the
+   * session barrier, current SQL inventory and authorization locks.
+   */
+  async createUploadCapacityAdmitted(
+    input: CreateUploadInput,
+    deadline: number,
+    finalCapacitySnapshot: () => {
+      totalBytes: bigint;
+      availableBytes: bigint;
+      derivedInventoryComplete: boolean;
+    },
+  ): Promise<UploadRecord> {
+    const outcome = await runCapacityTransaction(
+      this.pool,
+      deadline,
+      (connection) =>
+        this.createUploadInTransaction(connection, input, async () => {
+          const upload = await readUploadCapacityInventory(connection);
+          const derived = await readDerivedCapacityInventory(connection);
+          if (
+            upload.outstanding + input.declaredSize >
+            GLOBAL_ACTIVE_DECLARED_BUDGET
+          ) {
+            throw new UploadRepositoryError("QUOTA_EXCEEDED");
+          }
+          const physical = finalCapacitySnapshot();
+          if (
+            !physical.derivedInventoryComplete ||
+            physical.totalBytes <= 0n ||
+            physical.availableBytes < 0n
+          ) {
+            throw new UploadRepositoryError("CAPACITY_EXCEEDED");
+          }
+          const reserve =
+            physical.totalBytes / 10n > MIN_FREE_RESERVE
+              ? physical.totalBytes / 10n
+              : MIN_FREE_RESERVE;
+          if (
+            physical.availableBytes <
+            reserve +
+              SCRATCH_RESERVE +
+              upload.reservedFutureBytes +
+              derived.unsettled +
+              input.declaredSize
+          ) {
+            throw new UploadRepositoryError("CAPACITY_EXCEEDED");
+          }
+        }),
+    );
+    if (outcome.transaction === "COMMITTED" && !outcome.deadlineExceeded) {
+      return outcome.value;
+    }
+    if (outcome.transaction === "ROLLED_BACK") {
+      throw outcome.error;
+    }
+    throw new CommitOutcomeUnknownError();
+  }
+
+  private async createUploadInTransaction(
+    connection: PoolConnection,
+    input: CreateUploadInput,
+    beforeInsert?: () => Promise<void>,
+  ): Promise<UploadRecord> {
+    const memberId = await locateMemberId(
+      connection,
+      input.familyId,
+      input.actor.userId,
+    );
+    if (!memberId) throw new UploadRepositoryError("NOT_FOUND");
+    await lockFamily(connection, input.familyId);
+    const auth = await lockActor(
+      connection,
+      input.familyId,
+      memberId,
+      input.actor,
+    );
+    const now = await readServerTime(connection);
+    assertActor(auth, input.actor, now);
+
+    const [counts] = await connection.query<RowDataPacket[]>(
+      `SELECT
            SUM(created_by_member_id = ? AND state IN ('CREATED','UPLOADING')) AS memberActive,
            SUM(state IN ('CREATED','UPLOADING')) AS familyActive
          FROM upload_sessions WHERE family_id = ?`,
-        [memberId, input.familyId],
-      );
-      if (
-        Number(counts[0]?.memberActive ?? 0) >= 4 ||
-        Number(counts[0]?.familyActive ?? 0) >= 16
-      ) {
-        throw new UploadRepositoryError("QUOTA_EXCEEDED");
-      }
-      const [logical] = await connection.query<RowDataPacket[]>(
-        `SELECT CAST(
+      [memberId, input.familyId],
+    );
+    if (
+      Number(counts[0]?.memberActive ?? 0) >= 4 ||
+      Number(counts[0]?.familyActive ?? 0) >= 16
+    ) {
+      throw new UploadRepositoryError("QUOTA_EXCEEDED");
+    }
+    const [logical] = await connection.query<RowDataPacket[]>(
+      `SELECT CAST(
            COALESCE((SELECT SUM(byte_size) FROM storage_objects WHERE family_id = ?),0) +
            COALESCE((SELECT SUM(${RESERVED_FUTURE_SQL} + ${RETAINED_STAGING_SQL})
              FROM upload_sessions WHERE family_id = ?),0)
            AS CHAR) AS bytes`,
-        [input.familyId, input.familyId],
-      );
-      if (
-        BigInt(String(logical[0]?.bytes ?? "0")) + input.declaredSize >
-        256n * 1024n ** 3n
-      ) {
-        throw new UploadRepositoryError("QUOTA_EXCEEDED");
-      }
+      [input.familyId, input.familyId],
+    );
+    if (
+      BigInt(String(logical[0]?.bytes ?? "0")) + input.declaredSize >
+      256n * 1024n ** 3n
+    ) {
+      throw new UploadRepositoryError("QUOTA_EXCEEDED");
+    }
 
-      const expiresAt = new Date(now.getTime() + UPLOAD_LIFETIME_MS);
-      await connection.execute<ResultSetHeader>(
-        `INSERT INTO upload_sessions
+    await beforeInsert?.();
+    const expiresAt = new Date(now.getTime() + UPLOAD_LIFETIME_MS);
+    await connection.execute<ResultSetHeader>(
+      `INSERT INTO upload_sessions
           (public_id, family_id, created_by_member_id, original_filename,
            reported_mime, declared_size, committed_offset, state, expires_at,
            created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, 0, 'CREATED', ?, ?, ?)`,
-        [
-          input.publicId,
-          input.familyId,
-          memberId,
-          input.originalFilename,
-          input.reportedMime,
-          input.declaredSize.toString(),
-          expiresAt,
-          now,
-          now,
-        ],
-      );
-      return this.readLockedByPublicId(connection, input.publicId);
-    });
+      [
+        input.publicId,
+        input.familyId,
+        memberId,
+        input.originalFilename,
+        input.reportedMime,
+        input.declaredSize.toString(),
+        expiresAt,
+        now,
+        now,
+      ],
+    );
+    return this.readLockedByPublicId(connection, input.publicId);
   }
 
   async inspect(input: {

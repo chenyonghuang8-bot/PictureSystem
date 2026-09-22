@@ -17,6 +17,7 @@ export type {
 type NativeRoot = object;
 type NativeOriginalReader = object;
 type NativeOriginalHandle = object;
+type NativeCapacityGate = object;
 type NativeOpenResult = {
   handle: NativeRoot;
   canonicalPath: string;
@@ -42,6 +43,16 @@ export type ControlledDirectoryEntry = {
   mode: number;
 };
 type NativeBinding = {
+  provisionCapacityGate(handle: NativeRoot): void;
+  openCapacityGate(path: string, expectedMarkerId: string): NativeCapacityGate;
+  tryAcquireCapacityGate(handle: NativeCapacityGate): boolean;
+  releaseCapacityGate(handle: NativeCapacityGate): void;
+  capacityGateSnapshot(handle: NativeCapacityGate): {
+    totalBytes: string;
+    availableBytes: string;
+    derivedInventoryComplete: boolean;
+  };
+  closeCapacityGate(handle: NativeCapacityGate): void;
   openRoot(path: string, initialize: boolean): NativeOpenResult;
   closeRoot(handle: NativeRoot): void;
   ensureDirectory(handle: NativeRoot, relativePath: string): void;
@@ -744,6 +755,19 @@ export class StorageRoot {
     return new StorageRoot(result, native);
   }
 
+  /** Explicit DEV provisioning only; normal API/worker startup never creates this lock. */
+  provisionSharedCapacityLockForDev() {
+    if (process.env.NODE_ENV === "production") {
+      throw new StorageSafetyError("CAPACITY_PROVISION_DEV_ONLY");
+    }
+    this.assertIdentity();
+    try {
+      this.#native.provisionCapacityGate(this.#requiredHandle());
+    } catch (error) {
+      throw safetyError("CAPACITY_PROVISION_FAILED", error);
+    }
+  }
+
   createUploadPayload(
     familyId: string,
     uploadId: string,
@@ -1040,6 +1064,170 @@ export class StorageRoot {
   #requiredHandle() {
     if (this.#handle === null) throw new StorageSafetyError("STORAGE_CLOSED");
     return this.#handle;
+  }
+}
+
+const capacityQueues = new Map<string, Promise<void>>();
+
+/** One stable root/marker-bound OS lock shared by upload admission and derived reservations. */
+export class CapacityGate {
+  readonly #native: NativeBinding;
+  readonly #key: string;
+  #handle: NativeCapacityGate | null;
+  #holding = false;
+  #pending = 0;
+
+  private constructor(
+    handle: NativeCapacityGate,
+    native: NativeBinding,
+    key: string,
+  ) {
+    this.#handle = handle;
+    this.#native = native;
+    this.#key = key;
+  }
+
+  static open(
+    input: { mediaRoot: unknown; expectedMarkerId: string },
+    native: NativeBinding = loadBinding(),
+  ) {
+    const root = canonicalizeMediaRoot(input.mediaRoot);
+    if (!/^[0-9a-f]{32}$/u.test(input.expectedMarkerId)) {
+      throw new StorageSafetyError("CAPACITY_MARKER_INVALID");
+    }
+    try {
+      const handle = native.openCapacityGate(root, input.expectedMarkerId);
+      return new CapacityGate(
+        handle,
+        native,
+        `${root}:${input.expectedMarkerId}`,
+      );
+    } catch (error) {
+      throw safetyError("CAPACITY_GATE_UNAVAILABLE", error);
+    }
+  }
+
+  /** Bounded asynchronous wait. No DB lock may be held while entering here. */
+  snapshotLocked() {
+    if (!this.#holding || this.#handle === null) {
+      throw new StorageSafetyError("CAPACITY_LOCK_REQUIRED");
+    }
+    const snapshot = this.#native.capacityGateSnapshot(this.#handle);
+    return {
+      totalBytes: BigInt(snapshot.totalBytes),
+      availableBytes: BigInt(snapshot.availableBytes),
+      derivedInventoryComplete: snapshot.derivedInventoryComplete,
+    };
+  }
+
+  async withLock<T>(
+    operation: (
+      capacity: {
+        totalBytes: bigint;
+        availableBytes: bigint;
+      },
+      deadline: number,
+    ) => Promise<T>,
+  ): Promise<T> {
+    return this.#withLock(operation, true);
+  }
+
+  /**
+   * Admission owns its COMMIT classification. A late confirmed COMMIT must
+   * reach the coordinator instead of being replaced by a generic timeout.
+   * The snapshot callback must be invoked only after the DB capacity barrier
+   * and current reservation inventory have been acquired/read.
+   */
+  async withAdmissionLock<T>(
+    operation: (
+      deadline: number,
+      snapshot: () => {
+        totalBytes: bigint;
+        availableBytes: bigint;
+        derivedInventoryComplete: boolean;
+      },
+    ) => Promise<T>,
+  ): Promise<T> {
+    return this.#withLock(
+      async (_initial, deadline) =>
+        operation(deadline, () => this.snapshotLocked()),
+      false,
+    );
+  }
+
+  async #withLock<T>(
+    operation: (
+      capacity: { totalBytes: bigint; availableBytes: bigint },
+      deadline: number,
+    ) => Promise<T>,
+    enforceCompletionDeadline: boolean,
+  ): Promise<T> {
+    const handle = this.#handle;
+    if (handle === null) throw new StorageSafetyError("CAPACITY_GATE_CLOSED");
+    const deadline = performance.now() + 2_000;
+    this.#pending += 1;
+    const previous = capacityQueues.get(this.#key) ?? Promise.resolve();
+    let releaseLocal!: () => void;
+    const local = new Promise<void>((resolveLocal) => {
+      releaseLocal = resolveLocal;
+    });
+    const tail = previous.then(() => local);
+    capacityQueues.set(this.#key, tail);
+    try {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await new Promise<void>((resolveWait, rejectWait) => {
+          timer = setTimeout(
+            () => rejectWait(new StorageSafetyError("CAPACITY_LOCK_TIMEOUT")),
+            Math.max(0, deadline - performance.now()),
+          );
+          void previous.then(resolveWait, rejectWait);
+        });
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+      if (performance.now() >= deadline) {
+        throw new StorageSafetyError("CAPACITY_LOCK_TIMEOUT");
+      }
+      while (!this.#native.tryAcquireCapacityGate(handle)) {
+        if (performance.now() >= deadline) {
+          throw new StorageSafetyError("CAPACITY_LOCK_TIMEOUT");
+        }
+        await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, 10));
+      }
+      this.#holding = true;
+      try {
+        const result = await operation(this.snapshotLocked(), deadline);
+        if (enforceCompletionDeadline && performance.now() >= deadline) {
+          throw new StorageSafetyError("CAPACITY_ADMISSION_TIMEOUT");
+        }
+        return result;
+      } finally {
+        this.#native.releaseCapacityGate(handle);
+        this.#holding = false;
+      }
+    } catch (error) {
+      throw safetyError("CAPACITY_GATE_FAILED", error);
+    } finally {
+      this.#pending -= 1;
+      releaseLocal();
+      if (capacityQueues.get(this.#key) === tail)
+        capacityQueues.delete(this.#key);
+    }
+  }
+
+  close() {
+    if (this.#pending !== 0 || this.#holding) {
+      throw new StorageSafetyError("CAPACITY_LOCK_HELD");
+    }
+    const handle = this.#handle;
+    if (handle === null) return;
+    this.#handle = null;
+    try {
+      this.#native.closeCapacityGate(handle);
+    } catch (error) {
+      throw safetyError("CAPACITY_GATE_CLOSE_FAILED", error);
+    }
   }
 }
 

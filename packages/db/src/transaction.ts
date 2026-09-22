@@ -24,6 +24,14 @@ export type TransactionOptions = {
   destroy?: (connection: PoolConnection) => void | Promise<void>;
   random?: () => number;
   sleep?: (milliseconds: number) => Promise<void>;
+  /** Optional admission fence; a rejection here is still pre-COMMIT. */
+  beforeCommit?: (connection: PoolConnection) => void | Promise<void>;
+  /** Cancellation is checked before every new SQL phase and retry. */
+  signal?: AbortSignal;
+  /** Explicit DB-boundary fault seam; production uses connection.commit(). */
+  commit?: (connection: PoolConnection) => Promise<void>;
+  /** Explicit DB-boundary rollback fault seam; production uses rollback(). */
+  rollback?: (connection: PoolConnection) => Promise<void>;
 };
 
 const DEADLOCK_RETRY_RANGES = [
@@ -46,16 +54,22 @@ export async function runTransaction<T>(
       new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    options.signal?.throwIfAborted();
     const connection = await acquire();
     let transactionStarted = false;
     let phase: "BEGIN" | "OPERATION" | "COMMIT" = "BEGIN";
     try {
+      options.signal?.throwIfAborted();
       await connection.beginTransaction();
       transactionStarted = true;
       phase = "OPERATION";
+      options.signal?.throwIfAborted();
       const value = await operation(connection);
+      options.signal?.throwIfAborted();
+      await options.beforeCommit?.(connection);
+      options.signal?.throwIfAborted();
       phase = "COMMIT";
-      await connection.commit();
+      await (options.commit?.(connection) ?? connection.commit());
       transactionStarted = false;
       await release(connection);
       return value;
@@ -67,7 +81,7 @@ export async function runTransaction<T>(
 
       if (transactionStarted) {
         try {
-          await connection.rollback();
+          await (options.rollback?.(connection) ?? connection.rollback());
           transactionStarted = false;
         } catch {
           await destroy(connection);
@@ -78,7 +92,7 @@ export async function runTransaction<T>(
       if (isConnectionStateUncertain(error)) await destroy(connection);
       else await release(connection);
 
-      if (isDeadlock(error) && attempt < 2) {
+      if (!options.signal?.aborted && isDeadlock(error) && attempt < 2) {
         const [minimum, maximum] = DEADLOCK_RETRY_RANGES[attempt]!;
         const jitter = Math.floor(minimum + random() * (maximum - minimum + 1));
         await sleep(jitter);

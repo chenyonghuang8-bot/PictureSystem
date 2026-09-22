@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import type { Readable } from "node:stream";
 
 import {
@@ -8,6 +9,7 @@ import {
   UploadRepositoryError,
 } from "@family-album/db";
 import {
+  type CapacityGate,
   type StorageCapability,
   type StorageRoot,
   StorageSafetyError,
@@ -40,7 +42,8 @@ export type UploadRepository = Pick<
   | "findStorageObject"
   | "markStorageIntegrityIssue"
   | "completeFinalize"
->;
+> &
+  Partial<Pick<MySqlUploadRepository, "createUploadCapacityAdmitted">>;
 
 export class UploadServiceError extends Error {
   readonly status_code: number;
@@ -88,6 +91,7 @@ export class UploadService {
   constructor(
     private readonly repository: UploadRepository,
     capability: StorageCapability,
+    private readonly sharedCapacityGate?: CapacityGate,
   ) {
     this.#root = capability.state === "UNAVAILABLE" ? null : capability.root;
     this.#capabilityState = capability.state;
@@ -107,6 +111,50 @@ export class UploadService {
     const reportedMime = validateMime(input.reportedMime);
     if (input.declaredSize <= 0n || input.declaredSize > MAX_FILE_SIZE) {
       throw new UploadServiceError(413, "UPLOAD_TOO_LARGE");
+    }
+    if (this.sharedCapacityGate) {
+      if (!this.repository.createUploadCapacityAdmitted) {
+        throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
+      }
+      try {
+        return await this.sharedCapacityGate.withAdmissionLock(
+          async (deadline, snapshot) => {
+            const root = this.requireWritable();
+            const upload = await this.database(() =>
+              this.repository.createUploadCapacityAdmitted!(
+                {
+                  actor: actor(context),
+                  familyId: input.familyId,
+                  publicId: input.publicId,
+                  originalFilename: filename,
+                  reportedMime,
+                  declaredSize: input.declaredSize,
+                },
+                deadline,
+                snapshot,
+              ),
+            );
+            if (performance.now() >= deadline) {
+              throw new UploadServiceError(503, "OUTCOME_UNKNOWN");
+            }
+            try {
+              root.createUploadPayload(upload.familyId, upload.publicId);
+            } catch {
+              await this.database(() =>
+                this.repository.markFailed(
+                  input.publicId,
+                  "STAGING_CREATE_FAILED",
+                ),
+              );
+              throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
+            }
+            return upload;
+          },
+        );
+      } catch (error) {
+        if (error instanceof UploadServiceError) throw error;
+        throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
+      }
     }
     return this.withAdmission(async () => {
       const root = this.requireWritable();
@@ -847,6 +895,7 @@ export class UploadService {
           UPLOAD_STATE_CONFLICT: [409, "UPLOAD_STATE_CONFLICT"],
           UPLOAD_EXPIRED: [410, "UPLOAD_EXPIRED"],
           QUOTA_EXCEEDED: [429, "RATE_LIMITED"],
+          CAPACITY_EXCEEDED: [507, "INSUFFICIENT_STORAGE"],
           CONFLICT: [409, "UPLOAD_STATE_CONFLICT"],
         } as const;
         const [status, code] = map[error.reason];

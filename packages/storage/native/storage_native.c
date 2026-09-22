@@ -27,6 +27,19 @@ typedef struct {
   char canonical_path[PATH_MAX];
 } storage_root_t;
 
+#define CAPACITY_GATE_MAGIC UINT64_C(0x4341504741544531)
+typedef struct {
+  uint64_t magic;
+  int root_fd;
+  int lock_fd;
+  dev_t device;
+  ino_t root_inode;
+  ino_t lock_inode;
+  int locked;
+  char marker[33];
+  char canonical_path[PATH_MAX];
+} capacity_gate_t;
+
 #define ORIGINAL_READER_MAGIC UINT64_C(0x4f52454144455231)
 #define ORIGINAL_HANDLE_MAGIC UINT64_C(0x4f48414e444c4531)
 
@@ -637,6 +650,313 @@ static int read_marker(int root_fd, char *identifier, size_t capacity,
   memcpy(identifier, content + prefix_length, 32);
   identifier[32] = '\0';
   return 0;
+}
+
+static int validate_capacity_lock(int root_fd, int lock_fd,
+                                  dev_t root_device, ino_t *inode) {
+  struct stat status, disk;
+  if (fstat(lock_fd, &status) != 0 ||
+      fstatat(root_fd, ".capacity.lock", &disk, AT_SYMLINK_NOFOLLOW) != 0 ||
+      !S_ISREG(status.st_mode) || !S_ISREG(disk.st_mode) ||
+      status.st_dev != root_device || disk.st_dev != status.st_dev ||
+      status.st_ino != disk.st_ino || status.st_uid != geteuid() ||
+      status.st_gid != getegid() || status.st_nlink != 1 ||
+      (status.st_mode & 07777) != 0600 ||
+      validate_no_extended_acl(lock_fd) != 0) {
+    if (errno == 0) errno = EPERM;
+    return -1;
+  }
+  *inode = status.st_ino;
+  return 0;
+}
+
+static napi_value provision_capacity_gate(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argument;
+  napi_get_cb_info(env, info, &argc, &argument, NULL, NULL);
+  if (argc != 1) {
+    throw_code(env, "STORAGE_INVALID_ARGUMENT", "Provision requires a root handle.");
+    return NULL;
+  }
+  storage_root_t *root = get_root(env, argument);
+  if (root == NULL || root->lock_fd < 0) return NULL;
+  int fd = openat(root->root_fd, ".capacity.lock",
+                  O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+  if (fd < 0) {
+    throw_errno(env, "provision capacity lock");
+    return NULL;
+  }
+  ino_t inode;
+  int failure = validate_capacity_lock(root->root_fd, fd, root->device, &inode);
+  if (failure == 0 && fsync(fd) != 0) failure = -1;
+  if (failure == 0 && sync_directory_fd(root->root_fd) != 0) failure = -1;
+  int saved = errno;
+  if (close(fd) != 0 && failure == 0) { failure = -1; saved = errno; }
+  if (failure != 0) {
+    errno = saved == 0 ? EPERM : saved;
+    throw_errno(env, "validate provisioned capacity lock");
+    return NULL;
+  }
+  return undefined_value(env);
+}
+
+static void finalize_capacity_gate(napi_env env, void *data, void *hint) {
+  (void)env; (void)hint;
+  capacity_gate_t *gate = data;
+  if (gate == NULL) return;
+  if (gate->locked && gate->lock_fd >= 0) (void)flock(gate->lock_fd, LOCK_UN);
+  if (gate->lock_fd >= 0) close(gate->lock_fd);
+  if (gate->root_fd >= 0) close(gate->root_fd);
+  gate->magic = 0;
+  free(gate);
+}
+
+static capacity_gate_t *get_capacity_gate(napi_env env, napi_value value) {
+  capacity_gate_t *gate = NULL;
+  if (napi_get_value_external(env, value, (void **)&gate) != napi_ok ||
+      gate == NULL || gate->magic != CAPACITY_GATE_MAGIC ||
+      gate->root_fd < 0 || gate->lock_fd < 0) {
+    throw_code(env, "CAPACITY_GATE_CLOSED", "Capacity gate is closed.");
+    return NULL;
+  }
+  return gate;
+}
+
+static napi_value open_capacity_gate(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value args[2];
+  napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  char path[PATH_MAX], expected[33];
+  if (argc != 2 || get_string(env, args[0], path, sizeof(path)) != 0 ||
+      get_string(env, args[1], expected, sizeof(expected)) != 0 ||
+      strlen(expected) != 32) {
+    throw_code(env, "STORAGE_INVALID_ARGUMENT", "Invalid capacity gate identity.");
+    return NULL;
+  }
+  int root_fd = open_absolute_directory(path, 0);
+  if (root_fd < 0) { throw_errno(env, "open capacity root"); return NULL; }
+  struct stat root_status;
+  char marker[33];
+  if (validate_directory_fd(root_fd, &root_status) != 0 ||
+      root_status.st_uid != geteuid() || (root_status.st_mode & 077) != 0 ||
+      read_marker(root_fd, marker, sizeof(marker), 0) != 0 ||
+      strcmp(marker, expected) != 0) {
+    close(root_fd);
+    throw_code(env, "CAPACITY_ROOT_INVALID", "Capacity root identity mismatch.");
+    return NULL;
+  }
+  int lock_fd = openat(root_fd, ".capacity.lock",
+                       O_RDWR | O_NOFOLLOW | O_CLOEXEC);
+  ino_t lock_inode = 0;
+  if (lock_fd < 0 || validate_capacity_lock(root_fd, lock_fd,
+                                             root_status.st_dev, &lock_inode) != 0) {
+    if (lock_fd >= 0) close(lock_fd);
+    close(root_fd);
+    throw_code(env, "CAPACITY_LOCK_INVALID", "Capacity lock is unavailable or unsafe.");
+    return NULL;
+  }
+  capacity_gate_t *gate = calloc(1, sizeof(*gate));
+  if (gate == NULL) {
+    close(lock_fd); close(root_fd);
+    throw_code(env, "STORAGE_NATIVE_ERROR", "Capacity gate allocation failed.");
+    return NULL;
+  }
+  *gate = (capacity_gate_t){.magic = CAPACITY_GATE_MAGIC, .root_fd = root_fd,
+      .lock_fd = lock_fd, .device = root_status.st_dev,
+      .root_inode = root_status.st_ino, .lock_inode = lock_inode};
+  strcpy(gate->marker, marker);
+  if (fcntl(root_fd, F_GETPATH, gate->canonical_path) != 0) {
+    finalize_capacity_gate(env, gate, NULL);
+    throw_errno(env, "resolve capacity root");
+    return NULL;
+  }
+  napi_value external;
+  napi_create_external(env, gate, finalize_capacity_gate, NULL, &external);
+  return external;
+}
+
+static napi_value try_acquire_capacity_gate(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value arg;
+  napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
+  capacity_gate_t *gate = get_capacity_gate(env, arg);
+  if (gate == NULL) return NULL;
+  if (gate->locked) {
+    throw_code(env, "CAPACITY_LOCK_REENTRANT", "Capacity lock is already held.");
+    return NULL;
+  }
+  int locked = flock(gate->lock_fd, LOCK_EX | LOCK_NB);
+  if (locked != 0) {
+    if (errno != EWOULDBLOCK && errno != EAGAIN) {
+      throw_errno(env, "acquire capacity lock"); return NULL;
+    }
+    napi_value no;
+    napi_get_boolean(env, false, &no);
+    return no;
+  }
+  struct stat root_status;
+  char marker[33];
+  ino_t lock_inode = 0;
+  int fresh_root = open_absolute_directory(gate->canonical_path, 0);
+  struct stat fresh_status;
+  int fresh_valid = fresh_root >= 0 && fstat(fresh_root, &fresh_status) == 0 &&
+      fresh_status.st_dev == gate->device &&
+      fresh_status.st_ino == gate->root_inode;
+  if (fresh_root >= 0) close(fresh_root);
+  if (fstat(gate->root_fd, &root_status) != 0 ||
+      !fresh_valid ||
+      root_status.st_dev != gate->device ||
+      root_status.st_ino != gate->root_inode ||
+      validate_capacity_lock(gate->root_fd, gate->lock_fd,
+                             gate->device, &lock_inode) != 0 ||
+      lock_inode != gate->lock_inode ||
+      read_marker(gate->root_fd, marker, sizeof(marker), 0) != 0 ||
+      strcmp(marker, gate->marker) != 0) {
+    (void)flock(gate->lock_fd, LOCK_UN);
+    throw_code(env, "CAPACITY_ROOT_INVALID", "Capacity lock identity changed.");
+    return NULL;
+  }
+  gate->locked = 1;
+  napi_value yes;
+  napi_get_boolean(env, true, &yes);
+  return yes;
+}
+
+static napi_value release_capacity_gate(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value arg;
+  napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
+  capacity_gate_t *gate = get_capacity_gate(env, arg);
+  if (gate == NULL) return NULL;
+  if (!gate->locked || flock(gate->lock_fd, LOCK_UN) != 0) {
+    throw_code(env, "CAPACITY_RELEASE_FAILED", "Capacity lock release failed.");
+    return NULL;
+  }
+  gate->locked = 0;
+  return undefined_value(env);
+}
+
+static napi_value capacity_gate_snapshot(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value arg;
+  napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
+  capacity_gate_t *gate = get_capacity_gate(env, arg);
+  if (gate == NULL) return NULL;
+  if (!gate->locked) {
+    throw_code(env, "CAPACITY_LOCK_REQUIRED", "Capacity snapshot requires lock.");
+    return NULL;
+  }
+  // D3b-0 has no derived filesystem writer yet. Absence or a verified empty
+  // derived directory is complete inventory; any candidate/residue blocks
+  // admission until the later exact derived-namespace scanner is installed.
+  int derived_empty = 1;
+  struct stat derived_before, derived_after;
+  if (fstatat(gate->root_fd, "derived", &derived_before,
+              AT_SYMLINK_NOFOLLOW) == 0) {
+    if (!S_ISDIR(derived_before.st_mode) ||
+        derived_before.st_dev != gate->device ||
+        derived_before.st_uid != geteuid() ||
+        (derived_before.st_mode & 077) != 0) {
+      throw_code(env, "DERIVED_INVENTORY_UNSAFE",
+                 "Derived namespace cannot be trusted.");
+      return NULL;
+    }
+    int dir_fd = openat(gate->root_fd, "derived",
+                        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (dir_fd < 0) {
+      throw_errno(env, "open derived inventory");
+      return NULL;
+    }
+    struct stat opened_derived;
+    if (fstat(dir_fd, &opened_derived) != 0 ||
+        opened_derived.st_dev != derived_before.st_dev ||
+        opened_derived.st_ino != derived_before.st_ino ||
+        validate_no_extended_acl(dir_fd) != 0) {
+      close(dir_fd);
+      throw_code(env, "DERIVED_INVENTORY_UNSAFE",
+                 "Derived directory identity is unsafe.");
+      return NULL;
+    }
+    DIR *directory = fdopendir(dir_fd);
+    if (directory == NULL) {
+      close(dir_fd);
+      throw_errno(env, "open derived inventory stream");
+      return NULL;
+    }
+    errno = 0;
+    struct dirent *entry;
+    while ((entry = readdir(directory)) != NULL) {
+      if (strcmp(entry->d_name, ".") != 0 &&
+          strcmp(entry->d_name, "..") != 0) {
+        derived_empty = 0;
+        break;
+      }
+    }
+    int read_error = errno;
+    int valid = fstatat(gate->root_fd, "derived", &derived_after,
+                        AT_SYMLINK_NOFOLLOW) == 0 &&
+                derived_before.st_dev == derived_after.st_dev &&
+                derived_before.st_ino == derived_after.st_ino &&
+                derived_before.st_mtimespec.tv_sec ==
+                    derived_after.st_mtimespec.tv_sec &&
+                derived_before.st_mtimespec.tv_nsec ==
+                    derived_after.st_mtimespec.tv_nsec &&
+                derived_before.st_ctimespec.tv_sec ==
+                    derived_after.st_ctimespec.tv_sec &&
+                derived_before.st_ctimespec.tv_nsec ==
+                    derived_after.st_ctimespec.tv_nsec;
+    closedir(directory);
+    if (read_error != 0 || !valid) {
+      throw_code(env, "DERIVED_INVENTORY_UNSAFE",
+                 "Derived inventory changed during scan.");
+      return NULL;
+    }
+  } else if (errno != ENOENT) {
+    throw_errno(env, "inspect derived inventory");
+    return NULL;
+  }
+  struct statfs disk;
+  if (fstatfs(gate->root_fd, &disk) != 0 || disk.f_bsize <= 0 ||
+      disk.f_blocks < 0 || disk.f_bavail < 0) {
+    throw_errno(env, "read capacity snapshot");
+    return NULL;
+  }
+  __uint128_t total = (__uint128_t)disk.f_blocks * (unsigned)disk.f_bsize;
+  __uint128_t available = (__uint128_t)disk.f_bavail * (unsigned)disk.f_bsize;
+  if (total > UINT64_MAX || available > UINT64_MAX) {
+    throw_code(env, "CAPACITY_OVERFLOW", "Capacity snapshot overflow.");
+    return NULL;
+  }
+  char total_text[32], available_text[32];
+  snprintf(total_text, sizeof(total_text), "%llu", (unsigned long long)total);
+  snprintf(available_text, sizeof(available_text), "%llu",
+           (unsigned long long)available);
+  napi_value object, total_value, available_value, complete_value;
+  napi_create_object(env, &object);
+  napi_create_string_utf8(env, total_text, NAPI_AUTO_LENGTH, &total_value);
+  napi_create_string_utf8(env, available_text, NAPI_AUTO_LENGTH,
+                          &available_value);
+  napi_set_named_property(env, object, "totalBytes", total_value);
+  napi_set_named_property(env, object, "availableBytes", available_value);
+  napi_get_boolean(env, derived_empty, &complete_value);
+  napi_set_named_property(env, object, "derivedInventoryComplete",
+                          complete_value);
+  return object;
+}
+
+static napi_value close_capacity_gate(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value arg;
+  napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
+  capacity_gate_t *gate = get_capacity_gate(env, arg);
+  if (gate == NULL) return NULL;
+  if (gate->locked) {
+    throw_code(env, "CAPACITY_LOCK_HELD", "Cannot close a held capacity gate.");
+    return NULL;
+  }
+  close(gate->lock_fd); close(gate->root_fd);
+  gate->lock_fd = gate->root_fd = -1;
+  return undefined_value(env);
 }
 
 static int probe_writable_root(int root_fd) {
@@ -2157,6 +2477,18 @@ static napi_value consume_original_handle(napi_env env, napi_callback_info info)
 
 static napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
+      {"provisionCapacityGate", NULL, provision_capacity_gate, NULL, NULL,
+       NULL, napi_default, NULL},
+      {"openCapacityGate", NULL, open_capacity_gate, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"tryAcquireCapacityGate", NULL, try_acquire_capacity_gate, NULL, NULL,
+       NULL, napi_default, NULL},
+      {"releaseCapacityGate", NULL, release_capacity_gate, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"capacityGateSnapshot", NULL, capacity_gate_snapshot, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"closeCapacityGate", NULL, close_capacity_gate, NULL, NULL, NULL,
+       napi_default, NULL},
       {"openRoot", NULL, open_root, NULL, NULL, NULL, napi_default, NULL},
       {"closeRoot", NULL, close_root, NULL, NULL, NULL, napi_default, NULL},
       {"ensureDirectory", NULL, ensure_directory, NULL, NULL, NULL,
