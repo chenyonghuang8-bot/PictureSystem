@@ -7,13 +7,14 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 #ifndef PS_RENDERER_MODULE_PATH
 #error PS_RENDERER_MODULE_PATH must be set to the fixed package-owned module
 #endif
 
-/* D3a-0 candidate only. The final profile is embedded, never read from input. */
+/* One final profile is embedded; caller input cannot change the sandbox. */
 static const char kFinalProfile[] =
     "(version 1)\n"
     "(deny default)\n"
@@ -39,12 +40,25 @@ int main(int argc, char **argv) {
 #ifndef PS_STARTUP_DIAGNOSTIC
   if (argc != 1 || argv == NULL || argv[0] == NULL ||
       !exact_fd(0, O_RDONLY, 0) || !exact_fd(1, O_WRONLY, 0) ||
-      !exact_fd(2, O_WRONLY, 0) || !exact_fd(3, O_RDONLY, 1))
+      !exact_fd(2, O_WRONLY, 0) || !exact_fd(3, O_RDONLY, 1)
+#ifdef PS_RENDER_REAL
+      || !exact_fd(4, O_WRONLY, 0)
+#endif
+      )
     return 64;
 #else
   (void)argc;
   (void)argv;
   (void)exact_fd;
+#endif
+
+#ifdef PS_RENDER_REAL
+  struct rlimit cpu = {30, 30};
+  struct rlimit files = {64, 64};
+  struct rlimit core = {0, 0};
+  if (setrlimit(RLIMIT_CPU, &cpu) != 0 ||
+      setrlimit(RLIMIT_NOFILE, &files) != 0 ||
+      setrlimit(RLIMIT_CORE, &core) != 0) return 69;
 #endif
 
 #ifdef PS_FORCE_EARLY_READ
@@ -101,7 +115,13 @@ int main(int argc, char **argv) {
 
   void *module = dlopen(PS_RENDERER_MODULE_PATH, RTLD_NOW | RTLD_LOCAL);
   if (module == NULL) return 73;
-  int (*entry)(void) = (int (*)(void))dlsym(module, "ps_synthetic_renderer_entry");
+  int (*entry)(void) = (int (*)(void))dlsym(module,
+#ifdef PS_RENDER_REAL
+      "ps_image_renderer_entry"
+#else
+      "ps_synthetic_renderer_entry"
+#endif
+  );
   if (entry == NULL) return 74;
   int result = entry();
   dlclose(module);

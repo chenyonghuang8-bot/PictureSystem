@@ -24,6 +24,8 @@ coverage/
 packages/storage/build/
 packages/storage/native/build/
 packages/storage/native/*.o
+packages/storage/vendor/**/*.o
+packages/storage/vendor/**/*.a
 
 # Test and local tooling output
 playwright-report/

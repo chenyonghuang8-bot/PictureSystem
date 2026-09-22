@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { cpSync, lstatSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -11,6 +11,65 @@ const packageRoot = resolve(import.meta.dirname, "..");
 const outputDirectory = join(packageRoot, "build");
 const nodeInclude = resolve(dirname(process.execPath), "../include/node");
 mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
+
+// The codec is built from the authenticated, unmodified release tree. Build
+// artifacts live only under the ignored package build directory.
+const vendorRoot = join(packageRoot, "vendor/libwebp");
+const sourceRoot = join(vendorRoot, "1.6.0");
+const sourceLock = JSON.parse(
+  readFileSync(join(vendorRoot, "SOURCE.lock.json"), "utf8"),
+);
+const sourceManifest = readFileSync(join(vendorRoot, "SOURCE.sha256"));
+const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+if (
+  process.arch !== "arm64" ||
+  sourceLock.version !== "1.6.0" ||
+  sourceLock.commit !== "4fa21912338357f89e4fd51cf2368325b59e9bd9" ||
+  digest(sourceManifest) !== sourceLock.sourceTreeManifestSha256
+) {
+  throw new Error("Pinned libwebp source identity mismatch.");
+}
+const sourceLines = sourceManifest.toString("utf8").trimEnd().split("\n");
+if (sourceLines.length !== sourceLock.sourceFiles) {
+  throw new Error("Pinned libwebp source file count mismatch.");
+}
+for (const line of sourceLines) {
+  const match = /^([0-9a-f]{64}) {2}(\.\/[^\r\n]+)$/u.exec(line);
+  if (!match || match[2].split("/").includes("..")) {
+    throw new Error("Pinned libwebp source manifest is malformed.");
+  }
+  const file = resolve(sourceRoot, match[2]);
+  if (
+    !file.startsWith(`${sourceRoot}/`) ||
+    !lstatSync(file).isFile() ||
+    digest(readFileSync(file)) !== match[1]
+  ) {
+    throw new Error("Pinned libwebp source file mismatch.");
+  }
+}
+const codecBuild = join(outputDirectory, "libwebp-build");
+rmSync(codecBuild, { recursive: true, force: true });
+cpSync(sourceRoot, codecBuild, { recursive: true });
+const codecResult = spawnSync(
+  "/usr/bin/make",
+  [
+    "-s",
+    "-f",
+    "makefile.unix",
+    "-j4",
+    "CC=/usr/bin/clang",
+    "AR=/usr/bin/ar",
+    "EXTRA_FLAGS=-fPIC -fno-common -fvisibility=hidden",
+    "src/libwebp.a",
+    "sharpyuv/libsharpyuv.a",
+  ],
+  { cwd: codecBuild, encoding: "utf8" },
+);
+if (codecResult.status !== 0) {
+  throw new Error(
+    `Pinned libwebp static build failed: ${codecResult.stderr.trim()}`,
+  );
+}
 
 const result = spawnSync(
   "clang",
@@ -162,6 +221,114 @@ buildStartupPart("image renderer synthetic module", [
   join(packageRoot, "native/image_renderer_synthetic_module.c"),
   "-o",
   modulePath,
+]);
+
+for (const [kind, number] of [
+  ["thumbnail", 1],
+  ["preview", 2],
+]) {
+  const realModule = join(
+    outputDirectory,
+    `image_renderer_${kind}_module.dylib`,
+  );
+  const realBootstrap = join(
+    outputDirectory,
+    `image_renderer_${kind}_bootstrap`,
+  );
+  buildStartupPart(`image renderer ${kind} module`, [
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    "-fobjc-arc",
+    "-fPIC",
+    "-dynamiclib",
+    `-DPS_RENDER_KIND=${number}`,
+    `-I${join(codecBuild, "src")}`,
+    join(packageRoot, "native/image_renderer_module.m"),
+    join(codecBuild, "src/libwebp.a"),
+    join(codecBuild, "sharpyuv/libsharpyuv.a"),
+    "-framework",
+    "Foundation",
+    "-framework",
+    "CoreGraphics",
+    "-framework",
+    "ImageIO",
+    "-o",
+    realModule,
+  ]);
+  buildStartupPart(`image renderer ${kind} bootstrap`, [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    "-DPS_RENDER_REAL",
+    `-DPS_RENDERER_MODULE_PATH="${realModule}"`,
+    join(packageRoot, "native/image_renderer_bootstrap.c"),
+    "-o",
+    realBootstrap,
+  ]);
+  buildStartupPart(`image renderer ${kind} supervisor`, [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    `-DPS_RENDER_BINARY=${number}`,
+    `-DPS_RENDERER_BOOTSTRAP_PATH="${realBootstrap}"`,
+    `-DPS_RENDERER_MODULE_PATH="${realModule}"`,
+    `-DPS_RENDERER_BOOTSTRAP_SHA256="${sha256File(realBootstrap)}"`,
+    `-DPS_RENDERER_MODULE_SHA256="${sha256File(realModule)}"`,
+    `-DPS_EXPECTED_OS_BUILD="${expectedOsBuild}"`,
+    join(packageRoot, "native/image_renderer_supervisor.c"),
+    "-o",
+    join(outputDirectory, `image_renderer_${kind}_supervisor`),
+  ]);
+}
+
+// Fixed, package-owned synthetic failure harness; never used by the public API.
+const faultModule = join(outputDirectory, "image_renderer_fault_module.dylib");
+const faultBootstrap = join(outputDirectory, "image_renderer_fault_bootstrap");
+buildStartupPart("image renderer synthetic fault module", [
+  "-std=c11",
+  "-Wall",
+  "-Wextra",
+  "-Werror",
+  "-O2",
+  "-fPIC",
+  "-dynamiclib",
+  join(packageRoot, "native/image_renderer_fault_module.c"),
+  "-o",
+  faultModule,
+]);
+buildStartupPart("image renderer synthetic fault bootstrap", [
+  "-std=c11",
+  "-Wall",
+  "-Wextra",
+  "-Werror",
+  "-O2",
+  "-DPS_RENDER_REAL",
+  `-DPS_RENDERER_MODULE_PATH="${faultModule}"`,
+  join(packageRoot, "native/image_renderer_bootstrap.c"),
+  "-o",
+  faultBootstrap,
+]);
+buildStartupPart("image renderer synthetic fault supervisor", [
+  "-std=c11",
+  "-Wall",
+  "-Wextra",
+  "-Werror",
+  "-O2",
+  "-DPS_RENDER_BINARY=2",
+  `-DPS_RENDERER_BOOTSTRAP_PATH="${faultBootstrap}"`,
+  `-DPS_RENDERER_MODULE_PATH="${faultModule}"`,
+  `-DPS_RENDERER_BOOTSTRAP_SHA256="${sha256File(faultBootstrap)}"`,
+  `-DPS_RENDERER_MODULE_SHA256="${sha256File(faultModule)}"`,
+  `-DPS_EXPECTED_OS_BUILD="${expectedOsBuild}"`,
+  join(packageRoot, "native/image_renderer_supervisor.c"),
+  "-o",
+  join(outputDirectory, "image_renderer_fault_supervisor"),
 ]);
 buildStartupPart("image renderer bootstrap", [
   "-std=c11",

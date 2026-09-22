@@ -11,6 +11,10 @@
 #include <sys/stat.h>
 #include <sys/sysctl.h>
 #include <sys/wait.h>
+#ifdef PS_RENDER_BINARY
+#include <libproc.h>
+#include <sys/resource.h>
+#endif
 #include <time.h>
 #include <unistd.h>
 #include "process_lifecycle.h"
@@ -33,7 +37,17 @@
 
 #define CONTROL_LIMIT 4096
 #define STDERR_LIMIT 16384
+#ifdef PS_RENDER_BINARY
+#define STARTUP_TIMEOUT_MS 30000
+#if PS_RENDER_BINARY == 1
+#define BINARY_LIMIT (512 * 1024)
+#else
+#define BINARY_LIMIT (4 * 1024 * 1024)
+#endif
+#define BINARY_QUEUE 65536
+#else
 #define STARTUP_TIMEOUT_MS 5000
+#endif
 
 static int fixed_artifact_matches(const char *path, const char *expected) {
   int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
@@ -97,6 +111,9 @@ int main(int argc, char **argv) {
   (void)argv;
   if (argc != 1) return 64;
   if (fcntl(3, F_GETFL) < 0 || fcntl(4, F_GETFL) < 0) return 64;
+#ifdef PS_RENDER_BINARY
+  if (fcntl(5, F_GETFL) < 0) return 64;
+#endif
 #ifdef PS_REQUIRE_HIGH_FDS
   if (fcntl(1500, F_GETFD) < 0 || fcntl(1601, F_GETFD) < 0) return 66;
 #endif
@@ -110,7 +127,13 @@ int main(int argc, char **argv) {
                               PS_RENDERER_MODULE_SHA256)) return 65;
 
   int control[2] = {-1, -1}, errors[2] = {-1, -1};
+#ifdef PS_RENDER_BINARY
+  int binary[2] = {-1, -1};
+  if (owned_pipe(control) != 0 || owned_pipe(errors) != 0 ||
+      owned_pipe(binary) != 0) return 70;
+#else
   if (owned_pipe(control) != 0 || owned_pipe(errors) != 0) return 70;
+#endif
   int input_source = fcntl(3, F_DUPFD_CLOEXEC, 10);
   if (input_source < 0) return 70;
   posix_spawn_file_actions_t actions;
@@ -131,6 +154,9 @@ int main(int argc, char **argv) {
       posix_spawn_file_actions_adddup2(&actions, control[1], 1) != 0 ||
       posix_spawn_file_actions_adddup2(&actions, errors[1], 2) != 0 ||
       posix_spawn_file_actions_adddup2(&actions, input_source, 3) != 0 ||
+#ifdef PS_RENDER_BINARY
+      posix_spawn_file_actions_adddup2(&actions, binary[1], 4) != 0 ||
+#endif
       posix_spawn_file_actions_addclose(&actions, input_source) != 0 ||
       posix_spawn_file_actions_addchdir(&actions, "/") != 0) return 70;
 
@@ -143,26 +169,51 @@ int main(int argc, char **argv) {
   posix_spawn_file_actions_destroy(&actions);
   posix_spawnattr_destroy(&attributes);
   close(control[1]); close(errors[1]);
+#ifdef PS_RENDER_BINARY
+  close(binary[1]);
+#endif
   if (launch != 0) { close(control[0]); close(errors[0]); return 71; }
   ps_lifecycle owner;
   ps_lifecycle_init(&owner, child);
   (void)fcntl(control[0], F_SETFL, O_NONBLOCK);
   (void)fcntl(errors[0], F_SETFL, O_NONBLOCK);
+#ifdef PS_RENDER_BINARY
+  (void)fcntl(binary[0], F_SETFL, O_NONBLOCK);
+  (void)fcntl(4, F_SETFL, O_NONBLOCK);
+  unsigned char queue[BINARY_QUEUE];
+  size_t queued_start = 0, queued_end = 0, binary_size = 0;
+  int binary_eof = 0;
+#endif
 
   char output[CONTROL_LIMIT + 1], stderr_output[STDERR_LIMIT + 1];
   size_t output_size = 0, error_size = 0;
   int out_eof = 0, err_eof = 0, failure = 0;
   long long deadline = now_ms() + STARTUP_TIMEOUT_MS;
-  while (!failure && (owner.state != PS_REAPED || !out_eof || !err_eof)) {
+  while (!failure && (owner.state != PS_REAPED || !out_eof || !err_eof
+#ifdef PS_RENDER_BINARY
+                      || !binary_eof || queued_start != queued_end
+#endif
+                      )) {
     int wait_ms = (int)(deadline - now_ms());
     if (wait_ms <= 0) { failure = 78; break; }
-    struct pollfd fds[3] = {{control[0], POLLIN | POLLHUP, 0},
-                            {errors[0], POLLIN | POLLHUP, 0},
-                            {4, POLLIN | POLLHUP, 0}};
-    if (poll(fds, 3, wait_ms > 20 ? 20 : wait_ms) < 0 && errno != EINTR) {
+    struct pollfd fds[] = {{control[0], POLLIN | POLLHUP, 0},
+                           {errors[0], POLLIN | POLLHUP, 0},
+#ifdef PS_RENDER_BINARY
+                           {binary[0], queued_start == queued_end ? POLLIN | POLLHUP : 0, 0},
+                           {4, queued_start != queued_end ? POLLOUT : 0, 0},
+                           {5, POLLIN | POLLHUP, 0}};
+#else
+                           {4, POLLIN | POLLHUP, 0}};
+#endif
+    if (poll(fds, sizeof(fds) / sizeof(fds[0]),
+             wait_ms > 20 ? 20 : wait_ms) < 0 && errno != EINTR) {
       failure = 79; break;
     }
+#ifdef PS_RENDER_BINARY
+    if (fds[4].revents & (POLLHUP | POLLERR | POLLNVAL)) {
+#else
     if (fds[2].revents & (POLLHUP | POLLERR | POLLNVAL)) {
+#endif
       failure = 80; break;
     }
     for (int i = 0; i < 2; i++) {
@@ -187,13 +238,52 @@ int main(int argc, char **argv) {
       }
       if (failure) break;
     }
+#ifdef PS_RENDER_BINARY
+    if (queued_start != queued_end && (fds[3].revents & POLLOUT)) {
+      ssize_t n = write(4, queue + queued_start, queued_end - queued_start);
+      if (n > 0) {
+        queued_start += (size_t)n;
+        if (queued_start == queued_end) queued_start = queued_end = 0;
+      } else if (n < 0 && errno != EAGAIN && errno != EINTR) {
+        failure = 87; break;
+      }
+    }
+    if (!binary_eof && queued_start == queued_end &&
+        (fds[2].revents & (POLLIN | POLLHUP))) {
+      ssize_t n = read(binary[0], queue, sizeof(queue));
+      if (n > 0) {
+        if ((size_t)n > BINARY_LIMIT - binary_size) { failure = 88; break; }
+        binary_size += (size_t)n;
+        queued_end = (size_t)n;
+      } else if (n == 0) binary_eof = 1;
+      else if (errno != EAGAIN && errno != EINTR) { failure = 89; break; }
+    }
+    if (fds[3].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+      failure = 90; break;
+    }
+#endif
     if (owner.state != PS_REAPED) {
       if (ps_poll_exact(&owner) < 0) { failure = 83; break; }
     }
+#ifdef PS_RENDER_BINARY
+    if (owner.state != PS_REAPED) {
+      struct rusage_info_v2 usage = {0};
+      if (proc_pid_rusage(owner.pid, RUSAGE_INFO_V2,
+                          (rusage_info_t *)&usage) != 0) {
+        if (ps_poll_exact(&owner) < 0) { failure = 91; break; }
+        if (owner.state != PS_REAPED) { failure = 91; break; }
+      } else if (usage.ri_resident_size > 2ULL * 1024ULL * 1024ULL * 1024ULL) {
+        failure = 92; break;
+      }
+    }
+#endif
   }
   if (owner.state != PS_REAPED && ps_stop_exact(&owner, now_ms, 250) < 0)
     failure = 83;
   close(control[0]); close(errors[0]);
+#ifdef PS_RENDER_BINARY
+  close(binary[0]);
+#endif
   if (error_size <= STDERR_LIMIT) {
     stderr_output[error_size] = '\0';
     if (strstr(stderr_output, "EARLY_FD3_READ") != NULL ||
@@ -202,15 +292,32 @@ int main(int argc, char **argv) {
           strstr(stderr_output, "FIRST_FD3_READ") != NULL)))
       return 86;
   }
+#ifdef PS_RENDER_BINARY
+  static const char expected_events[] =
+      "SANDBOX_ACTIVATED\nRENDERER_MODULE_LOADED\nFIRST_FD3_MEDIA_READ\n";
+  static const char ready[] = "PS_RENDER_READY_V1\n";
+#else
   static const char expected[] = "PS_RENDER_READY_V1\n{\"status\":\"ok\"}\n";
   static const char expected_events[] =
       "SANDBOX_ACTIVATED\nMODULE_LOADED\nFIRST_FD3_READ\n";
+#endif
   if (failure || owner.state != PS_REAPED ||
       !WIFEXITED(owner.status) || WEXITSTATUS(owner.status) != 0 ||
+#ifdef PS_RENDER_BINARY
+      binary_size == 0 || binary_size > BINARY_LIMIT ||
+      output_size <= sizeof(ready) ||
+      memcmp(output, ready, sizeof(ready) - 1) != 0 ||
+      output[output_size - 1] != '\n' ||
+#else
       output_size != sizeof(expected) - 1 ||
       memcmp(output, expected, sizeof(expected) - 1) != 0 ||
+#endif
       error_size != sizeof(expected_events) - 1 ||
       memcmp(stderr_output, expected_events, sizeof(expected_events) - 1) != 0)
     return failure ? failure : 84;
+#ifdef PS_RENDER_BINARY
   return write(1, output, output_size) == (ssize_t)output_size ? 0 : 85;
+#else
+  return write(1, output, output_size) == (ssize_t)output_size ? 0 : 85;
+#endif
 }

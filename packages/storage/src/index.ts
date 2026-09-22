@@ -3,6 +3,16 @@ import { closeSync, statfsSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, normalize, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import {
+  runImageRendererProducerFd,
+  type ImageProducerKind,
+  type UnverifiedRenderedCandidate,
+} from "./image-renderer-producer.js";
+
+export type {
+  ImageProducerKind,
+  UnverifiedRenderedCandidate,
+} from "./image-renderer-producer.js";
 
 type NativeRoot = object;
 type NativeOriginalReader = object;
@@ -390,6 +400,18 @@ export async function runSyntheticRendererStartupProbe(
       }
     });
   });
+}
+
+/** D3a-2a candidate only; never authorizes derived publish or serving. */
+export async function renderUnverifiedCandidate(
+  handle: VerifiedOriginalHandle,
+  kind: ImageProducerKind,
+): Promise<UnverifiedRenderedCandidate> {
+  if (!(handle instanceof VerifiedOriginalHandleImpl)) {
+    throw new StorageSafetyError("ORIGINAL_HANDLE_INVALID");
+  }
+  const { fd } = handle.consumeForFixedProbe();
+  return await runImageRendererProducerFd(fd, kind);
 }
 
 export async function runFixedMetadataParser(

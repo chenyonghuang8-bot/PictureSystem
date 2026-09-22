@@ -1,0 +1,3 @@
+# Preserve the byte-identical upstream libwebp release tree; its generated
+# Autotools and source files contain upstream whitespace that must not be edited.
+packages/storage/vendor/libwebp/1.6.0/** -whitespace

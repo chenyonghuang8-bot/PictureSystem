@@ -6,4 +6,5 @@ node_modules
 playwright-report
 test-results
 vendor
+packages/storage/vendor
 pnpm-lock.yaml

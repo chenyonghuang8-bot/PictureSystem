@@ -15,6 +15,7 @@ export default tseslint.config(
       "skills/**",
       "project-spec/**",
       "vendor/**",
+      "packages/storage/vendor/**",
     ],
   },
   eslint.configs.recommended,
