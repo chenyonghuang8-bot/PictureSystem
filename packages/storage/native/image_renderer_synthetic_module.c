@@ -33,6 +33,22 @@ int ps_synthetic_renderer_entry(void) {
   if (pread(3, &byte, 1, 0) != 1) return 75;
   if (write(2, first_read, sizeof(first_read) - 1) !=
       (ssize_t)(sizeof(first_read) - 1)) return 74;
+  /* Probe descriptor existence, not sandbox policy. Low, sparse and >1023
+   * parent descriptors must be absent after CLOEXEC_DEFAULT spawn. */
+  for (int fd = 4; fd < 64; fd++) {
+    errno = 0;
+    if (fcntl(fd, F_GETFD) != -1 || errno != EBADF) return 101;
+  }
+  for (int i = 0; i < 3; i++) {
+    int fd = i == 0 ? 1500 : i == 1 ? 1601 : 1703;
+    struct stat inherited;
+    errno = 0;
+    if (fcntl(fd, F_GETFD) != -1 || errno != EBADF) return 102;
+    errno = 0;
+    if (fstat(fd, &inherited) != -1 || errno != EBADF) return 103;
+    errno = 0;
+    if (read(fd, &byte, 1) != -1 || errno != EBADF) return 104;
+  }
   errno = 0;
   pid_t fork_result = fork();
   if (fork_result == 0) _exit(90);

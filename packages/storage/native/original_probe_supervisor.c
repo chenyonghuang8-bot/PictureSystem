@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include "process_lifecycle.h"
 
 #define STDOUT_LIMIT (64 * 1024)
 #define STDERR_LIMIT (16 * 1024)
@@ -33,20 +34,6 @@ static int approved_kind(const char *kind) {
          strcmp(kind, "stderr-flood") == 0 ||
          strcmp(kind, "invalid-json") == 0 ||
          strcmp(kind, "deep-json") == 0;
-}
-
-static void terminate_group(pid_t pid) {
-  (void)kill(-pid, SIGTERM);
-  long long deadline = monotonic_ms() + TERM_GRACE_MS;
-  int status;
-  while (monotonic_ms() < deadline) {
-    pid_t result = waitpid(pid, &status, WNOHANG);
-    if (result == pid) return;
-    if (result < 0 && errno == ECHILD) return;
-    usleep(10000);
-  }
-  (void)kill(-pid, SIGKILL);
-  while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
 }
 
 int main(int argc, char **argv) {
@@ -88,6 +75,8 @@ int main(int argc, char **argv) {
     _exit(71);
   }
   (void)setpgid(pid, pid);
+  ps_lifecycle owner;
+  ps_lifecycle_init(&owner, pid);
   close(out_pipe[1]); close(err_pipe[1]);
   (void)fcntl(out_pipe[0], F_SETFL, O_NONBLOCK);
   (void)fcntl(err_pipe[0], F_SETFL, O_NONBLOCK);
@@ -95,7 +84,7 @@ int main(int argc, char **argv) {
   unsigned char stdout_buffer[STDOUT_LIMIT + 1];
   unsigned char stderr_buffer[STDERR_LIMIT + 1];
   size_t stdout_size = 0, stderr_size = 0;
-  int status = 0, child_done = 0, failed = 0;
+  int child_done = 0, failed = 0;
   long long deadline = monotonic_ms() + timeout_ms;
   while (!child_done) {
     struct pollfd fds[3] = {{out_pipe[0], POLLIN | POLLHUP, 0},
@@ -129,13 +118,13 @@ int main(int argc, char **argv) {
       if (failed != 0) break;
     }
     if (failed != 0) break;
-    pid_t waited = waitpid(pid, &status, WNOHANG);
-    if (waited == pid) child_done = 1;
-    else if (waited < 0 && errno != EINTR) { failed = 74; break; }
+    int waited = ps_poll_exact(&owner);
+    if (waited == 1) child_done = 1;
+    else if (waited < 0) { failed = 74; break; }
     if (monotonic_ms() >= deadline) { failed = 78; break; }
   }
-  if (!child_done) terminate_group(pid);
-  (void)kill(-pid, SIGKILL);
+  if (!child_done && ps_stop_exact(&owner, monotonic_ms, TERM_GRACE_MS) < 0)
+    failed = 74;
   close(out_pipe[0]); close(err_pipe[0]);
   if (failed != 0) return failed;
   int denied_operation = strcmp(argv[5], "fork-denied") == 0 ||
@@ -145,14 +134,14 @@ int main(int argc, char **argv) {
                                      : "EXEC_ATTEMPT\n";
   if (denied_operation && stdout_size == strlen(expected_attempt) &&
       memcmp(stdout_buffer, expected_attempt, stdout_size) == 0 &&
-      (!WIFEXITED(status) || WEXITSTATUS(status) != 0)) {
+      (!WIFEXITED(owner.status) || WEXITSTATUS(owner.status) != 0)) {
     const char denied_json[] = "{\"denied\":true}\n";
     memcpy(stdout_buffer, denied_json, sizeof(denied_json) - 1);
     stdout_size = sizeof(denied_json) - 1;
-    status = 0;
+    owner.status = 0;
   }
-  if (!WIFEXITED(status)) return 200 + WTERMSIG(status);
-  if (WEXITSTATUS(status) != 0) return 100 + WEXITSTATUS(status);
+  if (!WIFEXITED(owner.status)) return 200 + WTERMSIG(owner.status);
+  if (WEXITSTATUS(owner.status) != 0) return 100 + WEXITSTATUS(owner.status);
   if (stdout_size == 0 || stdout_size > STDOUT_LIMIT || stderr_size > STDERR_LIMIT)
     return 80;
   size_t written = 0;

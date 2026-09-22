@@ -81,6 +81,10 @@ int main(int argc, char **argv) {
 #ifdef PS_FORCE_TIMEOUT_BEFORE_READY
   for (;;) pause();
 #endif
+#ifdef PS_FORCE_IGNORE_TERM
+  if (signal(SIGTERM, SIG_IGN) == SIG_ERR) return 72;
+  for (;;) pause();
+#endif
 #ifdef PS_FORCE_BAD_READY
   static const char bad_ready[] = "PS_RENDER_WRONG_V1\n";
   (void)write(1, bad_ready, sizeof(bad_ready) - 1);

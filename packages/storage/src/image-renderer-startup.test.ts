@@ -4,6 +4,7 @@ import {
   closeSync,
   mkdtempSync,
   openSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -196,6 +197,135 @@ describe("D3a-0 fixed synthetic renderer startup", () => {
     }
     expect(gone).toBe(true);
   });
+
+  it("excludes real non-CLOEXEC high and sparse parent FDs from the renderer", () => {
+    const fd = openSync(original, "r");
+    try {
+      const stdio: Array<"ignore" | "pipe" | number> =
+        Array(1602).fill("ignore");
+      stdio[1] = "pipe";
+      stdio[2] = "pipe";
+      stdio[3] = fd;
+      stdio[4] = "pipe";
+      stdio[57] = fd;
+      stdio[1500] = fd;
+      stdio[1601] = fd;
+      const result = spawnSync(
+        join(buildRoot, "image_renderer_supervisor_high_fd"),
+        [],
+        {
+          stdio,
+          env: { LANG: "C", LC_ALL: "C" },
+          timeout: 8_000,
+        },
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+      expect(result.stdout.toString()).toBe(ready);
+    } finally {
+      closeSync(fd);
+    }
+  }, 12_000);
+
+  it("excludes native-parent high file, lock, and socket FDs", () => {
+    const result = spawnSync(
+      join(buildRoot, "image_renderer_high_fd_parent"),
+      [original],
+      {
+        env: { LANG: "C", LC_ALL: "C" },
+        timeout: 8_000,
+      },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stdout.toString()).toBe(ready);
+  });
+
+  it.each([
+    ["_trace", 0, false],
+    ["_crash_before_ready_trace", 84, false],
+    ["_timeout_before_ready_trace", 78, true],
+    ["_ignore_term_trace", 78, true],
+    ["_group_loss", 78, true],
+  ])(
+    "reaps exactly once and never signals after reap: %s",
+    (suffix, status, stopped) => {
+      const result = run(suffix);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(status);
+      const events = result.stderr.toString().trim().split("\n");
+      expect(events.filter((event) => event === "WAITPID_REAPED")).toHaveLength(
+        1,
+      );
+      const reapedIndex = events.indexOf("WAITPID_REAPED");
+      expect(
+        events
+          .slice(reapedIndex + 1)
+          .some((event) => event.startsWith("SIGNAL_")),
+      ).toBe(false);
+      expect(events.some((event) => event === "SIGNAL_TERM_PID")).toBe(stopped);
+      if (suffix === "_ignore_term_trace") {
+        expect(events).toContain("SIGNAL_KILL_PID");
+      }
+      if (suffix === "_group_loss") {
+        expect(events).toContain("GROUP_SIGNAL_TEST_SUPPRESSED");
+        expect(events).not.toContain("SIGNAL_TERM_GROUP");
+      }
+    },
+    12_000,
+  );
+
+  it("does not leak parent descriptors over 100 synthetic startup runs", () => {
+    const before = readdirSync("/dev/fd").length;
+    for (let i = 0; i < 100; i++) {
+      const result = run();
+      expect(result.status).toBe(0);
+    }
+    expect(readdirSync("/dev/fd").length).toBeLessThanOrEqual(before + 2);
+  }, 90_000);
+
+  it("keeps concurrent process groups isolated when one times out", async () => {
+    const fd = openSync(original, "r");
+    const spawnOne = (name: string) => {
+      const child = spawn(join(buildRoot, name), [], {
+        stdio: ["ignore", "pipe", "pipe", fd, "pipe"],
+        env: { LANG: "C", LC_ALL: "C" },
+      });
+      return new Promise<number | null>((resolveResult, reject) => {
+        child.once("error", reject);
+        child.once("close", resolveResult);
+      });
+    };
+    try {
+      const [slow, normal] = await Promise.all([
+        spawnOne("image_renderer_supervisor_timeout_before_ready"),
+        spawnOne("image_renderer_supervisor"),
+      ]);
+      expect(slow).toBe(78);
+      expect(normal).toBe(0);
+    } finally {
+      closeSync(fd);
+    }
+  }, 12_000);
+
+  it.each(["echild", "reaped"])(
+    "removes signal authority for %s",
+    (scenario) => {
+      const result = spawnSync(
+        join(buildRoot, "process_lifecycle_harness"),
+        [scenario],
+        {
+          env: { LANG: "C", LC_ALL: "C" },
+          timeout: 2_000,
+        },
+      );
+      expect(result.status).toBe(0);
+      expect(result.stderr.toString()).not.toContain("SIGNAL_");
+      if (scenario === "echild") {
+        expect(result.stderr.toString()).toContain("WAITPID_ANOMALY");
+      }
+    },
+  );
 });
 
 function snapshot(path: string) {

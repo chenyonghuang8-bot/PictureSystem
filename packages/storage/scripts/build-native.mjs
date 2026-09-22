@@ -59,6 +59,26 @@ for (const source of ["original_probe_supervisor", "original_probe_child"]) {
     );
   }
 }
+const lifecycleHarness = spawnSync(
+  "clang",
+  [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    "-DPS_LIFECYCLE_TRACE",
+    join(packageRoot, "native/process_lifecycle_harness.c"),
+    "-o",
+    join(outputDirectory, "process_lifecycle_harness"),
+  ],
+  { encoding: "utf8" },
+);
+if (lifecycleHarness.status !== 0) {
+  throw new Error(
+    `Native process lifecycle harness build failed: ${lifecycleHarness.stderr.trim()}`,
+  );
+}
 
 const metadataParser = spawnSync(
   "clang",
@@ -111,6 +131,23 @@ if (osBuild.status !== 0 || !/^[A-Za-z0-9]+$/u.test(osBuild.stdout.trim())) {
   throw new Error("Renderer startup OS build fingerprint is unavailable.");
 }
 const expectedOsBuild = osBuild.stdout.trim();
+const buildSupervisor = (name, bootstrap, extraFlags = []) =>
+  buildStartupPart(name, [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    ...extraFlags,
+    `-DPS_RENDERER_BOOTSTRAP_PATH="${bootstrap}"`,
+    `-DPS_RENDERER_MODULE_PATH="${modulePath}"`,
+    `-DPS_RENDERER_BOOTSTRAP_SHA256="${sha256File(bootstrap)}"`,
+    `-DPS_RENDERER_MODULE_SHA256="${sha256File(modulePath)}"`,
+    `-DPS_EXPECTED_OS_BUILD="${expectedOsBuild}"`,
+    join(packageRoot, "native/image_renderer_supervisor.c"),
+    "-o",
+    join(outputDirectory, name),
+  ]);
 
 buildStartupPart("image renderer synthetic module", [
   "-std=c11",
@@ -176,6 +213,7 @@ for (const [name, macro] of [
   ["duplicate_ready", "PS_FORCE_DUP_READY"],
   ["crash_before_ready", "PS_FORCE_CRASH_BEFORE_READY"],
   ["timeout_before_ready", "PS_FORCE_TIMEOUT_BEFORE_READY"],
+  ["ignore_term", "PS_FORCE_IGNORE_TERM"],
   ["early_read", "PS_FORCE_EARLY_READ"],
 ]) {
   const testBootstrap = join(
@@ -212,5 +250,48 @@ for (const [name, macro] of [
     join(packageRoot, "native/image_renderer_supervisor.c"),
     "-o",
     testSupervisor,
+  ]);
+}
+
+// Test-only supervisors preserve the production path and allow deterministic
+// lifecycle/FD assertions without weakening the shipped binary.
+buildSupervisor("image_renderer_supervisor_trace", bootstrapPath, [
+  "-DPS_LIFECYCLE_TRACE",
+]);
+buildSupervisor("image_renderer_supervisor_high_fd", bootstrapPath, [
+  "-DPS_REQUIRE_HIGH_FDS",
+]);
+const nativeHighFdSupervisor = "image_renderer_supervisor_native_high_fd";
+buildSupervisor(nativeHighFdSupervisor, bootstrapPath, [
+  "-DPS_REQUIRE_HIGH_FDS",
+  "-DPS_REQUIRE_SOCKET_FD",
+]);
+buildStartupPart("image renderer native high FD parent", [
+  "-std=c11",
+  "-Wall",
+  "-Wextra",
+  "-Werror",
+  "-O2",
+  `-DPS_TEST_SUPERVISOR_PATH="${join(outputDirectory, nativeHighFdSupervisor)}"`,
+  join(packageRoot, "native/image_renderer_high_fd_parent.c"),
+  "-o",
+  join(outputDirectory, "image_renderer_high_fd_parent"),
+]);
+buildSupervisor(
+  "image_renderer_supervisor_group_loss",
+  join(outputDirectory, "image_renderer_bootstrap_timeout_before_ready"),
+  ["-DPS_LIFECYCLE_TRACE", "-DPS_TEST_GROUP_SIGNAL_LOST"],
+);
+for (const scenario of [
+  "timeout_before_ready",
+  "ignore_term",
+  "crash_before_ready",
+]) {
+  const bootstrap = join(
+    outputDirectory,
+    `image_renderer_bootstrap_${scenario}`,
+  );
+  buildSupervisor(`image_renderer_supervisor_${scenario}_trace`, bootstrap, [
+    "-DPS_LIFECYCLE_TRACE",
   ]);
 }

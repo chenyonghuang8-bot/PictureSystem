@@ -13,6 +13,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include "process_lifecycle.h"
 
 #ifndef PS_RENDERER_BOOTSTRAP_PATH
 #error PS_RENDERER_BOOTSTRAP_PATH must be fixed at build time
@@ -82,26 +83,6 @@ static long long now_ms(void) {
              : -1;
 }
 
-static void reap_or_stop(pid_t child, int *reaped, int *status) {
-  if (*reaped) return;
-  (void)kill(child, SIGTERM);
-  long long until = now_ms() + 250;
-  while (now_ms() < until) {
-    pid_t result = waitpid(child, status, WNOHANG);
-    if (result == child || (result < 0 && errno == ECHILD)) {
-      *reaped = 1;
-      return;
-    }
-    if (result < 0 && errno != EINTR) break;
-    usleep(10000);
-  }
-  if (!*reaped) {
-    (void)kill(child, SIGKILL);
-    while (waitpid(child, status, 0) < 0 && errno == EINTR) {}
-    *reaped = 1;
-  }
-}
-
 static int owned_pipe(int pair[2]) {
   if (pipe(pair) != 0) return -1;
   if (fcntl(pair[0], F_SETFD, FD_CLOEXEC) != 0 ||
@@ -116,6 +97,12 @@ int main(int argc, char **argv) {
   (void)argv;
   if (argc != 1) return 64;
   if (fcntl(3, F_GETFL) < 0 || fcntl(4, F_GETFL) < 0) return 64;
+#ifdef PS_REQUIRE_HIGH_FDS
+  if (fcntl(1500, F_GETFD) < 0 || fcntl(1601, F_GETFD) < 0) return 66;
+#endif
+#ifdef PS_REQUIRE_SOCKET_FD
+  if (fcntl(1703, F_GETFD) < 0) return 66;
+#endif
   if (!os_build_matches()) return 65;
   if (!fixed_artifact_matches(PS_RENDERER_BOOTSTRAP_PATH,
                               PS_RENDERER_BOOTSTRAP_SHA256) ||
@@ -157,14 +144,16 @@ int main(int argc, char **argv) {
   posix_spawnattr_destroy(&attributes);
   close(control[1]); close(errors[1]);
   if (launch != 0) { close(control[0]); close(errors[0]); return 71; }
+  ps_lifecycle owner;
+  ps_lifecycle_init(&owner, child);
   (void)fcntl(control[0], F_SETFL, O_NONBLOCK);
   (void)fcntl(errors[0], F_SETFL, O_NONBLOCK);
 
   char output[CONTROL_LIMIT + 1], stderr_output[STDERR_LIMIT + 1];
   size_t output_size = 0, error_size = 0;
-  int status = 0, reaped = 0, out_eof = 0, err_eof = 0, failure = 0;
+  int out_eof = 0, err_eof = 0, failure = 0;
   long long deadline = now_ms() + STARTUP_TIMEOUT_MS;
-  while (!failure && (!reaped || !out_eof || !err_eof)) {
+  while (!failure && (owner.state != PS_REAPED || !out_eof || !err_eof)) {
     int wait_ms = (int)(deadline - now_ms());
     if (wait_ms <= 0) { failure = 78; break; }
     struct pollfd fds[3] = {{control[0], POLLIN | POLLHUP, 0},
@@ -198,13 +187,12 @@ int main(int argc, char **argv) {
       }
       if (failure) break;
     }
-    if (!reaped) {
-      pid_t result = waitpid(child, &status, WNOHANG);
-      if (result == child) reaped = 1;
-      else if (result < 0 && errno != EINTR) { failure = 83; break; }
+    if (owner.state != PS_REAPED) {
+      if (ps_poll_exact(&owner) < 0) { failure = 83; break; }
     }
   }
-  if (!reaped) reap_or_stop(child, &reaped, &status);
+  if (owner.state != PS_REAPED && ps_stop_exact(&owner, now_ms, 250) < 0)
+    failure = 83;
   close(control[0]); close(errors[0]);
   if (error_size <= STDERR_LIMIT) {
     stderr_output[error_size] = '\0';
@@ -217,7 +205,8 @@ int main(int argc, char **argv) {
   static const char expected[] = "PS_RENDER_READY_V1\n{\"status\":\"ok\"}\n";
   static const char expected_events[] =
       "SANDBOX_ACTIVATED\nMODULE_LOADED\nFIRST_FD3_READ\n";
-  if (failure || !WIFEXITED(status) || WEXITSTATUS(status) != 0 ||
+  if (failure || owner.state != PS_REAPED ||
+      !WIFEXITED(owner.status) || WEXITSTATUS(owner.status) != 0 ||
       output_size != sizeof(expected) - 1 ||
       memcmp(output, expected, sizeof(expected) - 1) != 0 ||
       error_size != sizeof(expected_events) - 1 ||
