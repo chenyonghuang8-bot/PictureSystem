@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   OriginalReader,
   runApprovedOriginalProbe,
+  runSyntheticRendererStartupProbe,
   StorageRoot,
   StorageSafetyError,
 } from "./index.js";
@@ -72,6 +73,19 @@ describe("Phase 4D0 OriginalReader", () => {
     expect(snapshot(originalPath)).toEqual(before);
     expect(lstatSync(join(mediaRoot, ".writer.lock")).ino).toBe(lockBefore.ino);
     expect(existsSync(join(mediaRoot, "staging"))).toBe(false);
+  });
+
+  it("passes a verified synthetic original into the fixed D3a-0 startup harness", async () => {
+    reader = OriginalReader.open({
+      mediaRoot,
+      expectedMarkerId: writer!.markerId,
+    });
+    const before = snapshot(originalPath);
+    await reader.withVerifiedOriginal(identity, async (handle) => {
+      await runSyntheticRendererStartupProbe(handle);
+      expect(handle.consumed).toBe(true);
+    });
+    expect(snapshot(originalPath)).toEqual(before);
   });
 
   it("fails closed for missing roots and wrong markers without initializing anything", () => {

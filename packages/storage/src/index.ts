@@ -337,6 +337,61 @@ export async function runApprovedOriginalProbe(
   )) as OriginalProbeResult | DeniedOperationProbeResult;
 }
 
+/** D3a-0 synthetic qualification only; never dispatches a real renderer. */
+export async function runSyntheticRendererStartupProbe(
+  handle: VerifiedOriginalHandle,
+): Promise<void> {
+  if (!(handle instanceof VerifiedOriginalHandleImpl)) {
+    throw new StorageSafetyError("ORIGINAL_HANDLE_INVALID");
+  }
+  const { fd } = handle.consumeForFixedProbe();
+  const supervisor = resolve(
+    import.meta.dirname,
+    "../build/image_renderer_supervisor",
+  );
+  await new Promise<void>((resolveResult, reject) => {
+    let child;
+    try {
+      child = spawn(supervisor, [], {
+        stdio: ["ignore", "pipe", "pipe", fd, "pipe"],
+        env: { LANG: "C", LC_ALL: "C" },
+      });
+    } catch (error) {
+      closeSync(fd);
+      reject(safetyError("RENDERER_STARTUP_LAUNCH_FAILED", error));
+      return;
+    }
+    closeSync(fd);
+    let output = "";
+    let errorBytes = 0;
+    child.stdout?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+      if (output.length > 4096) child.stdio[4]?.destroy();
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      errorBytes += chunk.length;
+      if (errorBytes > 16 * 1024) child.stdio[4]?.destroy();
+    });
+    child.once("error", () => {
+      child.stdio[4]?.destroy();
+      reject(new StorageSafetyError("RENDERER_STARTUP_LAUNCH_FAILED"));
+    });
+    child.once("close", (code, signal) => {
+      child.stdio[4]?.destroy();
+      if (
+        code !== 0 ||
+        signal !== null ||
+        errorBytes !== 0 ||
+        output !== 'PS_RENDER_READY_V1\n{"status":"ok"}\n'
+      ) {
+        reject(new StorageSafetyError("RENDERER_STARTUP_CAPABILITY_FAILED"));
+      } else {
+        resolveResult();
+      }
+    });
+  });
+}
+
 export async function runFixedMetadataParser(
   handle: VerifiedOriginalHandle,
   options: { timeoutMs?: number } = {},
