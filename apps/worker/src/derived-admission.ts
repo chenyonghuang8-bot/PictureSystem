@@ -89,6 +89,7 @@ export async function admitDerivedReservation(
         totalBytes: physical.totalBytes,
         availableBytes: physical.availableBytes,
         complete: physical.derivedInventoryComplete,
+        observations: physical.derivedObservations,
       };
     });
     if (

@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { fork } from "node:child_process";
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -17,6 +18,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import {
   assertMigrationReadiness,
+  correlateDerivedFilesystemInventory,
   createDatabase,
   MySqlDerivedAdmissionRepository,
   MySqlMediaRepository,
@@ -264,6 +266,7 @@ describe.sequential("Phase 4D3b-0 capacity admission transaction", () => {
       totalBytes: physical.totalBytes,
       availableBytes: physical.availableBytes,
       complete: physical.derivedInventoryComplete,
+      observations: physical.derivedObservations,
     };
   }
 
@@ -633,6 +636,7 @@ describe.sequential("Phase 4D3b-0 capacity admission transaction", () => {
           totalBytes: 100n * 1_024n ** 3n,
           availableBytes: available,
           complete: true,
+          observations: [],
         })),
       );
     const results = await Promise.all([admitted(a), admitted(b)]);
@@ -665,6 +669,7 @@ describe.sequential("Phase 4D3b-0 capacity admission transaction", () => {
           totalBytes: 100n * 1_024n ** 3n,
           availableBytes: available,
           complete: snapshot().complete,
+          observations: snapshot().observations,
         }),
         {
           commitForTest: async (connection) => {
@@ -836,5 +841,198 @@ describe.sequential("Phase 4D3b-0 capacity admission transaction", () => {
       ]);
       holder.release();
     }
+  });
+
+  function writeKnownPart(
+    jobId: string,
+    epoch: string,
+    filename: "thumbnail.part" | "preview.part",
+    contents = "tiny",
+  ) {
+    const derived = join(mediaRoot, "derived");
+    const temp = join(derived, ".tmp");
+    const job = join(temp, jobId);
+    const epochDirectory = join(job, `e${epoch}`);
+    mkdirSync(epochDirectory, { recursive: true });
+    for (const directory of [derived, temp, job, epochDirectory]) {
+      chmodSync(directory, 0o700);
+    }
+    const file = join(epochDirectory, filename);
+    writeFileSync(file, contents);
+    chmodSync(file, 0o600);
+  }
+
+  it("correlates a known temp with its reservation and charges reserved bytes", async () => {
+    const identity = await fixture();
+    const created = await gate.withAdmissionLock(async (deadline) =>
+      repository.reserve(identity, deadline, snapshot),
+    );
+    expect(created.transaction).toBe("COMMITTED");
+    writeKnownPart(identity.jobId, "1", "thumbnail.part");
+    try {
+      const reused = await gate.withAdmissionLock(async (deadline) =>
+        repository.reserve(identity, deadline, snapshot),
+      );
+      expect(reused.transaction).toBe("COMMITTED");
+      expect(reused.row?.reservedBytes).toBe(512n * 1024n);
+      const [stored] = await database.pool.query<RowDataPacket[]>(
+        `SELECT CAST(reserved_bytes AS CHAR) AS reservedBytes, byte_size AS byteSize
+         FROM derived_assets WHERE id=?`,
+        [reused.row?.id],
+      );
+      expect(stored[0]?.reservedBytes).toBe("524288");
+      expect(stored[0]?.byteSize).toBeNull();
+      await gate.withAdmissionLock(async (deadline) => {
+        await runCapacityTransaction(
+          database.pool,
+          deadline,
+          async (connection) => {
+            const correlated = await correlateDerivedFilesystemInventory(
+              connection,
+              snapshot().observations,
+            );
+            expect(correlated.complete).toBe(true);
+            expect(correlated.matches[0]).toMatchObject({
+              familyId: identity.familyId,
+              mediaId: identity.mediaId,
+              generation: 1n,
+              recipeId: 1,
+              kind: "THUMBNAIL",
+              producerJobId: identity.jobId,
+              epoch: 1n,
+              reservedBytes: 512n * 1024n,
+              state: "RESERVED",
+              cleanedAt: null,
+              observedBytes: 4n,
+            });
+            return correlated;
+          },
+        );
+      });
+    } finally {
+      rmSync(join(mediaRoot, "derived"), { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when a known temp has no reservation row", async () => {
+    const identity = await fixture();
+    writeKnownPart(identity.jobId, "1", "thumbnail.part");
+    try {
+      const admission = await admitDerivedReservation(
+        { state: "READ_WRITE", root: storageRoot },
+        gate,
+        repository,
+        identity,
+      );
+      expect(admission.permit).toBeNull();
+      expect(admission.result.transaction).toBe("ROLLED_BACK");
+      expect(admission.result.reason).toBe("INVENTORY");
+      const [rows] = await database.pool.query<RowDataPacket[]>(
+        "SELECT COUNT(*) AS count FROM derived_assets WHERE producer_job_id=?",
+        [identity.jobId],
+      );
+      expect(Number(rows[0]?.count)).toBe(0);
+    } finally {
+      rmSync(join(mediaRoot, "derived"), { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when the temp epoch does not match the reservation", async () => {
+    const identity = await fixture();
+    const created = await gate.withAdmissionLock(async (deadline) =>
+      repository.reserve(identity, deadline, snapshot),
+    );
+    expect(created.transaction).toBe("COMMITTED");
+    writeKnownPart(identity.jobId, "2", "thumbnail.part");
+    try {
+      const admission = await admitDerivedReservation(
+        { state: "READ_WRITE", root: storageRoot },
+        gate,
+        repository,
+        identity,
+      );
+      expect(admission.permit).toBeNull();
+      expect(admission.result.reason).toBe("INVENTORY");
+    } finally {
+      rmSync(join(mediaRoot, "derived"), { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when the temp kind does not match the reservation", async () => {
+    const identity = await fixture();
+    const created = await gate.withAdmissionLock(async (deadline) =>
+      repository.reserve(identity, deadline, snapshot),
+    );
+    expect(created.transaction).toBe("COMMITTED");
+    writeKnownPart(identity.jobId, "1", "preview.part");
+    try {
+      const admission = await admitDerivedReservation(
+        { state: "READ_WRITE", root: storageRoot },
+        gate,
+        repository,
+        identity,
+      );
+      expect(admission.permit).toBeNull();
+      expect(admission.result.reason).toBe("INVENTORY");
+    } finally {
+      rmSync(join(mediaRoot, "derived"), { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when a cleaned reservation still has a temp file", async () => {
+    const identity = await fixture();
+    const created = await gate.withAdmissionLock(async (deadline) =>
+      repository.reserve(identity, deadline, snapshot),
+    );
+    expect(created.transaction).toBe("COMMITTED");
+    writeKnownPart(identity.jobId, "1", "thumbnail.part");
+    await database.pool.query(
+      "UPDATE derived_assets SET cleaned_at=CURRENT_TIMESTAMP(3) WHERE id=?",
+      [created.row?.id],
+    );
+    try {
+      const admission = await admitDerivedReservation(
+        { state: "READ_WRITE", root: storageRoot },
+        gate,
+        repository,
+        identity,
+      );
+      expect(admission.permit).toBeNull();
+      expect(admission.result.transaction).not.toBe("COMMITTED");
+      await gate.withAdmissionLock(async (deadline) => {
+        await runCapacityTransaction(
+          database.pool,
+          deadline,
+          async (connection) => {
+            const correlated = await correlateDerivedFilesystemInventory(
+              connection,
+              snapshot().observations,
+            );
+            expect(correlated.complete).toBe(false);
+            expect(correlated.matches).toEqual([]);
+            return correlated;
+          },
+        );
+      });
+    } finally {
+      rmSync(join(mediaRoot, "derived"), { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when reservation correlation cannot read the database", async () => {
+    const connection = await database.pool.getConnection();
+    connection.destroy();
+    await expect(
+      correlateDerivedFilesystemInventory(connection, [
+        {
+          jobId: "1",
+          epoch: 1n,
+          kind: "THUMBNAIL",
+          byteSize: 1n,
+          device: "1",
+          inode: "1",
+        },
+      ]),
+    ).rejects.toThrow();
   });
 });

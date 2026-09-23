@@ -42,6 +42,79 @@ export type ControlledDirectoryEntry = {
   uid: string;
   mode: number;
 };
+export type DerivedFilesystemObservation = {
+  jobId: string;
+  epoch: bigint;
+  kind: "THUMBNAIL" | "PREVIEW";
+  byteSize: bigint;
+  device: string;
+  inode: string;
+};
+type NativeDerivedObservation = {
+  jobId: string;
+  epoch: string;
+  kind: string;
+  byteSize: string;
+  device: string;
+  inode: string;
+};
+type NativeDerivedInventoryPage = {
+  outcome: string;
+  nextCursor: string;
+  generation: string;
+  observations: NativeDerivedObservation[];
+};
+const UINT64_MAX = 18446744073709551615n;
+
+function canonicalUint64(value: string, allowZero: boolean) {
+  if (typeof value !== "string" || !/^(?:0|[1-9][0-9]{0,19})$/u.test(value)) {
+    return null;
+  }
+  if (!allowZero && value === "0") return null;
+  const parsed = BigInt(value);
+  if (parsed < 0n || parsed > UINT64_MAX || parsed.toString() !== value) {
+    return null;
+  }
+  return parsed;
+}
+
+function readDerivedObservation(
+  raw: NativeDerivedObservation,
+): DerivedFilesystemObservation | null {
+  const epoch = canonicalUint64(raw.epoch, false);
+  const byteSize = canonicalUint64(raw.byteSize, true);
+  const device = canonicalUint64(raw.device, true);
+  const inode = canonicalUint64(raw.inode, true);
+  if (
+    canonicalUint64(raw.jobId, false) === null ||
+    epoch === null ||
+    byteSize === null ||
+    device === null ||
+    inode === null ||
+    (raw.kind !== "THUMBNAIL" && raw.kind !== "PREVIEW")
+  ) {
+    return null;
+  }
+  return {
+    jobId: raw.jobId,
+    epoch,
+    kind: raw.kind,
+    byteSize,
+    device: device.toString(),
+    inode: inode.toString(),
+  };
+}
+
+function readDerivedObservations(raw: readonly NativeDerivedObservation[]) {
+  const observations: DerivedFilesystemObservation[] = [];
+  for (const item of raw) {
+    const observation = readDerivedObservation(item);
+    if (observation === null) return null;
+    observations.push(observation);
+  }
+  return observations;
+}
+
 type NativeBinding = {
   provisionCapacityGate(handle: NativeRoot): void;
   openCapacityGate(path: string, expectedMarkerId: string): NativeCapacityGate;
@@ -51,7 +124,12 @@ type NativeBinding = {
     totalBytes: string;
     availableBytes: string;
     derivedInventoryComplete: boolean;
+    derivedObservations: NativeDerivedObservation[];
   };
+  capacityGateDerivedInventoryPage(
+    handle: NativeCapacityGate,
+    cursor: string,
+  ): NativeDerivedInventoryPage;
   closeCapacityGate(handle: NativeCapacityGate): void;
   openRoot(path: string, initialize: boolean): NativeOpenResult;
   closeRoot(handle: NativeRoot): void;
@@ -1113,10 +1191,48 @@ export class CapacityGate {
       throw new StorageSafetyError("CAPACITY_LOCK_REQUIRED");
     }
     const snapshot = this.#native.capacityGateSnapshot(this.#handle);
+    const observations = snapshot.derivedInventoryComplete
+      ? readDerivedObservations(snapshot.derivedObservations)
+      : [];
     return {
       totalBytes: BigInt(snapshot.totalBytes),
       availableBytes: BigInt(snapshot.availableBytes),
-      derivedInventoryComplete: snapshot.derivedInventoryComplete,
+      derivedInventoryComplete:
+        snapshot.derivedInventoryComplete && observations !== null,
+      derivedObservations: observations ?? [],
+    };
+  }
+
+  /** One bounded, read-only page. Callers must not treat a partial page as complete. */
+  derivedInventoryPage(cursor: string) {
+    if (!this.#holding || this.#handle === null) {
+      throw new StorageSafetyError("CAPACITY_LOCK_REQUIRED");
+    }
+    const page = this.#native.capacityGateDerivedInventoryPage(
+      this.#handle,
+      cursor,
+    );
+    const observations =
+      page.outcome === "incomplete"
+        ? []
+        : readDerivedObservations(page.observations);
+    const outcome =
+      page.outcome === "complete" || page.outcome === "continue"
+        ? page.outcome
+        : "incomplete";
+    if (observations === null || outcome === "incomplete") {
+      return {
+        outcome: "incomplete" as const,
+        nextCursor: "",
+        generation: page.generation,
+        observations: [],
+      };
+    }
+    return {
+      outcome,
+      nextCursor: page.nextCursor,
+      generation: page.generation,
+      observations,
     };
   }
 
@@ -1145,6 +1261,7 @@ export class CapacityGate {
         totalBytes: bigint;
         availableBytes: bigint;
         derivedInventoryComplete: boolean;
+        derivedObservations: readonly DerivedFilesystemObservation[];
       },
     ) => Promise<T>,
   ): Promise<T> {

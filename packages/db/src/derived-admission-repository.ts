@@ -14,8 +14,10 @@ import {
   runCapacityTransaction,
 } from "./capacity-transaction.js";
 import {
+  correlateDerivedFilesystemInventory,
   readDerivedCapacityInventory,
   readUploadCapacityInventory,
+  type DerivedFilesystemObservation,
 } from "./capacity-inventory.js";
 import { acquireCheckedConnection, readServerTime } from "./connection.js";
 
@@ -240,6 +242,7 @@ export class MySqlDerivedAdmissionRepository {
       totalBytes: bigint;
       availableBytes: bigint;
       complete: boolean;
+      observations?: readonly DerivedFilesystemObservation[] | undefined;
     },
     options: {
       commitForTest?: (connection: PoolConnection) => Promise<void>;
@@ -317,8 +320,13 @@ export class MySqlDerivedAdmissionRepository {
         }
         const usage = await readUploadCapacityInventory(connection);
         const physical = finalCapacitySnapshot();
+        const correlated = await correlateDerivedFilesystemInventory(
+          connection,
+          physical.complete ? physical.observations : undefined,
+        );
         if (
           !physical.complete ||
+          !correlated.complete ||
           physical.availableBytes < 0n ||
           physical.totalBytes <= 0n
         ) {

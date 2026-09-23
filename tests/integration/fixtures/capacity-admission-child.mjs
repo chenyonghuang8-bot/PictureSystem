@@ -45,6 +45,7 @@ process.once("message", async (message) => {
           availableBytes:
             10n * 1_024n ** 3n + 64n * 1_024n ** 2n + 2n * 512n * 1_024n - 1n,
           complete: physical.derivedInventoryComplete,
+          observations: physical.derivedObservations,
         };
       }),
     );

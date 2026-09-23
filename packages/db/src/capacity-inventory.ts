@@ -65,3 +65,132 @@ export async function readDerivedCapacityInventory(connection: PoolConnection) {
   }
   return { globalUsage, familyUsage, unsettled };
 }
+
+export type DerivedFilesystemObservation = {
+  jobId: string;
+  epoch: bigint;
+  kind: "THUMBNAIL" | "PREVIEW";
+  byteSize: bigint;
+  device: string;
+  inode: string;
+};
+
+export type CorrelatedDerivedTemp = {
+  familyId: string;
+  mediaId: string;
+  generation: bigint;
+  recipeId: number;
+  kind: "THUMBNAIL" | "PREVIEW";
+  producerJobId: string;
+  epoch: bigint;
+  reservedBytes: bigint;
+  state: string;
+  cleanedAt: null;
+  observedBytes: bigint;
+};
+
+type ReservationIdentityRow = RowDataPacket & {
+  id: string;
+  familyId: string;
+  mediaId: string;
+  generation: string;
+  recipeId: number;
+  kind: string;
+  state: string;
+  reservedBytes: string;
+  producerJobId: string;
+  producerLeaseEpoch: string | null;
+  cleanedAt: Date | null;
+};
+
+const UINT64_MAX = 18446744073709551615n;
+
+function canonicalId(value: string) {
+  if (!/^[1-9][0-9]{0,19}$/u.test(value)) return null;
+  const parsed = BigInt(value);
+  if (parsed <= 0n || parsed > UINT64_MAX || parsed.toString() !== value) {
+    return null;
+  }
+  return parsed;
+}
+
+/**
+ * Bind filesystem observations to authoritative reservation rows.
+ * A pathname is only a lookup key. Capacity stays on reserved_bytes;
+ * observed file size is not the charge. Any mismatch fails closed.
+ */
+export async function correlateDerivedFilesystemInventory(
+  connection: PoolConnection,
+  observations: readonly DerivedFilesystemObservation[] | undefined,
+): Promise<{ complete: boolean; matches: CorrelatedDerivedTemp[] }> {
+  if (!Array.isArray(observations)) return { complete: false, matches: [] };
+  if (observations.length === 0) return { complete: true, matches: [] };
+  const [rows] = await connection.query<ReservationIdentityRow[]>(
+    `SELECT CAST(id AS CHAR) AS id,
+       CAST(family_id AS CHAR) AS familyId,
+       CAST(media_id AS CHAR) AS mediaId,
+       CAST(generation AS CHAR) AS generation,
+       recipe_id AS recipeId, kind, state,
+       CAST(reserved_bytes AS CHAR) AS reservedBytes,
+       CAST(producer_job_id AS CHAR) AS producerJobId,
+       CAST(producer_lease_epoch AS CHAR) AS producerLeaseEpoch,
+       cleaned_at AS cleanedAt
+     FROM derived_assets ORDER BY id FOR UPDATE`,
+  );
+  const used = new Set<string>();
+  const matches: CorrelatedDerivedTemp[] = [];
+  for (const observation of observations) {
+    if (
+      typeof observation.epoch !== "bigint" ||
+      typeof observation.byteSize !== "bigint" ||
+      canonicalId(observation.jobId) === null ||
+      observation.epoch <= 0n ||
+      observation.epoch > UINT64_MAX ||
+      (observation.kind !== "THUMBNAIL" && observation.kind !== "PREVIEW") ||
+      observation.byteSize < 0n
+    ) {
+      return { complete: false, matches: [] };
+    }
+    const hits = rows.filter(
+      (row) =>
+        row.cleanedAt === null &&
+        row.producerJobId === observation.jobId &&
+        row.producerLeaseEpoch === observation.epoch.toString() &&
+        row.kind === observation.kind,
+    );
+    const row = hits.length === 1 ? hits[0] : undefined;
+    const familyId = row ? canonicalId(row.familyId) : null;
+    const mediaId = row ? canonicalId(row.mediaId) : null;
+    const generation = row ? canonicalId(row.generation) : null;
+    const reservedBytes = row ? canonicalId(row.reservedBytes) : null;
+    if (
+      !row ||
+      used.has(row.id) ||
+      familyId === null ||
+      mediaId === null ||
+      generation === null ||
+      reservedBytes === null ||
+      !Number.isSafeInteger(row.recipeId) ||
+      row.recipeId < 1 ||
+      typeof row.state !== "string" ||
+      row.state.length === 0
+    ) {
+      return { complete: false, matches: [] };
+    }
+    used.add(row.id);
+    matches.push({
+      familyId: row.familyId,
+      mediaId: row.mediaId,
+      generation,
+      recipeId: row.recipeId,
+      kind: observation.kind,
+      producerJobId: row.producerJobId,
+      epoch: observation.epoch,
+      reservedBytes,
+      state: row.state,
+      cleanedAt: null,
+      observedBytes: observation.byteSize,
+    });
+  }
+  return { complete: true, matches };
+}

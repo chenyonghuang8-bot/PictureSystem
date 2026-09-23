@@ -13,10 +13,12 @@ import {
   runCheckedTransaction,
 } from "./connection.js";
 import {
+  correlateDerivedFilesystemInventory,
   readDerivedCapacityInventory,
   readUploadCapacityInventory,
   RESERVED_FUTURE_SQL,
   RETAINED_STAGING_SQL,
+  type DerivedFilesystemObservation,
 } from "./capacity-inventory.js";
 import { runCapacityTransaction } from "./capacity-transaction.js";
 import { assertMigrationReadiness } from "./migration-readiness.js";
@@ -362,6 +364,7 @@ export class MySqlUploadRepository {
       totalBytes: bigint;
       availableBytes: bigint;
       derivedInventoryComplete: boolean;
+      derivedObservations?: readonly DerivedFilesystemObservation[] | undefined;
     },
   ): Promise<UploadRecord> {
     const outcome = await runCapacityTransaction(
@@ -378,8 +381,15 @@ export class MySqlUploadRepository {
             throw new UploadRepositoryError("QUOTA_EXCEEDED");
           }
           const physical = finalCapacitySnapshot();
+          const correlated = await correlateDerivedFilesystemInventory(
+            connection,
+            physical.derivedInventoryComplete
+              ? physical.derivedObservations
+              : undefined,
+          );
           if (
             !physical.derivedInventoryComplete ||
+            !correlated.complete ||
             physical.totalBytes <= 0n ||
             physical.availableBytes < 0n
           ) {

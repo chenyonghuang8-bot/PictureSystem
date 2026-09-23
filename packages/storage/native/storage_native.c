@@ -836,6 +836,8 @@ static napi_value release_capacity_gate(napi_env env, napi_callback_info info) {
   return undefined_value(env);
 }
 
+#include "derived_inventory.h"
+
 static napi_value capacity_gate_snapshot(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value arg;
@@ -846,78 +848,23 @@ static napi_value capacity_gate_snapshot(napi_env env, napi_callback_info info) 
     throw_code(env, "CAPACITY_LOCK_REQUIRED", "Capacity snapshot requires lock.");
     return NULL;
   }
-  // D3b-0 has no derived filesystem writer yet. Absence or a verified empty
-  // derived directory is complete inventory; any candidate/residue blocks
-  // admission until the later exact derived-namespace scanner is installed.
-  int derived_empty = 1;
-  struct stat derived_before, derived_after;
-  if (fstatat(gate->root_fd, "derived", &derived_before,
-              AT_SYMLINK_NOFOLLOW) == 0) {
-    if (!S_ISDIR(derived_before.st_mode) ||
-        derived_before.st_dev != gate->device ||
-        derived_before.st_uid != geteuid() ||
-        (derived_before.st_mode & 077) != 0) {
-      throw_code(env, "DERIVED_INVENTORY_UNSAFE",
-                 "Derived namespace cannot be trusted.");
-      return NULL;
-    }
-    int dir_fd = openat(gate->root_fd, "derived",
-                        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    if (dir_fd < 0) {
-      throw_errno(env, "open derived inventory");
-      return NULL;
-    }
-    struct stat opened_derived;
-    if (fstat(dir_fd, &opened_derived) != 0 ||
-        opened_derived.st_dev != derived_before.st_dev ||
-        opened_derived.st_ino != derived_before.st_ino ||
-        validate_no_extended_acl(dir_fd) != 0) {
-      close(dir_fd);
-      throw_code(env, "DERIVED_INVENTORY_UNSAFE",
-                 "Derived directory identity is unsafe.");
-      return NULL;
-    }
-    DIR *directory = fdopendir(dir_fd);
-    if (directory == NULL) {
-      close(dir_fd);
-      throw_errno(env, "open derived inventory stream");
-      return NULL;
-    }
-    errno = 0;
-    struct dirent *entry;
-    while ((entry = readdir(directory)) != NULL) {
-      if (strcmp(entry->d_name, ".") != 0 &&
-          strcmp(entry->d_name, "..") != 0) {
-        derived_empty = 0;
-        break;
-      }
-    }
-    int read_error = errno;
-    int valid = fstatat(gate->root_fd, "derived", &derived_after,
-                        AT_SYMLINK_NOFOLLOW) == 0 &&
-                derived_before.st_dev == derived_after.st_dev &&
-                derived_before.st_ino == derived_after.st_ino &&
-                derived_before.st_mtimespec.tv_sec ==
-                    derived_after.st_mtimespec.tv_sec &&
-                derived_before.st_mtimespec.tv_nsec ==
-                    derived_after.st_mtimespec.tv_nsec &&
-                derived_before.st_ctimespec.tv_sec ==
-                    derived_after.st_ctimespec.tv_sec &&
-                derived_before.st_ctimespec.tv_nsec ==
-                    derived_after.st_ctimespec.tv_nsec;
-    closedir(directory);
-    if (read_error != 0 || !valid) {
-      throw_code(env, "DERIVED_INVENTORY_UNSAFE",
-                 "Derived inventory changed during scan.");
-      return NULL;
-    }
-  } else if (errno != ENOENT) {
-    throw_errno(env, "inspect derived inventory");
+  // Read-only known-file inventory. Absence is complete. A recognized temp is
+  // reported as an observation; any unknown, unsafe, or unstable entry is
+  // incomplete. This scanner does not create or modify derived files.
+  derived_observation_t *observations = NULL;
+  uint32_t observation_count = 0;
+  int inventory =
+      stable_derived_inventory(gate, &observations, &observation_count);
+  if (inventory < 0) {
+    free(observations);
+    throw_errno(env, "read derived inventory");
     return NULL;
   }
+  const int derived_complete = inventory == 0;
   struct statfs disk;
   if (fstatfs(gate->root_fd, &disk) != 0 || disk.f_bsize <= 0 ||
       disk.f_blocks < 0 || disk.f_bavail < 0) {
+    free(observations);
     throw_errno(env, "read capacity snapshot");
     return NULL;
   }
@@ -931,16 +878,20 @@ static napi_value capacity_gate_snapshot(napi_env env, napi_callback_info info) 
   snprintf(total_text, sizeof(total_text), "%llu", (unsigned long long)total);
   snprintf(available_text, sizeof(available_text), "%llu",
            (unsigned long long)available);
-  napi_value object, total_value, available_value, complete_value;
+  napi_value object, total_value, available_value, complete_value, observed;
   napi_create_object(env, &object);
   napi_create_string_utf8(env, total_text, NAPI_AUTO_LENGTH, &total_value);
   napi_create_string_utf8(env, available_text, NAPI_AUTO_LENGTH,
                           &available_value);
   napi_set_named_property(env, object, "totalBytes", total_value);
   napi_set_named_property(env, object, "availableBytes", available_value);
-  napi_get_boolean(env, derived_empty, &complete_value);
+  napi_get_boolean(env, derived_complete, &complete_value);
   napi_set_named_property(env, object, "derivedInventoryComplete",
                           complete_value);
+  observed = derived_observations_array(
+      env, derived_complete ? observations : NULL, derived_complete ? observation_count : 0);
+  free(observations);
+  napi_set_named_property(env, object, "derivedObservations", observed);
   return object;
 }
 
@@ -2487,6 +2438,9 @@ static napi_value init(napi_env env, napi_value exports) {
        napi_default, NULL},
       {"capacityGateSnapshot", NULL, capacity_gate_snapshot, NULL, NULL, NULL,
        napi_default, NULL},
+      {"capacityGateDerivedInventoryPage", NULL,
+       capacity_gate_derived_inventory_page, NULL, NULL, NULL, napi_default,
+       NULL},
       {"closeCapacityGate", NULL, close_capacity_gate, NULL, NULL, NULL,
        napi_default, NULL},
       {"openRoot", NULL, open_root, NULL, NULL, NULL, napi_default, NULL},
