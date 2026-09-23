@@ -5,67 +5,19 @@ import type {
   DerivedReservationIdentity,
   MySqlDerivedAdmissionRepository,
 } from "@family-album/db";
-import type { CapacityGate, StorageCapability } from "@family-album/storage";
+import {
+  mintDerivedTempAdmissionPermit,
+  type DerivedStore,
+  type DerivedTempAdmissionPermit,
+  type StorageCapability,
+  type UnverifiedRenderedCandidate,
+} from "@family-album/storage";
+import type { CapacityGate } from "@family-album/storage";
 
-const permitSecret = Symbol("derived-temp-admission");
-const livePermits = new WeakSet<DerivedTempAdmissionPermit>();
-
-/**
- * Internal one-use authority for a future native temp stage. No filesystem
- * consumer exists in D3b-0; a plain object or TypeScript cast cannot pass the
- * runtime brand check.
- */
-export class DerivedTempAdmissionPermit {
-  #consumed = false;
-  #identity: DerivedReservationIdentity;
-
-  constructor(
-    secret: typeof permitSecret,
-    identity: DerivedReservationIdentity,
-    readonly reservationId: string,
-    readonly reservedBytes: bigint,
-    readonly deadline: number,
-  ) {
-    if (secret !== permitSecret) {
-      throw new Error("Invalid derived admission permit.");
-    }
-    this.#identity = {
-      ...identity,
-      workerId: Buffer.from(identity.workerId),
-    };
-    Object.freeze(this);
-    livePermits.add(this);
-  }
-
-  consume() {
-    if (
-      !livePermits.has(this) ||
-      this.#consumed ||
-      performance.now() >= this.deadline
-    ) {
-      throw new Error("Derived admission permit is no longer valid.");
-    }
-    this.#consumed = true;
-    return {
-      identity: {
-        ...this.#identity,
-        workerId: Buffer.from(this.#identity.workerId),
-      },
-      reservationId: this.reservationId,
-      reservedBytes: this.reservedBytes,
-    };
-  }
-}
-
-export function isDerivedTempAdmissionPermit(
-  value: unknown,
-): value is DerivedTempAdmissionPermit {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    livePermits.has(value as DerivedTempAdmissionPermit)
-  );
-}
+export {
+  DerivedTempAdmissionPermit,
+  isDerivedTempAdmissionPermit,
+} from "@family-album/storage";
 
 export type DerivedAdmissionDecision = {
   result: DerivedAdmissionResult;
@@ -106,8 +58,7 @@ export async function admitDerivedReservation(
     capability.root.assertIdentity();
     return {
       result,
-      permit: new DerivedTempAdmissionPermit(
-        permitSecret,
+      permit: mintDerivedTempAdmissionPermit(
         identity,
         result.row.id,
         result.reservedBytes,
@@ -115,4 +66,20 @@ export async function admitDerivedReservation(
       ),
     };
   });
+}
+
+/**
+ * Consumes a live permit and creates the deterministic owned temp.
+ * Does not seal, publish, or complete the job.
+ */
+export async function createOwnedDerivedTemp(
+  capability: StorageCapability,
+  store: DerivedStore,
+  repository: MySqlDerivedAdmissionRepository,
+  permit: DerivedTempAdmissionPermit,
+  candidate: UnverifiedRenderedCandidate,
+) {
+  return store.createOwnedTemp(capability, permit, candidate, (identity) =>
+    repository.currentLease(identity),
+  );
 }

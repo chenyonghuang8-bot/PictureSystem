@@ -131,6 +131,7 @@ type NativeBinding = {
     cursor: string,
   ): NativeDerivedInventoryPage;
   closeCapacityGate(handle: NativeCapacityGate): void;
+  provisionDerivedWriterLock(handle: NativeRoot): void;
   openRoot(path: string, initialize: boolean): NativeOpenResult;
   closeRoot(handle: NativeRoot): void;
   ensureDirectory(handle: NativeRoot, relativePath: string): void;
@@ -846,6 +847,19 @@ export class StorageRoot {
     }
   }
 
+  /** Explicit DEV provisioning only. Does not create a derived temp or final asset. */
+  provisionDerivedWriterLockForDev() {
+    if (process.env.NODE_ENV === "production") {
+      throw new StorageSafetyError("DERIVED_PROVISION_DEV_ONLY");
+    }
+    this.assertIdentity();
+    try {
+      this.#native.provisionDerivedWriterLock(this.#requiredHandle());
+    } catch (error) {
+      throw safetyError("DERIVED_PROVISION_FAILED", error);
+    }
+  }
+
   createUploadPayload(
     familyId: string,
     uploadId: string,
@@ -1347,6 +1361,24 @@ export class CapacityGate {
     }
   }
 }
+
+export {
+  DerivedTempAdmissionPermit,
+  isDerivedTempAdmissionPermit,
+  issueDerivedTempPermitForDev,
+  mintDerivedTempAdmissionPermit,
+} from "./derived-admission-permit.js";
+export type { DerivedTempPermitIdentity } from "./derived-admission-permit.js";
+export {
+  DerivedStore,
+  DerivedTempWriter,
+  SealedDerivedOutput,
+  isSealedDerivedOutput,
+} from "./derived-store.js";
+export type {
+  DerivedTempIdentitySnapshot,
+  SealedDerivedIdentity,
+} from "./derived-store.js";
 
 export function probeStorageCapability(input: {
   mediaRoot: unknown;

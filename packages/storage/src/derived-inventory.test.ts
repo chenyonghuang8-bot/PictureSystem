@@ -103,6 +103,7 @@ describe("derived known-file inventory", () => {
     try {
       privateDirectory(join(rootPath, "derived"));
       privateFile(join(rootPath, "derived", ".capacity.lock"), "");
+      privateFile(join(rootPath, "derived", ".derived-writer.lock"), "");
       await withGate(rootPath, (gate) => {
         const snapshot = gate.snapshotLocked();
         expect(snapshot.derivedInventoryComplete).toBe(true);

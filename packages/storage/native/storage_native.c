@@ -2426,6 +2426,8 @@ static napi_value consume_original_handle(napi_env env, napi_callback_info info)
   return result;
 }
 
+#include "derived_store.h"
+
 static napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
       {"provisionCapacityGate", NULL, provision_capacity_gate, NULL, NULL,
@@ -2481,6 +2483,26 @@ static napi_value init(napi_env env, napi_value exports) {
        napi_default, NULL},
       {"consumeOriginalHandle", NULL, consume_original_handle, NULL, NULL,
        NULL, napi_default, NULL},
+      {"provisionDerivedWriterLock", NULL, provision_derived_writer_lock, NULL,
+       NULL, NULL, napi_default, NULL},
+      {"openDerivedStore", NULL, open_derived_store, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"closeDerivedStore", NULL, close_derived_store, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"createDerivedTemp", NULL, create_derived_temp, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"writeDerivedTemp", NULL, write_derived_temp, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"cleanupDerivedTemp", NULL, cleanup_derived_temp, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"sealDerivedTemp", NULL, seal_derived_temp, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"consumeSealedOutput", NULL, consume_sealed_output, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"failNextDerivedFsync", NULL, fail_next_derived_fsync, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"failNextSealFault", NULL, fail_next_seal_fault, NULL, NULL, NULL,
+       napi_default, NULL},
   };
   napi_define_properties(env, exports,
                          sizeof(properties) / sizeof(properties[0]), properties);

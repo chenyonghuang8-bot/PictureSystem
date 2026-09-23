@@ -1,5 +1,5 @@
 /* Read-only derived known-file inventory.
- * Recognizes only derived/.capacity.lock and
+ * Recognizes only derived/.capacity.lock, derived/.derived-writer.lock, and
  * derived/.tmp/<job>/e<epoch>/{thumbnail,preview}.part.
  * This file must not create, rename, unlink, chmod, or truncate anything.
  */
@@ -132,13 +132,18 @@ static int open_private_directory(int parent, const char *name, dev_t device,
   return fd;
 }
 
+static int private_file_mode(mode_t mode, int sealed_part) {
+  mode_t bits = mode & 0777;
+  return bits == 0600 || (sealed_part && bits == 0400);
+}
+
 static int inspect_private_file(int parent, const char *name, dev_t device,
-                                struct stat *out) {
+                                struct stat *out, int sealed_part) {
   struct stat named;
   if (fstatat(parent, name, &named, AT_SYMLINK_NOFOLLOW) != 0) return -1;
   if (!S_ISREG(named.st_mode) || named.st_nlink != 1 ||
       !owned_by_caller(&named) || named.st_dev != device ||
-      named.st_size < 0 || (named.st_mode & 0777) != 0600) {
+      named.st_size < 0 || !private_file_mode(named.st_mode, sealed_part)) {
     errno = EPERM;
     return -1;
   }
@@ -149,7 +154,7 @@ static int inspect_private_file(int parent, const char *name, dev_t device,
   int failure = 0;
   if (fstat(fd, &opened) != 0 || !S_ISREG(opened.st_mode) ||
       !owned_by_caller(&opened) || opened.st_nlink != 1 ||
-      (opened.st_mode & 0777) != 0600 || opened.st_dev != named.st_dev ||
+      !private_file_mode(opened.st_mode, sealed_part) || opened.st_dev != named.st_dev ||
       opened.st_ino != named.st_ino || opened.st_size != named.st_size ||
       validate_no_extended_acl(fd) != 0) {
     failure = errno == 0 ? EPERM : errno;
@@ -161,8 +166,8 @@ static int inspect_private_file(int parent, const char *name, dev_t device,
       (fstatat(parent, name, &again, AT_SYMLINK_NOFOLLOW) != 0 ||
        !S_ISREG(again.st_mode) || !owned_by_caller(&again) ||
        again.st_dev != named.st_dev || again.st_ino != named.st_ino ||
-       again.st_size != named.st_size || again.st_nlink != 1 ||
-       (again.st_mode & 0777) != 0600)) {
+       again.st_size != named.st_size ||        again.st_nlink != 1 ||
+       !private_file_mode(again.st_mode, sealed_part))) {
     saved = errno == 0 ? EPERM : errno;
   }
   if (saved != 0) {
@@ -237,6 +242,7 @@ static int inspect_derived_root(int derived_fd, dev_t device, int *has_tmp) {
     return DERIVED_SCAN_ERROR;
   }
   int saw_lock = 0;
+  int saw_writer_lock = 0;
   int status = DERIVED_SCAN_COMPLETE;
   struct dirent *entry;
   errno = 0;
@@ -245,16 +251,18 @@ static int inspect_derived_root(int derived_fd, dev_t device, int *has_tmp) {
       errno = 0;
       continue;
     }
-    if (strcmp(entry->d_name, ".capacity.lock") == 0) {
+    if (strcmp(entry->d_name, ".capacity.lock") == 0 ||
+        strcmp(entry->d_name, ".derived-writer.lock") == 0) {
+      int *seen = entry->d_name[1] == 'c' ? &saw_lock : &saw_writer_lock;
       struct stat file_status;
-      if (saw_lock ||
-          inspect_private_file(derived_fd, ".capacity.lock", device,
-                               &file_status) != 0) {
-        status = derived_policy_errno(errno) || saw_lock ? DERIVED_SCAN_INCOMPLETE
-                                                         : DERIVED_SCAN_ERROR;
+      if (*seen ||
+          inspect_private_file(derived_fd, entry->d_name, device,
+                               &file_status, 0) != 0) {
+        status = derived_policy_errno(errno) || *seen ? DERIVED_SCAN_INCOMPLETE
+                                                      : DERIVED_SCAN_ERROR;
         break;
       }
-      saw_lock = 1;
+      *seen = 1;
       errno = 0;
       continue;
     }
@@ -354,7 +362,8 @@ static int scan_epoch_files(int epoch_fd, const struct stat *epoch_before,
     if (derived_kind_name(found[index], kind, sizeof(kind)) != 0) {
       return DERIVED_SCAN_INCOMPLETE;
     }
-    if (inspect_private_file(epoch_fd, found[index], device, &file_status) != 0) {
+    if (inspect_private_file(epoch_fd, found[index], device, &file_status, 1) !=
+        0) {
       return derived_policy_errno(errno) ? DERIVED_SCAN_INCOMPLETE
                                          : DERIVED_SCAN_ERROR;
     }
