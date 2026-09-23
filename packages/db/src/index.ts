@@ -14,6 +14,13 @@ export * from "./job-repository.js";
 export * from "./metadata-repository.js";
 export * from "./derived-admission-repository.js";
 export {
+  MySqlDerivedAssetFence,
+  derivativeFailureDisposition,
+  type DerivedFenceOutcome,
+  type DerivedFenceView,
+  type DerivedPublishingPayload,
+} from "./derived-asset-fence.js";
+export {
   correlateDerivedFilesystemInventory,
   type CorrelatedDerivedTemp,
   type DerivedFilesystemObservation,

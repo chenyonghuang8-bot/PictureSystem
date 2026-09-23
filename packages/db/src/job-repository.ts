@@ -162,16 +162,25 @@ export class MySqlJobRepository {
 
   async claimNext(
     workerId: WorkerIdentity,
+    options: { jobType?: Phase4JobType } = {},
   ): Promise<BackgroundJobRecord | null> {
     assertWorkerId(workerId);
+    if (
+      options.jobType !== undefined &&
+      !phase4JobTypes.includes(options.jobType)
+    ) {
+      throw new JobRepositoryError("INVALID_INPUT");
+    }
     return runCheckedTransaction(this.pool, async (connection) => {
       const [rows] = await connection.query<JobRow[]>(
         `${JOB_SELECT} FORCE INDEX (idx_background_jobs_claim)
          WHERE state IN ('QUEUED','RETRY_WAIT')
            AND available_at <= CURRENT_TIMESTAMP(3)
            AND attempts < max_attempts
+           ${options.jobType === undefined ? "" : "AND job_type=?"}
          ORDER BY available_at ASC,id ASC
          LIMIT 1 FOR UPDATE SKIP LOCKED`,
+        options.jobType === undefined ? [] : [options.jobType],
       );
       const candidate = rows[0];
       if (!candidate) return null;
