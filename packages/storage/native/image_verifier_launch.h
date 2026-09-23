@@ -292,6 +292,12 @@ static napi_value verify_sealed_output(napi_env env, napi_callback_info info) {
                   "Sealed output does not belong to this store.");
     return NULL;
   }
+  if (sealed->writer->verified) {
+    pthread_mutex_unlock(&store->mutex);
+    derived_throw(env, "DERIVED_ALREADY_VERIFIED",
+                  "Sealed output was already verified.");
+    return NULL;
+  }
   int identity = derived_verify_bound(sealed->writer, sealed->read_fd);
   int identity_errno = errno;
   if (identity != 0) {
@@ -331,7 +337,22 @@ static napi_value verify_sealed_output(napi_env env, napi_callback_info info) {
   }
   char sha_hex[65];
   if (post == 0) derived_digest_hex(sealed->writer->sha, sha_hex);
-  derived_consume_sealed(sealed);
+  static const char ready[] = "PS_RENDER_READY_V1\n";
+  int exit_status = launched == 0 && WIFEXITED(wait_status) ? WEXITSTATUS(wait_status) : -1;
+  int width = 0;
+  int height = 0;
+  int alpha = 0;
+  int transparent = 0;
+  int protocol_ok = post == 0 && exit_status == 0 &&
+                    output_size >= sizeof(ready) - 1 &&
+                    memcmp(output, ready, sizeof(ready) - 1) == 0;
+  if (protocol_ok) {
+    output[output_size] = '\0';
+    protocol_ok = accept_verifier_json(output + sizeof(ready) - 1, &width,
+                                       &height, &alpha, &transparent) == 0;
+  }
+  if (!protocol_ok) derived_consume_sealed(sealed);
+  else sealed->writer->verified = 1;
   pthread_mutex_unlock(&store->mutex);
   if (post != 0) {
     derived_throw(env, post_errno == EILSEQ ? "DERIVED_HASH_MISMATCH"
@@ -339,12 +360,11 @@ static napi_value verify_sealed_output(napi_env env, napi_callback_info info) {
                   "Sealed identity changed during verification.");
     return NULL;
   }
-  if (launched != 0 || !WIFEXITED(wait_status)) {
+  if (launched != 0 || exit_status < 0) {
     derived_throw(env, "DERIVED_VERIFY_FAILED",
                   "Verifier process did not exit cleanly.");
     return NULL;
   }
-  int exit_status = WEXITSTATUS(wait_status);
   if (exit_status == 76) {
     derived_throw(env, "DERIVED_VERIFY_CRASH", "Verifier crashed.");
     return NULL;
@@ -358,27 +378,9 @@ static napi_value verify_sealed_output(napi_env env, napi_callback_info info) {
                   "Verifier owner disappeared.");
     return NULL;
   }
-  if (exit_status != 0) {
+  if (!protocol_ok) {
     derived_throw(env, "DERIVED_VERIFY_REJECTED",
                   "Verifier rejected the sealed output.");
-    return NULL;
-  }
-  static const char ready[] = "PS_RENDER_READY_V1\n";
-  if (output_size < sizeof(ready) ||
-      memcmp(output, ready, sizeof(ready) - 1) != 0) {
-    derived_throw(env, "DERIVED_VERIFY_REJECTED",
-                  "Verifier protocol was not ready.");
-    return NULL;
-  }
-  output[output_size] = '\0';
-  int width = 0;
-  int height = 0;
-  int alpha = 0;
-  int transparent = 0;
-  if (accept_verifier_json(output + sizeof(ready) - 1, &width, &height, &alpha,
-                           &transparent) != 0) {
-    derived_throw(env, "DERIVED_VERIFY_REJECTED",
-                  "Verifier result was not an exact geometry record.");
     return NULL;
   }
   napi_value result;

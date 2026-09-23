@@ -58,6 +58,15 @@ type NativeDerivedObservation = {
   device: string;
   inode: string;
 };
+type NativeDerivedRecoveryFact = {
+  fileClass: string;
+  byteSize: string;
+  device: string;
+  inode: string;
+  mode: string;
+  nlink: string;
+  sha256Hex: string;
+};
 type NativeDerivedInventoryPage = {
   outcome: string;
   nextCursor: string;
@@ -105,6 +114,47 @@ function readDerivedObservation(
   };
 }
 
+function readRecoveryFact(raw: NativeDerivedRecoveryFact) {
+  if (raw.fileClass === "ABSENT") {
+    return {
+      fileClass: "ABSENT" as const,
+      byteSize: 0n,
+      device: "0",
+      inode: "0",
+      mode: 0,
+      nlink: 0,
+      sha256Hex: "",
+    };
+  }
+  const byteSize = canonicalUint64(raw.byteSize, true);
+  const device = canonicalUint64(raw.device, true);
+  const inode = canonicalUint64(raw.inode, true);
+  const mode = /^[0-7]{3,4}$/u.test(raw.mode) ? Number.parseInt(raw.mode, 8) : null;
+  const nlink = canonicalUint64(raw.nlink, false);
+  if (
+    byteSize === null ||
+    device === null ||
+    inode === null ||
+    mode === null ||
+    nlink === null ||
+    (raw.fileClass !== "REGULAR" &&
+      raw.fileClass !== "SYMLINK" &&
+      raw.fileClass !== "UNSAFE") ||
+    (raw.fileClass === "REGULAR" && !/^[0-9a-f]{64}$/u.test(raw.sha256Hex))
+  ) {
+    return null;
+  }
+  return {
+    fileClass: raw.fileClass,
+    byteSize,
+    device: device.toString(),
+    inode: inode.toString(),
+    mode,
+    nlink: Number(nlink),
+    sha256Hex: raw.sha256Hex,
+  };
+}
+
 function readDerivedObservations(raw: readonly NativeDerivedObservation[]) {
   const observations: DerivedFilesystemObservation[] = [];
   for (const item of raw) {
@@ -130,6 +180,36 @@ type NativeBinding = {
     handle: NativeCapacityGate,
     cursor: string,
   ): NativeDerivedInventoryPage;
+  describeDerivedTemp(
+    handle: NativeCapacityGate,
+    jobId: string,
+    epoch: string,
+    kind: string,
+  ): NativeDerivedRecoveryFact;
+  inspectDerivedFinal(
+    handle: NativeCapacityGate,
+    familyId: string,
+    mediaId: string,
+    generation: string,
+    recipeId: string,
+    kind: string,
+  ): NativeDerivedRecoveryFact;
+  derivedFinalInventoryPage(
+    handle: NativeCapacityGate,
+    cursor: string,
+  ): {
+    outcome: string;
+    nextCursor: string;
+    finals: Array<
+      NativeDerivedRecoveryFact & {
+        familyId: string;
+        mediaId: string;
+        generation: string;
+        recipeId: string;
+        kind: string;
+      }
+    >;
+  };
   closeCapacityGate(handle: NativeCapacityGate): void;
   provisionDerivedWriterLock(handle: NativeRoot): void;
   openRoot(path: string, initialize: boolean): NativeOpenResult;
@@ -1250,6 +1330,160 @@ export class CapacityGate {
     };
   }
 
+  describeDerivedTemp(jobId: string, epoch: bigint, kind: "THUMBNAIL" | "PREVIEW") {
+    this.#requireLock();
+    const fact = readRecoveryFact(
+      this.#native.describeDerivedTemp(
+        this.#requiredGate(),
+        jobId,
+        epoch.toString(),
+        kind,
+      ),
+    );
+    if (fact === null) throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
+    return fact;
+  }
+
+  inspectDerivedFinal(input: {
+    familyId: string;
+    mediaId: string;
+    generation: bigint;
+    recipeId: 1;
+    kind: "THUMBNAIL" | "PREVIEW";
+  }) {
+    this.#requireLock();
+    const fact = readRecoveryFact(
+      this.#native.inspectDerivedFinal(
+        this.#requiredGate(),
+        input.familyId,
+        input.mediaId,
+        input.generation.toString(),
+        String(input.recipeId),
+        input.kind,
+      ),
+    );
+    if (fact === null) throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
+    return fact;
+  }
+
+  /**
+   * One bounded page of canonical final files. A partial page is not complete.
+   * This does not delete or rename.
+   */
+  derivedFinalPage(cursor: string) {
+    this.#requireLock();
+    let page: ReturnType<NativeBinding["derivedFinalInventoryPage"]>;
+    try {
+      page = this.#native.derivedFinalInventoryPage(this.#requiredGate(), cursor);
+    } catch (error) {
+      throw safetyError("DERIVED_RECOVERY_INCOMPLETE", error);
+    }
+    if (page.outcome !== "complete" && page.outcome !== "continue") {
+      throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
+    }
+    const finals = [];
+    for (const item of page.finals) {
+      const fact = readRecoveryFact(item);
+      const generation = canonicalUint64(item.generation, false);
+      if (
+        fact === null ||
+        generation === null ||
+        canonicalUint64(item.familyId, false) === null ||
+        canonicalUint64(item.mediaId, false) === null ||
+        item.recipeId !== "1" ||
+        (item.kind !== "THUMBNAIL" && item.kind !== "PREVIEW")
+      ) {
+        throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
+      }
+      finals.push({
+        familyId: item.familyId,
+        mediaId: item.mediaId,
+        generation,
+        recipeId: 1 as const,
+        kind: item.kind,
+        ...fact,
+      });
+    }
+    return { outcome: page.outcome, nextCursor: page.nextCursor, finals };
+  }
+
+  /**
+   * Startup recovery scan. Stops after eight pages. A generation change or a
+   * fact that no longer matches the page fails closed.
+   */
+  async recoveryInventory(maxPages = 8) {
+    if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 8) {
+      throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
+    }
+    return this.withLock(async () => {
+      const temps = [];
+      let cursor = "";
+      let generation = "";
+      for (let page = 0; page < maxPages; page += 1) {
+        const next = this.derivedInventoryPage(cursor);
+        if (next.outcome === "incomplete") {
+          throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
+        }
+        if (generation === "") generation = next.generation;
+        if (generation !== next.generation) {
+          throw new StorageSafetyError("DERIVED_RECOVERY_CHANGED");
+        }
+        for (const observation of next.observations) {
+          const fact = this.describeDerivedTemp(
+            observation.jobId,
+            observation.epoch,
+            observation.kind,
+          );
+          if (
+            fact.fileClass !== "REGULAR" ||
+            fact.device !== observation.device ||
+            fact.inode !== observation.inode ||
+            fact.byteSize !== observation.byteSize
+          ) {
+            throw new StorageSafetyError("DERIVED_RECOVERY_CHANGED");
+          }
+          temps.push({
+            jobId: observation.jobId,
+            epoch: observation.epoch,
+            kind: observation.kind,
+            ...fact,
+          });
+        }
+        if (next.outcome === "complete") break;
+        if (page + 1 === maxPages) {
+          throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
+        }
+        cursor = next.nextCursor;
+      }
+      const finals = [];
+      cursor = "";
+      for (let page = 0; page < maxPages; page += 1) {
+        const next = this.derivedFinalPage(cursor);
+        finals.push(...next.finals);
+        if (next.outcome === "complete") {
+          return { complete: true as const, generation, temps, finals };
+        }
+        if (page + 1 === maxPages) {
+          throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
+        }
+        cursor = next.nextCursor;
+      }
+      throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
+    });
+  }
+
+  #requireLock() {
+    if (!this.#holding || this.#handle === null) {
+      throw new StorageSafetyError("CAPACITY_LOCK_REQUIRED");
+    }
+  }
+
+  #requiredGate() {
+    this.#requireLock();
+    if (this.#handle === null) throw new StorageSafetyError("CAPACITY_GATE_CLOSED");
+    return this.#handle;
+  }
+
   async withLock<T>(
     operation: (
       capacity: {
@@ -1338,6 +1572,7 @@ export class CapacityGate {
         this.#holding = false;
       }
     } catch (error) {
+      if (error instanceof StorageSafetyError) throw error;
       throw safetyError("CAPACITY_GATE_FAILED", error);
     } finally {
       this.#pending -= 1;
@@ -1376,6 +1611,7 @@ export {
   isSealedDerivedOutput,
 } from "./derived-store.js";
 export type {
+  DerivedPublishResult,
   DerivedTempIdentitySnapshot,
   DerivedVerifyResult,
   DerivedVerifyScenario,

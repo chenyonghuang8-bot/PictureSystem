@@ -48,6 +48,11 @@ type DerivedNative = {
     jobId: string,
     epoch: string,
     kind: string,
+    familyId: string,
+    mediaId: string,
+    generation: string,
+    recipeId: string,
+    reservationId: string,
   ): NativeWriter;
   writeDerivedTemp(
     writer: NativeWriter,
@@ -59,6 +64,32 @@ type DerivedNative = {
     writer: NativeWriter,
   ): NativeSnapshot & { handle: NativeSealed };
   consumeSealedOutput(sealed: NativeSealed, store: NativeStore): void;
+  cleanupExactDerivedTemp(
+    store: NativeStore,
+    jobId: string,
+    epoch: string,
+    kind: string,
+    device: string,
+    inode: string,
+    byteSize: string,
+    sha256Hex: string,
+    familyId: string,
+    mediaId: string,
+    generation: string,
+    recipeId: string,
+  ): boolean;
+  publishSealedOutput(
+    sealed: NativeSealed,
+    store: NativeStore,
+  ): {
+    outcome: "PUBLISHED" | "IDENTICAL";
+    sha256Hex: string;
+    byteSize: string;
+    inode: string;
+    device: string;
+    generation: string;
+    kind: string;
+  };
   verifySealedOutput(
     sealed: NativeSealed,
     store: NativeStore,
@@ -81,6 +112,16 @@ const liveSealed = new WeakSet<SealedDerivedOutput>();
 
 export type DerivedVerifyScenario =
   "run" | "timeout" | "crash" | "ignore-term" | "owner-death" | "high-fd";
+
+export type DerivedPublishResult = {
+  outcome: "PUBLISHED" | "IDENTICAL";
+  sha256Hex: string;
+  byteSize: string;
+  inode: string;
+  device: string;
+  generation: string;
+  kind: string;
+};
 
 export type DerivedVerifyResult = {
   width: number;
@@ -390,6 +431,45 @@ export class SealedDerivedOutput {
   }
 
   /**
+   * Exclusive no-clobber rename into the fixed final derived namespace.
+   * This does not write READY, finish a job, or serve the asset.
+   */
+  publish(
+    store: DerivedStore,
+    capability: StorageCapability,
+    binding: {
+      familyId: string;
+      mediaId: string;
+      generation: bigint;
+      recipeId: 1;
+      kind: "THUMBNAIL" | "PREVIEW";
+      jobId: string;
+      epoch: bigint;
+      reservationId: string;
+    },
+  ) {
+    assertWritable(capability);
+    this.#assertLive();
+    if (!store.sameCapabilityRoot(capability) || store !== this.#store) {
+      throw new StorageSafetyError("DERIVED_STORE_MISMATCH");
+    }
+    const identity = this.#identity;
+    if (
+      binding.familyId !== identity.familyId ||
+      binding.mediaId !== identity.mediaId ||
+      binding.generation !== identity.generation ||
+      binding.recipeId !== identity.recipeId ||
+      binding.kind !== identity.kind ||
+      binding.jobId !== identity.jobId ||
+      binding.epoch !== identity.epoch ||
+      binding.reservationId !== identity.reservationId
+    ) {
+      throw new StorageSafetyError("DERIVED_PUBLISH_IDENTITY");
+    }
+    return store.publishSealed(this);
+  }
+
+  /**
    * Full-decode this sealed candidate in the fixed verifier.
    * The result is not a READY asset and is not published.
    */
@@ -428,8 +508,6 @@ export class SealedDerivedOutput {
     }
     try {
       const raw = native.verifySealedOutput(this.#handle, handle, scenario);
-      this.#consumed = true;
-      liveSealed.delete(this);
       if (
         raw.staticImage !== true ||
         raw.sha256Hex !== this.#identity.sha256Hex ||
@@ -438,6 +516,7 @@ export class SealedDerivedOutput {
         raw.width <= 0 ||
         raw.height <= 0
       ) {
+        this.finish(store, native, handle);
         throw new StorageSafetyError("DERIVED_VERIFY_REJECTED");
       }
       return {
@@ -463,6 +542,7 @@ export class SealedDerivedOutput {
           : "DERIVED_VERIFY_FAILED";
       if (
         code !== "DERIVED_SEALED_CLOSED" &&
+        code !== "DERIVED_ALREADY_VERIFIED" &&
         code !== "DERIVED_VERIFIER_UNAVAILABLE" &&
         code !== "STORAGE_INVALID_ARGUMENT" &&
         code !== "DERIVED_FAULT_DEV_ONLY"
@@ -484,6 +564,56 @@ export class SealedDerivedOutput {
     native.consumeSealedOutput(this.#handle, handle);
     this.#consumed = true;
     liveSealed.delete(this);
+  }
+
+  finishPublish(
+    store: DerivedStore,
+    native: DerivedNative,
+    handle: NativeStore,
+  ) {
+    if (
+      !liveSealed.has(this) ||
+      this.#consumed ||
+      store !== this.#store ||
+      native !== this.#native
+    ) {
+      throw new StorageSafetyError("DERIVED_STORE_MISMATCH");
+    }
+    try {
+      const raw = native.publishSealedOutput(this.#handle, handle);
+      this.#consumed = true;
+      liveSealed.delete(this);
+      if (
+        (raw.outcome !== "PUBLISHED" && raw.outcome !== "IDENTICAL") ||
+        raw.sha256Hex !== this.#identity.sha256Hex ||
+        raw.kind !== this.#identity.kind ||
+        raw.generation !== this.#identity.generation.toString()
+      ) {
+        throw new StorageSafetyError("DERIVED_PUBLISH_FAILED");
+      }
+      return raw;
+    } catch (error) {
+      if (error instanceof StorageSafetyError) {
+        this.#consumed = true;
+        liveSealed.delete(this);
+        throw error;
+      }
+      const code =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? error.code
+          : "DERIVED_PUBLISH_FAILED";
+      if (
+        code !== "DERIVED_SEALED_CLOSED" &&
+        code !== "DERIVED_PUBLISH_UNVERIFIED"
+      ) {
+        this.#consumed = true;
+        liveSealed.delete(this);
+      }
+      throw new StorageSafetyError(code);
+    }
   }
 
   #assertLive() {
@@ -553,6 +683,58 @@ export class DerivedStore {
     return output.runVerify(this, this.#native, this.#handle, scenario);
   }
 
+  publishSealed(output: SealedDerivedOutput) {
+    return output.finishPublish(this, this.#native, this.#handle);
+  }
+
+  /**
+   * Deletes one open temp whose device, inode, size, and SHA still match.
+   * A sealed temp, a symlink, or any existing final name is refused.
+   */
+  cleanupExactTemp(
+    capability: StorageCapability,
+    fact: {
+      jobId: string;
+      epoch: bigint;
+      kind: "THUMBNAIL" | "PREVIEW";
+      byteSize: bigint;
+      device: string;
+      inode: string;
+      sha256Hex: string;
+      familyId: string;
+      mediaId: string;
+      generation: bigint;
+      recipeId: 1;
+    },
+  ) {
+    assertWritable(capability);
+    if (!this.sameCapabilityRoot(capability)) {
+      throw new StorageSafetyError("DERIVED_STORE_MISMATCH");
+    }
+    const native = this.#required();
+    try {
+      const durable = native.cleanupExactDerivedTemp(
+        this.#handle,
+        fact.jobId,
+        fact.epoch.toString(),
+        fact.kind,
+        fact.device,
+        fact.inode,
+        fact.byteSize.toString(),
+        fact.sha256Hex,
+        fact.familyId,
+        fact.mediaId,
+        fact.generation.toString(),
+        String(fact.recipeId),
+      );
+      if (durable !== true)
+        throw new StorageSafetyError("DERIVED_RECOVERY_DURABILITY_UNKNOWN");
+    } catch (error) {
+      if (error instanceof StorageSafetyError) throw error;
+      throw safetyError("DERIVED_RECOVERY_CLEANUP", error);
+    }
+  }
+
   /** Dev-only: the next verifier discards a successful decode after the post-check. */
   failNextVerifyPostForDev() {
     if (process.env.NODE_ENV === "production") {
@@ -620,6 +802,11 @@ export class DerivedStore {
           consumed.identity.jobId,
           consumed.identity.leaseEpoch.toString(),
           consumed.identity.kind,
+          consumed.identity.familyId,
+          consumed.identity.mediaId,
+          consumed.identity.generation.toString(),
+          String(consumed.identity.recipeId),
+          consumed.reservationId,
         ),
         consumed,
       );

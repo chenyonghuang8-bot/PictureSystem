@@ -1,6 +1,8 @@
 /* Read-only derived known-file inventory.
- * Recognizes only derived/.capacity.lock, derived/.derived-writer.lock, and
- * derived/.tmp/<job>/e<epoch>/{thumbnail,preview}.part.
+ * Recognizes derived/.capacity.lock, derived/.derived-writer.lock,
+ * derived/.tmp/<job>/e<epoch>/{thumbnail,preview}.part, and the final
+ * derived/<family>/<media>/r<recipe>/g<generation>/{thumbnail,preview}.webp
+ * grammar. Final files are known and are not temp observations.
  * This file must not create, rename, unlink, chmod, or truncate anything.
  */
 #ifndef FAMILY_ALBUM_DERIVED_INVENTORY_H
@@ -230,6 +232,110 @@ static int select_later_names(int dir_fd, const char *after, uint32_t limit,
   return 0;
 }
 
+static int canonical_final_name(const char *name, char prefix, unsigned long long max_value) {
+  char decimal[32];
+  const char *digits = name;
+  if (prefix != 0) {
+    if (name[0] != prefix || name[1] == '\0') return -1;
+    digits = name + 1;
+  }
+  if (canonical_u64(digits, decimal, sizeof(decimal)) != 0) return -1;
+  errno = 0;
+  unsigned long long value = strtoull(decimal, NULL, 10);
+  if (errno != 0 || value < 1 || value > max_value) return -1;
+  return 0;
+}
+
+static int final_file_ok(int parent, const char *name, dev_t device) {
+  uint32_t cap = 0;
+  if (strcmp(name, "thumbnail.webp") == 0) cap = 512U * 1024U;
+  else if (strcmp(name, "preview.webp") == 0) cap = 4U * 1024U * 1024U;
+  else return -1;
+  struct stat named;
+  if (fstatat(parent, name, &named, AT_SYMLINK_NOFOLLOW) != 0) return -1;
+  if (!S_ISREG(named.st_mode) || named.st_nlink != 1 || named.st_dev != device ||
+      !owned_by_caller(&named) || (named.st_mode & 0777) != 0400 ||
+      named.st_size <= 0 || (unsigned long long)named.st_size > cap) {
+    errno = EPERM;
+    return -1;
+  }
+  int fd = openat_restart(parent, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+  if (fd < 0) return -1;
+  struct stat opened;
+  int failure = 0;
+  if (fstat(fd, &opened) != 0 || !same_identity(&named, &opened) ||
+      validate_no_extended_acl(fd) != 0) {
+    failure = errno == 0 ? EPERM : errno;
+  }
+  if (close(fd) != 0 && failure == 0) failure = errno;
+  if (failure != 0) {
+    errno = failure;
+    return -1;
+  }
+  return 0;
+}
+
+/* Exact final grammar is a known class. It is not a temp observation. */
+static int canonical_tree_ok(int parent, dev_t device, int depth) {
+  int fd = dup(parent);
+  if (fd < 0) return -1;
+  DIR *directory = fdopendir(fd);
+  if (directory == NULL) {
+    int saved = errno;
+    close(fd);
+    errno = saved;
+    return -1;
+  }
+  int count = 0;
+  int status = 0;
+  struct dirent *entry;
+  errno = 0;
+  while ((entry = readdir(directory)) != NULL) {
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+      errno = 0;
+      continue;
+    }
+    if (++count > 256) {
+      status = -1;
+      break;
+    }
+    if (depth == 3) {
+      if (final_file_ok(parent, entry->d_name, device) != 0) status = -1;
+    } else if (depth > 3) {
+      status = -1;
+    } else {
+      char prefix = depth == 1 ? 'r' : depth == 2 ? 'g' : 0;
+      unsigned long long max_value = depth == 1 ? 32767ULL : ~0ULL;
+      struct stat child;
+      if (canonical_final_name(entry->d_name, prefix, max_value) != 0 ||
+          fstatat(parent, entry->d_name, &child, AT_SYMLINK_NOFOLLOW) != 0 ||
+          !S_ISDIR(child.st_mode)) {
+        status = -1;
+      } else {
+        int child_fd = open_private_directory(parent, entry->d_name, device, &child);
+        if (child_fd < 0 || canonical_tree_ok(child_fd, device, depth + 1) != 0) {
+          status = -1;
+        }
+        if (child_fd >= 0) close(child_fd);
+      }
+    }
+    if (status != 0) break;
+    errno = 0;
+  }
+  if (status == 0 && errno != 0) status = -1;
+  if (closedir(directory) != 0 && status == 0) status = -1;
+  return status;
+}
+
+static int canonical_tree_ok_at(int parent, const char *name, dev_t device) {
+  struct stat child;
+  int fd = open_private_directory(parent, name, device, &child);
+  if (fd < 0) return -1;
+  int status = canonical_tree_ok(fd, device, 0);
+  if (close(fd) != 0 && status == 0) status = -1;
+  return status;
+}
+
 static int inspect_derived_root(int derived_fd, dev_t device, int *has_tmp) {
   *has_tmp = 0;
   int fd = dup(derived_fd);
@@ -275,8 +381,12 @@ static int inspect_derived_root(int derived_fd, dev_t device, int *has_tmp) {
       errno = 0;
       continue;
     }
-    status = DERIVED_SCAN_INCOMPLETE;
-    break;
+    if (canonical_final_name(entry->d_name, 0, ~0ULL) != 0 ||
+        canonical_tree_ok_at(derived_fd, entry->d_name, device) != 0) {
+      status = DERIVED_SCAN_INCOMPLETE;
+      break;
+    }
+    errno = 0;
   }
   if (status == DERIVED_SCAN_COMPLETE && errno != 0) status = DERIVED_SCAN_ERROR;
   if (closedir(directory) != 0 && status == DERIVED_SCAN_COMPLETE) {

@@ -32,6 +32,12 @@ struct derived_writer {
   char job[32];
   char epoch[32];
   char kind[12];
+  char family[32];
+  char media[32];
+  char generation[32];
+  char recipe[8];
+  char reservation[32];
+  int verified;
   dev_t device;
   ino_t inode;
   off_t size;
@@ -615,21 +621,35 @@ static int derived_bind_created_file(derived_writer_t *writer) {
 }
 
 static napi_value create_derived_temp(napi_env env, napi_callback_info info) {
-  size_t argc = 4;
-  napi_value args[4];
+  size_t argc = 9;
+  napi_value args[9];
   napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   char job[32], epoch[32], kind[12], leaf[16], epoch_name[40];
-  if (argc != 4 || get_string(env, args[1], job, sizeof(job)) != 0 ||
+  char family[32], media[32], generation[32], recipe[32], reservation[32];
+  if (argc != 9 || get_string(env, args[1], job, sizeof(job)) != 0 ||
       get_string(env, args[2], epoch, sizeof(epoch)) != 0 ||
-      get_string(env, args[3], kind, sizeof(kind)) != 0) {
+      get_string(env, args[3], kind, sizeof(kind)) != 0 ||
+      get_string(env, args[4], family, sizeof(family)) != 0 ||
+      get_string(env, args[5], media, sizeof(media)) != 0 ||
+      get_string(env, args[6], generation, sizeof(generation)) != 0 ||
+      get_string(env, args[7], recipe, sizeof(recipe)) != 0 ||
+      get_string(env, args[8], reservation, sizeof(reservation)) != 0) {
     return NULL;
   }
   derived_store_t *store = derived_get_store(env, args[0]);
   if (store == NULL) return NULL;
-  char canonical_job[32], canonical_epoch[32];
+  char canonical_job[32], canonical_epoch[32], canonical_family[32];
+  char canonical_media[32], canonical_generation[32], canonical_recipe[32];
+  char canonical_reservation[32];
   uint32_t byte_cap = 0;
   if (canonical_u64(job, canonical_job, sizeof(canonical_job)) != 0 ||
       canonical_u64(epoch, canonical_epoch, sizeof(canonical_epoch)) != 0 ||
+      canonical_u64(family, canonical_family, sizeof(canonical_family)) != 0 ||
+      canonical_u64(media, canonical_media, sizeof(canonical_media)) != 0 ||
+      canonical_u64(generation, canonical_generation, sizeof(canonical_generation)) != 0 ||
+      canonical_u64(recipe, canonical_recipe, sizeof(canonical_recipe)) != 0 ||
+      strcmp(canonical_recipe, "1") != 0 ||
+      canonical_u64(reservation, canonical_reservation, sizeof(canonical_reservation)) != 0 ||
       derived_leaf_name(kind, leaf, sizeof(leaf), &byte_cap) != 0 ||
       snprintf(epoch_name, sizeof(epoch_name), "e%s", canonical_epoch) >=
           (int)sizeof(epoch_name)) {
@@ -711,7 +731,17 @@ static napi_value create_derived_temp(napi_env env, napi_callback_info info) {
     memcpy(writer->job, canonical_job, sizeof(writer->job));
     memcpy(writer->epoch, canonical_epoch, sizeof(writer->epoch));
     memcpy(writer->kind, kind, strlen(kind) + 1);
-    if (derived_bind_created_file(writer) != 0) failure = errno == 0 ? EPERM : errno;
+    memcpy(writer->family, canonical_family, sizeof(writer->family));
+    memcpy(writer->media, canonical_media, sizeof(writer->media));
+    memcpy(writer->generation, canonical_generation, sizeof(writer->generation));
+    memcpy(writer->reservation, canonical_reservation, sizeof(writer->reservation));
+    if (derived_copy_text(writer->recipe, sizeof(writer->recipe), canonical_recipe) !=
+        0) {
+      failure = EINVAL;
+    }
+    if (failure == 0 && derived_bind_created_file(writer) != 0) {
+      failure = errno == 0 ? EPERM : errno;
+    }
     if (failure == 0 && writer->size != 0) failure = EPERM;
     if (failure == 0 && derived_register(store, writer) != 0) {
       failure = errno == EEXIST ? EEXIST : EAGAIN;

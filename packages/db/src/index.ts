@@ -18,6 +18,15 @@ export {
   type CorrelatedDerivedTemp,
   type DerivedFilesystemObservation,
 } from "./capacity-inventory.js";
+export {
+  classifyDerivedRecoveryCase,
+  reconcileDerivedPublishRecovery,
+  type DerivedRecoveryAction,
+  type DerivedRecoveryDecision,
+  type DerivedRecoveryFinalFact,
+  type DerivedRecoveryRow,
+  type DerivedRecoveryTempFact,
+} from "./derived-recovery.js";
 
 export const databaseConnectionDefaults = Object.freeze({
   connectionLimit: 5,

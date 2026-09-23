@@ -199,10 +199,11 @@ describe("isolated verify-output", () => {
       expect(after.ino).toBe(before.ino);
       expect(after.dev).toBe(before.dev);
       expect(readFileSync(partPath(rootPath))).toEqual(opaque);
-      expect(isSealedDerivedOutput(sealed)).toBe(false);
+      expect(isSealedDerivedOutput(sealed)).toBe(true);
       expect(() => sealed.verify(store, binding)).toThrow(
-        /DERIVED_SEALED_CLOSED/u,
+        /DERIVED_ALREADY_VERIFIED/u,
       );
+      sealed.consume(store);
     });
   });
 
@@ -215,6 +216,7 @@ describe("isolated verify-output", () => {
       expect(result.alpha).toBe(true);
       expect(result.transparent).toBe(true);
       expect(result.staticImage).toBe(true);
+      sealed.consume(store);
     });
   });
 
@@ -359,6 +361,7 @@ describe("isolated verify-output", () => {
       const sealed = await sealBytes(store, capability, opaque);
       const result = sealed.verify(store, binding, "high-fd");
       expect(result).toMatchObject({ width: 8, height: 4, staticImage: true });
+      sealed.consume(store);
     });
   });
 
