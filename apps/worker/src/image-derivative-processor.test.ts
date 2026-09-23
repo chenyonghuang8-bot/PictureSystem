@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { derivativeFailureDisposition } from "@family-album/db";
+import {
+  derivativeFailureDisposition,
+  imageDerivativeMediaState,
+} from "@family-album/db";
 
 import { classifyDerivativeFailure } from "./image-derivative-processor.js";
 import { StorageSafetyError } from "@family-album/storage";
@@ -27,5 +30,17 @@ describe("derivative failure mapping", () => {
     expect(derivativeFailureDisposition("CAPABILITY_UNAVAILABLE")).toBe("FAIL");
     expect(derivativeFailureDisposition("PROCESS_TIMEOUT")).toBe("RETRY");
     expect(derivativeFailureDisposition("COMMIT_OUTCOME_UNKNOWN")).toBe("STOP");
+    expect(imageDerivativeMediaState("TEMPORARY_IO", "RETRY", false)).toBe(
+      "PENDING",
+    );
+    expect(imageDerivativeMediaState("MALFORMED_MEDIA", "FAIL", false)).toBe(
+      "PARTIAL",
+    );
+    expect(imageDerivativeMediaState("ORIGINAL_MISSING", "FAIL", false)).toBe(
+      "BLOCKED",
+    );
+    expect(imageDerivativeMediaState("TEMPORARY_IO", "RETRY", true)).toBe(
+      "PARTIAL",
+    );
   });
 });

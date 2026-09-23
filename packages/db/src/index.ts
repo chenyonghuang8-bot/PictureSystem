@@ -16,9 +16,11 @@ export * from "./derived-admission-repository.js";
 export {
   MySqlDerivedAssetFence,
   derivativeFailureDisposition,
+  imageDerivativeMediaState,
   type DerivedFenceOutcome,
   type DerivedFenceView,
   type DerivedPublishingPayload,
+  type ReadyFinalEvidence,
 } from "./derived-asset-fence.js";
 export {
   correlateDerivedFilesystemInventory,

@@ -247,6 +247,12 @@ describe.sequential("Phase 4D3c worker integration", () => {
       familyId,
       uploadId: String(upload.insertId),
     });
+    await database.pool.query(
+      `UPDATE media_items
+       SET metadata_generation=generation, media_type='IMAGE', detected_mime='image/png'
+       WHERE id=? AND family_id=?`,
+      [created.media.id, familyId],
+    );
     const enqueued = await jobs.enqueue({
       familyId,
       mediaId: created.media.id,
@@ -304,7 +310,7 @@ describe.sequential("Phase 4D3c worker integration", () => {
     );
   }
 
-  it("claims only image jobs, heartbeats, and leaves success at PUBLISHING", async () => {
+  it("claims only image jobs, heartbeats, and completes both kinds", async () => {
     const probeMedia = await mediaFixture(syntheticPng(8, 4, 41));
     await database.pool.query("DELETE FROM background_jobs WHERE id=?", [
       probeMedia.jobId,
@@ -327,12 +333,13 @@ describe.sequential("Phase 4D3c worker integration", () => {
       [jobId],
     );
     const result = await processor(realRender).runClaimed(claimed!, workerA);
-    expect(result.outcome).toBe("PUBLISHING");
+    expect(result.outcome).toBe("READY");
     const [rows] = await database.pool.query<RowDataPacket[]>(
       `SELECT background_jobs.state AS jobState,
          background_jobs.lease_epoch AS epoch,
          background_jobs.locked_until AS lockedUntil,
          derived_assets.kind AS kind, derived_assets.state AS assetState,
+         derived_assets.published_at AS publishedAt,
          media_items.processing_state AS mediaState
        FROM background_jobs
        JOIN derived_assets ON derived_assets.producer_job_id = background_jobs.id
@@ -341,13 +348,11 @@ describe.sequential("Phase 4D3c worker integration", () => {
        ORDER BY derived_assets.kind`,
       [jobId],
     );
-    expect(rows.map((row) => row.assetState)).toEqual([
-      "PUBLISHING",
-      "PUBLISHING",
-    ]);
+    expect(rows.map((row) => row.assetState)).toEqual(["READY", "READY"]);
+    expect(rows.every((row) => row.publishedAt instanceof Date)).toBe(true);
     expect(rows[0]).toMatchObject({
-      jobState: "RUNNING",
-      mediaState: "PENDING",
+      jobState: "SUCCEEDED",
+      mediaState: "READY",
     });
     expect(BigInt(String(rows[0]?.epoch))).toBeGreaterThan(0n);
     expect(rows[0]?.lockedUntil).not.toEqual(before[0]?.lockedUntil);
@@ -470,8 +475,13 @@ describe.sequential("Phase 4D3c worker integration", () => {
     );
     expect(rows.some((row) => row.jobState === "SUCCEEDED")).toBe(false);
     expect(rows.find((row) => row.kind === "THUMBNAIL")?.assetState).toBe(
-      "PUBLISHING",
+      "READY",
     );
+    const [media] = await database.pool.query<RowDataPacket[]>(
+      "SELECT processing_state AS processingState FROM media_items WHERE id=(SELECT media_id FROM background_jobs WHERE id=?)",
+      [jobId],
+    );
+    expect(media[0]?.processingState).toBe("PENDING");
     expect(
       rows.some((row) => row.kind === "PREVIEW" && row.assetState === "READY"),
     ).toBe(false);
@@ -529,6 +539,15 @@ describe.sequential("Phase 4D3c worker integration", () => {
       [jobId],
     );
     expect(rows.every((row) => row.jobState === "FAILED")).toBe(true);
+    const [media] = await database.pool.query<RowDataPacket[]>(
+      `SELECT processing_state AS processingState, last_failure_code AS failureCode
+       FROM media_items WHERE id=(SELECT media_id FROM background_jobs WHERE id=?)`,
+      [jobId],
+    );
+    expect(media[0]).toMatchObject({
+      processingState: "PARTIAL",
+      failureCode: "CAPABILITY_UNAVAILABLE",
+    });
     expect(rows.some((row) => row.kind === "PREVIEW")).toBe(false);
     expect(rows.some((row) => row.assetState === "READY")).toBe(false);
   });
@@ -569,30 +588,158 @@ describe.sequential("Phase 4D3c worker integration", () => {
     });
   }, 60_000);
 
-  it("does not render again when another lease finds the publishing row", async () => {
+  it("does not let a stale worker mark READY after publish", async () => {
     const { jobId, mediaId } = await mediaFixture();
-    const first = await processor(realRender).run(workerA);
-    expect(first.outcome).toBe("PUBLISHING");
-    await expireLease(jobId);
-    const recovered = await jobs.recoverExpiredLease({
+    const fenced = new MySqlDerivedAssetFence(database.pool);
+    const original = fenced.commitSucceeded.bind(fenced);
+    fenced.commitSucceeded = async (fence, evidence, options) => {
+      await expireLease(jobId);
+      return original(fence, evidence, options);
+    };
+    const stale = await processor(realRender, fenced).run(workerA);
+    expect(stale.outcome).toBe("STALE");
+    const [before] = await database.pool.query<RowDataPacket[]>(
+      `SELECT background_jobs.state AS jobState, derived_assets.state AS assetState
+       FROM background_jobs
+       JOIN derived_assets ON derived_assets.producer_job_id=background_jobs.id
+       WHERE background_jobs.id=?`,
+      [jobId],
+    );
+    expect(before.every((row) => row.jobState === "RUNNING")).toBe(true);
+    expect(before.map((row) => row.assetState).sort()).toEqual([
+      "PUBLISHING",
+      "PUBLISHING",
+    ]);
+    await jobs.recoverExpiredLease({
       familyId,
       mediaId,
       jobId,
       generation: 1n,
     });
-    expect(recovered.affectedRows).toBe(1);
     await makeRecoveredClaimable(jobId);
     let rendered = 0;
-    const second = await processor(async () => {
+    const continued = await processor(async () => {
       rendered += 1;
       throw new Error("should not render");
     }).run(workerB);
     expect(rendered).toBe(0);
-    expect(second.outcome).toBe("STALE");
-    const [count] = await database.pool.query<RowDataPacket[]>(
-      "SELECT COUNT(*) AS total FROM derived_assets WHERE producer_job_id=?",
+    expect(continued.outcome).toBe("READY");
+    const [after] = await database.pool.query<RowDataPacket[]>(
+      `SELECT background_jobs.state AS jobState,
+         derived_assets.state AS assetState,
+         media_items.processing_state AS mediaState
+       FROM background_jobs
+       JOIN derived_assets ON derived_assets.producer_job_id=background_jobs.id
+       JOIN media_items ON media_items.id=background_jobs.media_id
+       WHERE background_jobs.id=?`,
       [jobId],
     );
-    expect(Number(count[0]?.total)).toBe(2);
+    expect(after.map((row) => row.assetState)).toEqual(["READY", "READY"]);
+    expect(after[0]).toMatchObject({
+      jobState: "SUCCEEDED",
+      mediaState: "READY",
+    });
+  }, 60_000);
+
+  it("does not mark READY when the final file or its SHA does not match", async () => {
+    const missing = await mediaFixture();
+    const missingGate = gate.inspectDerivedFinal.bind(gate);
+    gate.inspectDerivedFinal = async (input) => {
+      if (input.kind === "THUMBNAIL") {
+        const path = join(
+          mediaRoot,
+          "derived",
+          familyId,
+          missing.mediaId,
+          "r1",
+          "g1",
+          "thumbnail.webp",
+        );
+        if (existsSync(path)) rmSync(path);
+      }
+      return missingGate(input);
+    };
+    const missingResult = await processor(realRender).run(workerA);
+    gate.inspectDerivedFinal = missingGate;
+    expect(missingResult.outcome).toBe("PUBLISHING");
+    const [missingJob] = await database.pool.query<RowDataPacket[]>(
+      "SELECT state FROM background_jobs WHERE id=?",
+      [missing.jobId],
+    );
+    expect(missingJob[0]?.state).toBe("RUNNING");
+
+    const mismatched = await mediaFixture();
+    const mismatchGate = gate.inspectDerivedFinal.bind(gate);
+    gate.inspectDerivedFinal = async (input) => {
+      const fact = await mismatchGate(input);
+      return { ...fact, sha256Hex: "ab".repeat(32) };
+    };
+    const mismatchResult = await processor(realRender).run(workerB);
+    gate.inspectDerivedFinal = mismatchGate;
+    expect(mismatchResult.outcome).toBe("PUBLISHING");
+    const [mismatchRows] = await database.pool.query<RowDataPacket[]>(
+      `SELECT background_jobs.state AS jobState, derived_assets.state AS assetState
+       FROM background_jobs
+       JOIN derived_assets ON derived_assets.producer_job_id=background_jobs.id
+       WHERE background_jobs.id=?`,
+      [mismatched.jobId],
+    );
+    expect(mismatchRows.every((row) => row.jobState === "RUNNING")).toBe(true);
+    expect(mismatchRows.every((row) => row.assetState === "PUBLISHING")).toBe(
+      true,
+    );
+  }, 60_000);
+
+  it("does not repeat READY after an unknown commit", async () => {
+    const { jobId } = await mediaFixture();
+    const losing = new MySqlDerivedAssetFence(database.pool);
+    let attempts = 0;
+    const original = losing.commitSucceeded.bind(losing);
+    losing.commitSucceeded = (fence, evidence, options) => {
+      attempts += 1;
+      return original(fence, evidence, {
+        ...options,
+        commit: async (connection) => {
+          connection.destroy();
+          throw new Error("commit lost");
+        },
+      });
+    };
+    const result = await processor(realRender, losing).run(workerA);
+    expect(result.outcome).toBe("COMMIT_UNKNOWN");
+    expect(attempts).toBe(1);
+    const [rows] = await database.pool.query<RowDataPacket[]>(
+      `SELECT background_jobs.state AS jobState, derived_assets.state AS assetState
+       FROM background_jobs
+       JOIN derived_assets ON derived_assets.producer_job_id=background_jobs.id
+       WHERE background_jobs.id=?`,
+      [jobId],
+    );
+    expect(rows.every((row) => row.jobState === "RUNNING")).toBe(true);
+    expect(rows.every((row) => row.assetState === "PUBLISHING")).toBe(true);
+  }, 60_000);
+
+  it("has zero READY effects when the generation changes before commit", async () => {
+    const { jobId, mediaId } = await mediaFixture();
+    const fenced = new MySqlDerivedAssetFence(database.pool);
+    const original = fenced.commitSucceeded.bind(fenced);
+    fenced.commitSucceeded = async (fence, evidence, options) => {
+      await database.pool.query(
+        "UPDATE media_items SET generation=2 WHERE id=? AND family_id=?",
+        [mediaId, familyId],
+      );
+      return original(fence, evidence, options);
+    };
+    const result = await processor(realRender, fenced).run(workerA);
+    expect(result.outcome).toBe("STALE");
+    const [rows] = await database.pool.query<RowDataPacket[]>(
+      `SELECT background_jobs.state AS jobState, derived_assets.state AS assetState
+       FROM background_jobs
+       JOIN derived_assets ON derived_assets.producer_job_id=background_jobs.id
+       WHERE background_jobs.id=?`,
+      [jobId],
+    );
+    expect(rows.every((row) => row.jobState === "RUNNING")).toBe(true);
+    expect(rows.every((row) => row.assetState === "PUBLISHING")).toBe(true);
   }, 60_000);
 });

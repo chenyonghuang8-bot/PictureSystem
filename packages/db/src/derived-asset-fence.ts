@@ -7,7 +7,10 @@ import type {
 } from "mysql2/promise";
 
 import { acquireCheckedConnection, readServerTime } from "./connection.js";
-import type { LeaseFence } from "./job-repository.js";
+import {
+  phase4RetryDelayMilliseconds,
+  type LeaseFence,
+} from "./job-repository.js";
 import { CommitOutcomeUnknownError, runTransaction } from "./transaction.js";
 
 export type DerivedAssetSnapshot = {
@@ -15,6 +18,7 @@ export type DerivedAssetSnapshot = {
   kind: "THUMBNAIL" | "PREVIEW";
   state: string;
   sha256Hex: string | null;
+  byteSize: string | null;
   producerLeaseEpoch: bigint | null;
 };
 
@@ -36,11 +40,27 @@ export type DerivedPublishingPayload = {
 
 export type DerivedFenceOutcome = "COMMITTED" | "ALREADY" | "STALE" | "UNKNOWN";
 
+export type ReadyFinalEvidence = {
+  kind: "THUMBNAIL" | "PREVIEW";
+  sha256Hex: string;
+  byteSize: bigint;
+  device: string;
+  inode: string;
+};
+
+class ReadyFenceLost extends Error {
+  constructor() {
+    super("READY_FENCE_LOST");
+    this.name = "ReadyFenceLost";
+  }
+}
+
 type AssetRow = RowDataPacket & {
   id: string;
   kind: "THUMBNAIL" | "PREVIEW";
   state: string;
   sha256Hex: string | null;
+  byteSize: string | null;
   producerLeaseEpoch: string | null;
 };
 
@@ -138,6 +158,7 @@ async function readAssets(connection: PoolConnection, fence: LeaseFence) {
   const [rows] = await connection.query<AssetRow[]>(
     `SELECT CAST(id AS CHAR) AS id, kind, state,
        LOWER(HEX(sha256)) AS sha256Hex,
+       CAST(byte_size AS CHAR) AS byteSize,
        CAST(producer_lease_epoch AS CHAR) AS producerLeaseEpoch
      FROM derived_assets
      WHERE family_id=? AND media_id=? AND generation=? AND recipe_id=1
@@ -150,6 +171,7 @@ async function readAssets(connection: PoolConnection, fence: LeaseFence) {
     kind: row.kind,
     state: row.state,
     sha256Hex: row.sha256Hex,
+    byteSize: row.byteSize,
     producerLeaseEpoch:
       row.producerLeaseEpoch === null ? null : BigInt(row.producerLeaseEpoch),
   }));
@@ -157,8 +179,8 @@ async function readAssets(connection: PoolConnection, fence: LeaseFence) {
 
 /**
  * Fenced derived-asset transitions for an already claimed image job.
- * This writes PUBLISHING evidence only. It does not set READY, finish the
- * job, or change media processing state.
+ * PUBLISHING is evidence. READY, media state, and job completion share one
+ * later transaction and are never inferred from a pathname.
  */
 export class MySqlDerivedAssetFence {
   constructor(private readonly pool: Pool) {}
@@ -310,6 +332,150 @@ export class MySqlDerivedAssetFence {
     });
   }
 
+  /**
+   * One transaction: both required finals become READY, media becomes READY,
+   * and the job becomes SUCCEEDED. A failed check writes nothing.
+   */
+  async commitSucceeded(
+    fence: LeaseFence,
+    evidence: readonly ReadyFinalEvidence[],
+    options: { commit?: (connection: PoolConnection) => Promise<void> } = {},
+  ): Promise<DerivedFenceOutcome> {
+    if (!readyEvidence(evidence, ["THUMBNAIL", "PREVIEW"])) return "STALE";
+    return this.transactReady(async (connection) => {
+      const context = await lockFence(connection, fence);
+      if (!context || !leaseHolds(context, fence)) return "STALE";
+      const metadataGeneration = await readMetadataGeneration(
+        connection,
+        fence,
+      );
+      if (metadataGeneration !== fence.generation.toString()) return "STALE";
+      const assets = await lockDerivedAssets(connection, fence);
+      for (const item of evidence) {
+        await markAssetReady(connection, fence, context.now, assets, item);
+      }
+      await markMedia(connection, fence, context.now, "READY", null);
+      await finishJob(connection, fence, context.now, {
+        state: "SUCCEEDED",
+        failureCode: null,
+        availableAt: null,
+        attempts: null,
+      });
+      return "COMMITTED";
+    }, options.commit);
+  }
+
+  /**
+   * One transaction for a retry or permanent failure. A verified final may
+   * become READY in the same transaction. The job never becomes SUCCEEDED.
+   */
+  async commitAttempt(
+    fence: LeaseFence,
+    input: {
+      failureCode: Phase4FailureCode;
+      disposition: "RETRY" | "FAIL";
+      ready: readonly ReadyFinalEvidence[];
+    },
+    options: { commit?: (connection: PoolConnection) => Promise<void> } = {},
+  ): Promise<
+    | "STALE"
+    | "UNKNOWN"
+    | { outcome: "COMMITTED"; jobState: "FAILED" | "RETRY_WAIT" }
+  > {
+    if (!readyEvidence(input.ready)) return "STALE";
+    return this.transactReady(async (connection) => {
+      const context = await lockFence(connection, fence);
+      if (!context || !leaseHolds(context, fence)) return "STALE";
+      const [attemptRows] = await connection.query<RowDataPacket[]>(
+        `SELECT attempts, max_attempts AS maxAttempts
+         FROM background_jobs
+         WHERE id=? AND family_id=? AND media_id=? AND generation=?`,
+        [
+          fence.jobId,
+          fence.familyId,
+          fence.mediaId,
+          fence.generation.toString(),
+        ],
+      );
+      const attempts = Number(attemptRows[0]?.attempts);
+      const maxAttempts = Number(attemptRows[0]?.maxAttempts);
+      if (!Number.isInteger(attempts) || !Number.isInteger(maxAttempts)) {
+        return "STALE";
+      }
+      const exhausted = attempts >= maxAttempts;
+      const mediaState = imageDerivativeMediaState(
+        input.failureCode,
+        input.disposition,
+        exhausted,
+      );
+      const assets = await lockDerivedAssets(connection, fence);
+      for (const item of input.ready) {
+        await markAssetReady(connection, fence, context.now, assets, item);
+      }
+      await markMedia(
+        connection,
+        fence,
+        context.now,
+        mediaState,
+        mediaState === "PENDING" ? null : input.failureCode,
+      );
+      const jobState =
+        input.disposition === "FAIL" || exhausted ? "FAILED" : "RETRY_WAIT";
+      if (jobState === "FAILED") {
+        await finishJob(connection, fence, context.now, {
+          state: "FAILED",
+          failureCode: input.failureCode,
+          availableAt: null,
+          attempts,
+        });
+      } else {
+        await finishJob(connection, fence, context.now, {
+          state: "RETRY_WAIT",
+          failureCode: input.failureCode,
+          availableAt: new Date(
+            context.now.getTime() +
+              phase4RetryDelayMilliseconds(attempts, Math.random),
+          ),
+          attempts,
+        });
+      }
+      return { outcome: "COMMITTED", jobState };
+    }, options.commit);
+  }
+
+  async readSucceeded(fence: LeaseFence): Promise<boolean> {
+    const seen = await runTransaction(
+      this.pool,
+      async (connection) => {
+        const context = await lockFence(connection, fence);
+        if (!context) return false;
+        const [jobs] = await connection.query<RowDataPacket[]>(
+          `SELECT state FROM background_jobs
+         WHERE id=? AND family_id=? AND media_id=? AND generation=?`,
+          [
+            fence.jobId,
+            fence.familyId,
+            fence.mediaId,
+            fence.generation.toString(),
+          ],
+        );
+        const [media] = await connection.query<RowDataPacket[]>(
+          `SELECT processing_state AS processingState
+         FROM media_items WHERE id=? AND family_id=? AND generation=?`,
+          [fence.mediaId, fence.familyId, fence.generation.toString()],
+        );
+        const assets = await lockDerivedAssets(connection, fence);
+        return (
+          jobs[0]?.state === "SUCCEEDED" &&
+          media[0]?.processingState === "READY" &&
+          assets.filter((asset) => asset.state === "READY").length === 2
+        );
+      },
+      { acquire: () => acquireCheckedConnection(this.pool) },
+    );
+    return seen;
+  }
+
   private async transact<T>(
     operation: (connection: PoolConnection) => Promise<T>,
     commit?: (connection: PoolConnection) => Promise<void>,
@@ -324,6 +490,188 @@ export class MySqlDerivedAssetFence {
       throw error;
     }
   }
+
+  private async transactReady<T>(
+    operation: (connection: PoolConnection) => Promise<T>,
+    commit?: (connection: PoolConnection) => Promise<void>,
+  ): Promise<T | "UNKNOWN" | "STALE"> {
+    try {
+      return await this.transact(operation, commit);
+    } catch (error) {
+      if (error instanceof ReadyFenceLost) return "STALE";
+      throw error;
+    }
+  }
+}
+
+export function imageDerivativeMediaState(
+  code: Phase4FailureCode,
+  disposition: "RETRY" | "FAIL",
+  exhausted: boolean,
+): "PENDING" | "PARTIAL" | "BLOCKED" {
+  if (disposition === "RETRY" && !exhausted) return "PENDING";
+  if (
+    code === "ORIGINAL_MISSING" ||
+    code === "ORIGINAL_CORRUPT" ||
+    code === "STORAGE_UNAVAILABLE"
+  ) {
+    return "BLOCKED";
+  }
+  return "PARTIAL";
+}
+
+function readyEvidence(
+  evidence: readonly ReadyFinalEvidence[],
+  required?: readonly ("THUMBNAIL" | "PREVIEW")[],
+) {
+  const kinds = new Set(evidence.map((item) => item.kind));
+  if (required && required.some((kind) => !kinds.has(kind))) return false;
+  if (kinds.size !== evidence.length) return false;
+  return evidence.every(
+    (item) =>
+      (item.kind === "THUMBNAIL" || item.kind === "PREVIEW") &&
+      /^[0-9a-f]{64}$/u.test(item.sha256Hex) &&
+      item.byteSize > 0n &&
+      canonical(item.device) &&
+      canonical(item.inode),
+  );
+}
+
+async function readMetadataGeneration(
+  connection: PoolConnection,
+  fence: LeaseFence,
+) {
+  const [rows] = await connection.query<RowDataPacket[]>(
+    `SELECT CAST(metadata_generation AS CHAR) AS metadataGeneration
+     FROM media_items WHERE id=? AND family_id=?`,
+    [fence.mediaId, fence.familyId],
+  );
+  const value = rows[0]?.metadataGeneration;
+  return typeof value === "string" ? value : null;
+}
+
+async function lockDerivedAssets(
+  connection: PoolConnection,
+  fence: LeaseFence,
+) {
+  const [rows] = await connection.query<AssetRow[]>(
+    `SELECT CAST(id AS CHAR) AS id, kind, state,
+       LOWER(HEX(sha256)) AS sha256Hex,
+       CAST(byte_size AS CHAR) AS byteSize,
+       CAST(producer_lease_epoch AS CHAR) AS producerLeaseEpoch
+     FROM derived_assets
+     WHERE family_id=? AND media_id=? AND generation=? AND recipe_id=1
+     ORDER BY id
+     FOR UPDATE`,
+    [fence.familyId, fence.mediaId, fence.generation.toString()],
+  );
+  return rows;
+}
+
+async function markAssetReady(
+  connection: PoolConnection,
+  fence: LeaseFence,
+  now: Date,
+  assets: readonly AssetRow[],
+  item: ReadyFinalEvidence,
+) {
+  const asset = assets.find((row) => row.kind === item.kind);
+  if (
+    !asset ||
+    asset.sha256Hex !== item.sha256Hex ||
+    asset.byteSize !== item.byteSize.toString()
+  ) {
+    throw new ReadyFenceLost();
+  }
+  if (asset.state === "READY") return;
+  if (asset.state !== "PUBLISHING") throw new ReadyFenceLost();
+  const [changed] = await connection.execute<ResultSetHeader>(
+    `UPDATE derived_assets
+     SET state='READY', published_at=?, producer_lease_epoch=?, updated_at=?
+     WHERE id=? AND family_id=? AND media_id=? AND generation=?
+       AND recipe_id=1 AND kind=? AND state='PUBLISHING'
+       AND cleaned_at IS NULL AND published_at IS NULL
+       AND output_mime='image/webp' AND byte_size=? AND sha256=UNHEX(?)
+       AND producer_job_id=?`,
+    [
+      now,
+      fence.leaseEpoch.toString(),
+      now,
+      asset.id,
+      fence.familyId,
+      fence.mediaId,
+      fence.generation.toString(),
+      item.kind,
+      item.byteSize.toString(),
+      item.sha256Hex,
+      fence.jobId,
+    ],
+  );
+  if (changed.affectedRows !== 1) throw new ReadyFenceLost();
+}
+
+async function markMedia(
+  connection: PoolConnection,
+  fence: LeaseFence,
+  now: Date,
+  state: "PENDING" | "READY" | "PARTIAL" | "BLOCKED",
+  failureCode: Phase4FailureCode | null,
+) {
+  const [changed] = await connection.execute<ResultSetHeader>(
+    `UPDATE media_items
+     SET processing_state=?, last_failure_code=?, updated_at=?
+     WHERE id=? AND family_id=? AND generation=? AND recipe_id=1
+       ${state === "READY" ? "AND metadata_generation=?" : ""}`,
+    [
+      state,
+      failureCode,
+      now,
+      fence.mediaId,
+      fence.familyId,
+      fence.generation.toString(),
+      ...(state === "READY" ? [fence.generation.toString()] : []),
+    ],
+  );
+  if (changed.affectedRows !== 1) throw new ReadyFenceLost();
+}
+
+async function finishJob(
+  connection: PoolConnection,
+  fence: LeaseFence,
+  now: Date,
+  input: {
+    state: "SUCCEEDED" | "FAILED" | "RETRY_WAIT";
+    failureCode: Phase4FailureCode | null;
+    availableAt: Date | null;
+    attempts: number | null;
+  },
+) {
+  const terminal = input.state === "SUCCEEDED" || input.state === "FAILED";
+  const [changed] = await connection.execute<ResultSetHeader>(
+    `UPDATE background_jobs
+     SET state=?, available_at=?, worker_id=NULL, locked_at=NULL,
+         heartbeat_at=NULL, locked_until=NULL, last_failure_code=?,
+         finished_at=?, updated_at=?
+     WHERE id=? AND family_id=? AND media_id=? AND generation=?
+       AND state='RUNNING' AND worker_id=? AND lease_epoch=?
+       AND locked_until>?${input.attempts === null ? "" : " AND attempts=?"}`,
+    [
+      input.state,
+      input.availableAt ?? now,
+      input.failureCode,
+      terminal ? now : null,
+      now,
+      fence.jobId,
+      fence.familyId,
+      fence.mediaId,
+      fence.generation.toString(),
+      fence.workerId,
+      fence.leaseEpoch.toString(),
+      now,
+      ...(input.attempts === null ? [] : [input.attempts]),
+    ],
+  );
+  if (changed.affectedRows !== 1) throw new ReadyFenceLost();
 }
 
 function validPayload(payload: DerivedPublishingPayload) {

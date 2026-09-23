@@ -6,6 +6,7 @@ import type {
   MySqlDerivedAdmissionRepository,
   MySqlDerivedAssetFence,
   MySqlJobRepository,
+  ReadyFinalEvidence,
   WorkerIdentity,
 } from "@family-album/db";
 import { derivativeFailureDisposition } from "@family-album/db";
@@ -33,15 +34,13 @@ export type DerivativeRunResult = {
     | "STALE"
     | "COMMIT_UNKNOWN"
     | "PUBLISHING"
+    | "READY"
     | "RETRY_WAIT"
     | "FAILED";
   failureCode?: Phase4FailureCode;
 };
 
-type Jobs = Pick<
-  MySqlJobRepository,
-  "claimNext" | "heartbeat" | "retry" | "fail"
->;
+type Jobs = Pick<MySqlJobRepository, "claimNext" | "heartbeat">;
 
 type RenderInput = {
   familyId: string;
@@ -52,8 +51,8 @@ type RenderInput = {
 
 /**
  * Orchestrates one claimed IMAGE_DERIVATIVES lease.
- * Filesystem publish is the existing primitive. The database stops at
- * PUBLISHING. This does not set READY, finish the job, or serve bytes.
+ * Filesystem publish is the existing primitive. READY is a later fenced
+ * database transaction and does not serve bytes.
  */
 export class ImageDerivativeProcessor {
   constructor(
@@ -97,7 +96,7 @@ export class ImageDerivativeProcessor {
       const step = await this.produce(fence, kind);
       if (step !== "PUBLISHED") return step;
     }
-    return { outcome: "PUBLISHING" };
+    return this.finishReady(fence);
   }
 
   private async produce(
@@ -109,8 +108,18 @@ export class ImageDerivativeProcessor {
     if (described === null) return { outcome: "STALE" };
     const existing = described.assets.find((asset) => asset.kind === kind);
     if (existing?.state === "PUBLISHING") {
-      if (existing.sha256Hex === null) {
+      if (existing.sha256Hex === null || existing.byteSize === null) {
         return await this.fail(fence, "DERIVED_INTEGRITY");
+      }
+      if (existing.producerLeaseEpoch !== fence.leaseEpoch) {
+        const observed = await this.observeFinal(
+          fence,
+          kind,
+          existing.sha256Hex,
+          BigInt(existing.byteSize),
+        );
+        if (!observed) return { outcome: "STALE" };
+        return "PUBLISHED";
       }
       const confirmed = await this.assets.confirmPublishing(fence, {
         kind,
@@ -239,23 +248,118 @@ export class ImageDerivativeProcessor {
     }
   }
 
+  private async finishReady(fence: LeaseFence): Promise<DerivativeRunResult> {
+    const described = await this.assets.describe(fence);
+    if (described === "UNKNOWN") return { outcome: "COMMIT_UNKNOWN" };
+    if (described === null) return { outcome: "STALE" };
+    const evidence: ReadyFinalEvidence[] = [];
+    for (const kind of KINDS) {
+      const asset = described.assets.find((item) => item.kind === kind);
+      if (
+        asset?.state !== "PUBLISHING" ||
+        asset.sha256Hex === null ||
+        asset.byteSize === null
+      ) {
+        return { outcome: "STALE" };
+      }
+      const observed = await this.observeFinal(
+        fence,
+        kind,
+        asset.sha256Hex,
+        BigInt(asset.byteSize),
+      );
+      if (!observed) return { outcome: "PUBLISHING" };
+      evidence.push(observed);
+    }
+    const marked = await this.assets.commitSucceeded(fence, evidence);
+    if (marked === "UNKNOWN") {
+      return (await this.assets.readSucceeded(fence))
+        ? { outcome: "READY" }
+        : { outcome: "COMMIT_UNKNOWN" };
+    }
+    if (marked === "COMMITTED" || marked === "ALREADY") {
+      return { outcome: "READY" };
+    }
+    return { outcome: "STALE" };
+  }
+
+  private async observeFinal(
+    fence: LeaseFence,
+    kind: "THUMBNAIL" | "PREVIEW",
+    sha256Hex: string,
+    byteSize: bigint,
+  ): Promise<ReadyFinalEvidence | null> {
+    const fact = await this.storage.gate.withLock(async () =>
+      this.storage.gate.inspectDerivedFinal({
+        familyId: fence.familyId,
+        mediaId: fence.mediaId,
+        generation: fence.generation,
+        recipeId: 1,
+        kind,
+      }),
+    );
+    if (
+      fact.fileClass !== "REGULAR" ||
+      fact.mode !== 0o400 ||
+      fact.nlink !== 1 ||
+      fact.sha256Hex !== sha256Hex ||
+      fact.byteSize !== byteSize ||
+      !/^[1-9][0-9]*$/u.test(fact.device) ||
+      !/^[1-9][0-9]*$/u.test(fact.inode)
+    ) {
+      return null;
+    }
+    return {
+      kind,
+      sha256Hex,
+      byteSize,
+      device: fact.device,
+      inode: fact.inode,
+    };
+  }
+
   private async fail(
     fence: LeaseFence,
     code: Phase4FailureCode,
   ): Promise<DerivativeRunResult> {
     const disposition = derivativeFailureDisposition(code);
-    if (disposition === "STOP")
+    if (disposition === "STOP") {
       return { outcome: "COMMIT_UNKNOWN", failureCode: code };
-    const result =
-      disposition === "RETRY"
-        ? await this.jobs.retry({ ...fence, failureCode: code })
-        : await this.jobs.fail({ ...fence, failureCode: code });
-    if (result.affectedRows !== 1)
-      return { outcome: "STALE", failureCode: code };
-    return {
-      outcome: result.state === "FAILED" ? "FAILED" : "RETRY_WAIT",
+    }
+    const ready: ReadyFinalEvidence[] = [];
+    const described = await this.assets.describe(fence);
+    if (described === "UNKNOWN") {
+      return { outcome: "COMMIT_UNKNOWN", failureCode: code };
+    }
+    if (described) {
+      for (const kind of KINDS) {
+        const asset = described.assets.find((item) => item.kind === kind);
+        if (
+          asset?.state !== "PUBLISHING" ||
+          asset.sha256Hex === null ||
+          asset.byteSize === null
+        ) {
+          continue;
+        }
+        const observed = await this.observeFinal(
+          fence,
+          kind,
+          asset.sha256Hex,
+          BigInt(asset.byteSize),
+        );
+        if (observed) ready.push(observed);
+      }
+    }
+    const marked = await this.assets.commitAttempt(fence, {
       failureCode: code,
-    };
+      disposition,
+      ready,
+    });
+    if (marked === "UNKNOWN") {
+      return { outcome: "COMMIT_UNKNOWN", failureCode: code };
+    }
+    if (marked === "STALE") return { outcome: "STALE", failureCode: code };
+    return { outcome: marked.jobState, failureCode: code };
   }
 }
 

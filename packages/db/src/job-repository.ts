@@ -573,11 +573,18 @@ function mediaMatchesFence(
   );
 }
 
-function retryDelayMilliseconds(attempts: number, random: () => number) {
+export function phase4RetryDelayMilliseconds(
+  attempts: number,
+  random: () => number,
+) {
   const range = RETRY_RANGES_SECONDS[attempts as 1 | 2];
   if (!range) throw new JobRepositoryError("CONFLICT");
   const seconds = Math.floor(range[0] + random() * (range[1] - range[0] + 1));
   return seconds * 1_000;
+}
+
+function retryDelayMilliseconds(attempts: number, random: () => number) {
+  return phase4RetryDelayMilliseconds(attempts, random);
 }
 
 function affected(value: number): { affectedRows: 0 | 1 } {
