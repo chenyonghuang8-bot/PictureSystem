@@ -1377,6 +1377,8 @@ export {
 } from "./derived-store.js";
 export type {
   DerivedTempIdentitySnapshot,
+  DerivedVerifyResult,
+  DerivedVerifyScenario,
   SealedDerivedIdentity,
 } from "./derived-store.js";
 

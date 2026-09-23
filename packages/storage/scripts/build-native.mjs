@@ -462,3 +462,147 @@ for (const scenario of [
     "-DPS_LIFECYCLE_TRACE",
   ]);
 }
+
+const webpArchive = join(outputDirectory, "libwebp-build/src/libwebp.a");
+const sharpyuvArchive = join(
+  outputDirectory,
+  "libwebp-build/sharpyuv/libsharpyuv.a",
+);
+const webpInclude = join(sourceRoot, "src");
+const verifierBootstrap = join(outputDirectory, "image_verifier_bootstrap");
+const verifierModule = join(outputDirectory, "image_verifier_module.dylib");
+const verifierSupervisor = join(outputDirectory, "image_verifier_supervisor");
+const deniedFixture = join(
+  packageRoot,
+  "native/image_renderer_denied_secret.fixture",
+);
+buildStartupPart("image verifier module", [
+  "-std=c11",
+  "-Wall",
+  "-Wextra",
+  "-Werror",
+  "-O2",
+  "-fPIC",
+  "-dynamiclib",
+  `-I${webpInclude}`,
+  `-DPS_VERIFIER_BOOTSTRAP_PATH="${verifierBootstrap}"`,
+  `-DPS_DENIED_TEST_PATH="${deniedFixture}"`,
+  join(packageRoot, "native/image_verifier_module.c"),
+  webpArchive,
+  sharpyuvArchive,
+  "-o",
+  verifierModule,
+]);
+buildStartupPart("image verifier bootstrap", [
+  "-std=c11",
+  "-Wall",
+  "-Wextra",
+  "-Werror",
+  "-O2",
+  "-DPS_VERIFY_OUTPUT",
+  `-DPS_RENDERER_MODULE_PATH="${verifierModule}"`,
+  join(packageRoot, "native/image_renderer_bootstrap.c"),
+  "-o",
+  verifierBootstrap,
+]);
+const verifierLink = (fileName, bootstrap, extraFlags = []) =>
+  buildStartupPart(fileName, [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    "-DPS_VERIFY_OUTPUT",
+    ...extraFlags,
+    `-DPS_RENDERER_BOOTSTRAP_PATH="${bootstrap}"`,
+    `-DPS_RENDERER_MODULE_PATH="${verifierModule}"`,
+    `-DPS_RENDERER_BOOTSTRAP_SHA256="${sha256File(bootstrap)}"`,
+    `-DPS_RENDERER_MODULE_SHA256="${sha256File(verifierModule)}"`,
+    `-DPS_EXPECTED_OS_BUILD="${expectedOsBuild}"`,
+    join(packageRoot, "native/image_renderer_supervisor.c"),
+    "-o",
+    join(outputDirectory, fileName),
+  ]);
+verifierLink("image_verifier_supervisor", verifierBootstrap);
+const verifierTimeout = join(
+  outputDirectory,
+  "image_verifier_bootstrap_timeout",
+);
+const verifierCrash = join(outputDirectory, "image_verifier_bootstrap_crash");
+const verifierIgnore = join(
+  outputDirectory,
+  "image_verifier_bootstrap_ignore_term",
+);
+for (const [bootstrap, macro] of [
+  [verifierTimeout, "PS_FORCE_TIMEOUT_BEFORE_READY"],
+  [verifierCrash, "PS_FORCE_CRASH_BEFORE_READY"],
+  [verifierIgnore, "PS_FORCE_IGNORE_TERM"],
+]) {
+  buildStartupPart(bootstrap, [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    `-D${macro}`,
+    `-DPS_RENDERER_MODULE_PATH="${verifierModule}"`,
+    join(packageRoot, "native/image_renderer_bootstrap.c"),
+    "-o",
+    bootstrap,
+  ]);
+}
+verifierLink("image_verifier_timeout_supervisor", verifierTimeout, [
+  "-DPS_VERIFY_DEADLINE_MS=1000",
+]);
+verifierLink("image_verifier_crash_supervisor", verifierCrash, [
+  "-DPS_VERIFY_DEADLINE_MS=1000",
+]);
+verifierLink("image_verifier_ignore-term_supervisor", verifierIgnore, [
+  "-DPS_VERIFY_DEADLINE_MS=1000",
+]);
+verifierLink("image_verifier_high-fd_supervisor", verifierBootstrap, [
+  "-DPS_REQUIRE_HIGH_FDS",
+  "-DPS_REQUIRE_SOCKET_FD",
+]);
+buildStartupPart("image verifier fixtures", [
+  "-std=c11",
+  "-Wall",
+  "-Wextra",
+  "-Werror",
+  "-O2",
+  `-I${webpInclude}`,
+  join(packageRoot, "native/image_verifier_fixture.c"),
+  webpArchive,
+  sharpyuvArchive,
+  "-o",
+  join(outputDirectory, "image_verifier_fixtures"),
+]);
+const storageWithVerifier = spawnSync(
+  "clang",
+  [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    "-fPIC",
+    "-bundle",
+    "-undefined",
+    "dynamic_lookup",
+    `-I${nodeInclude}`,
+    `-DPS_VERIFIER_SUPERVISOR_PATH="${verifierSupervisor}"`,
+    `-DPS_VERIFIER_TIMEOUT_PATH="${join(outputDirectory, "image_verifier_timeout_supervisor")}"`,
+    `-DPS_VERIFIER_CRASH_PATH="${join(outputDirectory, "image_verifier_crash_supervisor")}"`,
+    `-DPS_VERIFIER_IGNORE_TERM_PATH="${join(outputDirectory, "image_verifier_ignore-term_supervisor")}"`,
+    `-DPS_VERIFIER_HIGH_FD_PATH="${join(outputDirectory, "image_verifier_high-fd_supervisor")}"`,
+    join(packageRoot, "native/storage_native.c"),
+    "-o",
+    join(outputDirectory, "storage_native.node"),
+  ],
+  { encoding: "utf8" },
+);
+if (storageWithVerifier.status !== 0) {
+  throw new Error(
+    `Verifier storage build failed (${storageWithVerifier.status ?? "signal"}): ${storageWithVerifier.stderr.trim()}`,
+  );
+}

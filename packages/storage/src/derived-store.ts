@@ -59,12 +59,46 @@ type DerivedNative = {
     writer: NativeWriter,
   ): NativeSnapshot & { handle: NativeSealed };
   consumeSealedOutput(sealed: NativeSealed, store: NativeStore): void;
+  verifySealedOutput(
+    sealed: NativeSealed,
+    store: NativeStore,
+    scenario: string,
+  ): {
+    width: number;
+    height: number;
+    alpha: boolean;
+    transparent: boolean;
+    staticImage: boolean;
+    sha256Hex: string;
+  };
   failNextDerivedFsync(store: NativeStore): void;
   failNextSealFault(store: NativeStore, fault: "fsync" | "close"): void;
+  failNextVerifyPost(store: NativeStore): void;
 };
 
 type NativeSealed = object;
 const liveSealed = new WeakSet<SealedDerivedOutput>();
+
+export type DerivedVerifyScenario =
+  "run" | "timeout" | "crash" | "ignore-term" | "owner-death" | "high-fd";
+
+export type DerivedVerifyResult = {
+  width: number;
+  height: number;
+  staticImage: true;
+  alpha: boolean;
+  transparent: boolean;
+  sha256Hex: string;
+};
+
+const VERIFY_SCENARIOS = new Set<DerivedVerifyScenario>([
+  "run",
+  "timeout",
+  "crash",
+  "ignore-term",
+  "owner-death",
+  "high-fd",
+]);
 
 let nativeBinding: DerivedNative | undefined;
 
@@ -355,6 +389,91 @@ export class SealedDerivedOutput {
     store.consumeSealed(this);
   }
 
+  /**
+   * Full-decode this sealed candidate in the fixed verifier.
+   * The result is not a READY asset and is not published.
+   */
+  verify(
+    store: DerivedStore,
+    binding: { epoch: bigint; kind: "THUMBNAIL" | "PREVIEW" },
+    scenario: DerivedVerifyScenario = "run",
+  ): DerivedVerifyResult {
+    this.#assertLive();
+    if (!VERIFY_SCENARIOS.has(scenario)) {
+      throw new StorageSafetyError("STORAGE_INVALID_ARGUMENT");
+    }
+    if (scenario !== "run" && process.env.NODE_ENV === "production") {
+      throw new StorageSafetyError("DERIVED_FAULT_DEV_ONLY");
+    }
+    this.assertBinding(binding.epoch, binding.kind);
+    if (store !== this.#store) {
+      throw new StorageSafetyError("DERIVED_STORE_MISMATCH");
+    }
+    return store.verifySealed(this, scenario);
+  }
+
+  runVerify(
+    store: DerivedStore,
+    native: DerivedNative,
+    handle: NativeStore,
+    scenario: DerivedVerifyScenario,
+  ): DerivedVerifyResult {
+    if (
+      !liveSealed.has(this) ||
+      this.#consumed ||
+      store !== this.#store ||
+      native !== this.#native
+    ) {
+      throw new StorageSafetyError("DERIVED_STORE_MISMATCH");
+    }
+    try {
+      const raw = native.verifySealedOutput(this.#handle, handle, scenario);
+      this.#consumed = true;
+      liveSealed.delete(this);
+      if (
+        raw.staticImage !== true ||
+        raw.sha256Hex !== this.#identity.sha256Hex ||
+        !Number.isInteger(raw.width) ||
+        !Number.isInteger(raw.height) ||
+        raw.width <= 0 ||
+        raw.height <= 0
+      ) {
+        throw new StorageSafetyError("DERIVED_VERIFY_REJECTED");
+      }
+      return {
+        width: raw.width,
+        height: raw.height,
+        staticImage: true,
+        alpha: raw.alpha,
+        transparent: raw.transparent,
+        sha256Hex: raw.sha256Hex,
+      };
+    } catch (error) {
+      if (error instanceof StorageSafetyError) {
+        this.#consumed = true;
+        liveSealed.delete(this);
+        throw error;
+      }
+      const code =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? error.code
+          : "DERIVED_VERIFY_FAILED";
+      if (
+        code !== "DERIVED_SEALED_CLOSED" &&
+        code !== "DERIVED_VERIFIER_UNAVAILABLE" &&
+        code !== "STORAGE_INVALID_ARGUMENT" &&
+        code !== "DERIVED_FAULT_DEV_ONLY"
+      ) {
+        this.#consumed = true;
+        liveSealed.delete(this);
+      }
+      throw new StorageSafetyError(code);
+    }
+  }
+
   finish(store: DerivedStore, native: DerivedNative, handle: NativeStore) {
     if (!liveSealed.has(this) || this.#consumed || store !== this.#store) {
       throw new StorageSafetyError("DERIVED_STORE_MISMATCH");
@@ -428,6 +547,19 @@ export class DerivedStore {
 
   consumeSealed(output: SealedDerivedOutput) {
     output.finish(this, this.#native, this.#handle);
+  }
+
+  verifySealed(output: SealedDerivedOutput, scenario: DerivedVerifyScenario) {
+    return output.runVerify(this, this.#native, this.#handle, scenario);
+  }
+
+  /** Dev-only: the next verifier discards a successful decode after the post-check. */
+  failNextVerifyPostForDev() {
+    if (process.env.NODE_ENV === "production") {
+      throw new StorageSafetyError("DERIVED_FAULT_DEV_ONLY");
+    }
+    this.#required();
+    this.#native.failNextVerifyPost(this.#handle);
   }
 
   /** Dev-only durability fault. The next owned write fails before it can be sealed. */

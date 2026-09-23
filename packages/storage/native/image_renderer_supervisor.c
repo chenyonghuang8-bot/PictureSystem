@@ -37,7 +37,13 @@
 
 #define CONTROL_LIMIT 4096
 #define STDERR_LIMIT 16384
-#ifdef PS_RENDER_BINARY
+#ifdef PS_VERIFY_OUTPUT
+#ifdef PS_VERIFY_DEADLINE_MS
+#define STARTUP_TIMEOUT_MS PS_VERIFY_DEADLINE_MS
+#else
+#define STARTUP_TIMEOUT_MS 10000
+#endif
+#elif defined(PS_RENDER_BINARY)
 #define STARTUP_TIMEOUT_MS 30000
 #if PS_RENDER_BINARY == 1
 #define BINARY_LIMIT (512 * 1024)
@@ -292,7 +298,29 @@ int main(int argc, char **argv) {
           strstr(stderr_output, "FIRST_FD3_READ") != NULL)))
       return 86;
   }
-#ifdef PS_RENDER_BINARY
+#ifdef PS_VERIFY_OUTPUT
+  static const char ready[] = "PS_RENDER_READY_V1\n";
+  static const char expected_events[] =
+      "SANDBOX_ACTIVATED\nVERIFIER_MODULE_LOADED\nFIRST_FD3_READ\n";
+  int exited = owner.state == PS_REAPED && WIFEXITED(owner.status);
+  if (!failure && owner.state == PS_REAPED && WIFSIGNALED(owner.status))
+    return 76;
+  const char *json = output + (sizeof(ready) - 1);
+  size_t json_len =
+      output_size >= sizeof(ready) - 1 ? output_size - (sizeof(ready) - 1) : 0;
+  if (failure || !exited || WEXITSTATUS(owner.status) != 0 ||
+      output_size < sizeof(ready) ||
+      memcmp(output, ready, sizeof(ready) - 1) != 0 || json_len < 2 ||
+      json[json_len - 1] != '\n' ||
+      memchr(json, '\n', json_len) != json + json_len - 1 ||
+      error_size != sizeof(expected_events) - 1 ||
+      memcmp(stderr_output, expected_events, sizeof(expected_events) - 1) != 0)
+    return failure != 0 ? failure
+                        : (exited && WEXITSTATUS(owner.status) != 0
+                               ? 100 + WEXITSTATUS(owner.status)
+                               : 84);
+  return write(1, output, output_size) == (ssize_t)output_size ? 0 : 85;
+#elif defined(PS_RENDER_BINARY)
   static const char expected_events[] =
       "SANDBOX_ACTIVATED\nRENDERER_MODULE_LOADED\nFIRST_FD3_MEDIA_READ\n";
   static const char ready[] = "PS_RENDER_READY_V1\n";
@@ -301,6 +329,7 @@ int main(int argc, char **argv) {
   static const char expected_events[] =
       "SANDBOX_ACTIVATED\nMODULE_LOADED\nFIRST_FD3_READ\n";
 #endif
+#ifndef PS_VERIFY_OUTPUT
   if (failure || owner.state != PS_REAPED ||
       !WIFEXITED(owner.status) || WEXITSTATUS(owner.status) != 0 ||
 #ifdef PS_RENDER_BINARY
@@ -319,5 +348,6 @@ int main(int argc, char **argv) {
   return write(1, output, output_size) == (ssize_t)output_size ? 0 : 85;
 #else
   return write(1, output, output_size) == (ssize_t)output_size ? 0 : 85;
+#endif
 #endif
 }

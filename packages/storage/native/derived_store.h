@@ -73,6 +73,7 @@ struct derived_store {
   int fail_next_fsync;
   int fail_next_seal_fsync;
   int fail_next_seal_close;
+  int fail_next_verify_post;
   char marker[33];
   pthread_mutex_t mutex;
   derived_writer_t *live[DERIVED_LIVE_WRITERS];

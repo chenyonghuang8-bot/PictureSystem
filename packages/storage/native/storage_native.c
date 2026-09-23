@@ -2427,6 +2427,7 @@ static napi_value consume_original_handle(napi_env env, napi_callback_info info)
 }
 
 #include "derived_store.h"
+#include "image_verifier_launch.h"
 
 static napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
@@ -2498,6 +2499,10 @@ static napi_value init(napi_env env, napi_value exports) {
       {"sealDerivedTemp", NULL, seal_derived_temp, NULL, NULL, NULL,
        napi_default, NULL},
       {"consumeSealedOutput", NULL, consume_sealed_output, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"verifySealedOutput", NULL, verify_sealed_output, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"failNextVerifyPost", NULL, fail_next_verify_post, NULL, NULL, NULL,
        napi_default, NULL},
       {"failNextDerivedFsync", NULL, fail_next_derived_fsync, NULL, NULL, NULL,
        napi_default, NULL},

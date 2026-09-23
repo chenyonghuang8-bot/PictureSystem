@@ -52,8 +52,14 @@ int main(int argc, char **argv) {
   (void)exact_fd;
 #endif
 
-#ifdef PS_RENDER_REAL
-  struct rlimit cpu = {30, 30};
+#if defined(PS_RENDER_REAL) || defined(PS_VERIFY_OUTPUT)
+  struct rlimit cpu = {
+#ifdef PS_VERIFY_OUTPUT
+      10, 10
+#else
+      30, 30
+#endif
+  };
   struct rlimit files = {64, 64};
   struct rlimit core = {0, 0};
   if (setrlimit(RLIMIT_CPU, &cpu) != 0 ||
@@ -118,6 +124,8 @@ int main(int argc, char **argv) {
   int (*entry)(void) = (int (*)(void))dlsym(module,
 #ifdef PS_RENDER_REAL
       "ps_image_renderer_entry"
+#elif defined(PS_VERIFY_OUTPUT)
+      "ps_verify_output_entry"
 #else
       "ps_synthetic_renderer_entry"
 #endif
