@@ -29,6 +29,13 @@
       "when": 1789485599325,
       "tag": "0003_phase_04_media_processing",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1790154052472,
+      "tag": "0004_phase_04_album_media",
+      "breakpoints": true
     }
   ]
 }

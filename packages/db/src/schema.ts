@@ -772,6 +772,45 @@ export const mediaItems = mysqlTable(
   ],
 );
 
+export const albumMedia = mysqlTable(
+  "album_media",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    albumId: foreignId("album_id").notNull(),
+    mediaId: foreignId("media_id").notNull(),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (table) => [
+    uniqueIndex("uq_album_media_placement").on(
+      table.familyId,
+      table.albumId,
+      table.mediaId,
+    ),
+    index("idx_album_media_media").on(
+      table.familyId,
+      table.mediaId,
+      table.albumId,
+    ),
+    foreignKey({
+      name: "fk_album_media_album",
+      columns: [table.familyId, table.albumId],
+      foreignColumns: [albums.familyId, albums.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_album_media_media",
+      columns: [table.familyId, table.mediaId],
+      foreignColumns: [mediaItems.familyId, mediaItems.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+  ],
+);
+
 export const backgroundJobs = mysqlTable(
   "background_jobs",
   {

@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/mysql-core";
 
 import {
+  albumMedia,
   albumMembers,
   albums,
   families,
@@ -36,6 +37,7 @@ const PROJECT_TABLES = [
   mediaItems,
   backgroundJobs,
   derivedAssets,
+  albumMedia,
 ] as const;
 
 const PHASE_4_PREDECESSOR_TABLES = PROJECT_TABLES.slice(0, 9);

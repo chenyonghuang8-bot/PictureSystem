@@ -1,0 +1,2446 @@
+{
+  "version": "5",
+  "dialect": "mysql",
+  "id": "29b5833a-bb05-466f-b3d3-288112405627",
+  "prevId": "21ea6b23-00d1-452c-a89b-31fa6dab69d0",
+  "tables": {
+    "album_media": {
+      "name": "album_media",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "album_id": {
+          "name": "album_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "media_id": {
+          "name": "media_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_album_media_placement": {
+          "name": "uq_album_media_placement",
+          "columns": [
+            "family_id",
+            "album_id",
+            "media_id"
+          ],
+          "isUnique": true
+        },
+        "idx_album_media_media": {
+          "name": "idx_album_media_media",
+          "columns": [
+            "family_id",
+            "media_id",
+            "album_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_album_media_album": {
+          "name": "fk_album_media_album",
+          "tableFrom": "album_media",
+          "tableTo": "albums",
+          "columnsFrom": [
+            "family_id",
+            "album_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_album_media_media": {
+          "name": "fk_album_media_media",
+          "tableFrom": "album_media",
+          "tableTo": "media_items",
+          "columnsFrom": [
+            "family_id",
+            "media_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "album_media_id": {
+          "name": "album_media_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "album_members": {
+      "name": "album_members",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "album_id": {
+          "name": "album_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "member_id": {
+          "name": "member_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "can_view": {
+          "name": "can_view",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "can_upload": {
+          "name": "can_upload",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "can_edit": {
+          "name": "can_edit",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "can_delete": {
+          "name": "can_delete",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "can_manage_members": {
+          "name": "can_manage_members",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_album_members_album_member": {
+          "name": "uq_album_members_album_member",
+          "columns": [
+            "album_id",
+            "member_id"
+          ],
+          "isUnique": true
+        },
+        "idx_album_members_family_album": {
+          "name": "idx_album_members_family_album",
+          "columns": [
+            "family_id",
+            "album_id"
+          ],
+          "isUnique": false
+        },
+        "idx_album_members_family_member": {
+          "name": "idx_album_members_family_member",
+          "columns": [
+            "family_id",
+            "member_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_album_members_album": {
+          "name": "fk_album_members_album",
+          "tableFrom": "album_members",
+          "tableTo": "albums",
+          "columnsFrom": [
+            "family_id",
+            "album_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_album_members_member": {
+          "name": "fk_album_members_member",
+          "tableFrom": "album_members",
+          "tableTo": "family_members",
+          "columnsFrom": [
+            "family_id",
+            "member_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "album_members_id": {
+          "name": "album_members_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_album_members_view_boolean": {
+          "name": "chk_album_members_view_boolean",
+          "value": "`album_members`.`can_view` IN (0,1)"
+        },
+        "chk_album_members_upload_boolean": {
+          "name": "chk_album_members_upload_boolean",
+          "value": "`album_members`.`can_upload` IN (0,1)"
+        },
+        "chk_album_members_edit_boolean": {
+          "name": "chk_album_members_edit_boolean",
+          "value": "`album_members`.`can_edit` IN (0,1)"
+        },
+        "chk_album_members_delete_boolean": {
+          "name": "chk_album_members_delete_boolean",
+          "value": "`album_members`.`can_delete` IN (0,1)"
+        },
+        "chk_album_members_manage_members_boolean": {
+          "name": "chk_album_members_manage_members_boolean",
+          "value": "`album_members`.`can_manage_members` IN (0,1)"
+        },
+        "chk_album_members_view_required": {
+          "name": "chk_album_members_view_required",
+          "value": "`album_members`.`can_view` = 1 OR (`album_members`.`can_upload` = 0 AND `album_members`.`can_edit` = 0 AND `album_members`.`can_delete` = 0 AND `album_members`.`can_manage_members` = 0)"
+        }
+      }
+    },
+    "albums": {
+      "name": "albums",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_member_id": {
+          "name": "owner_member_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "varchar(2000)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "enum('FAMILY','CUSTOM')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'CUSTOM'"
+        },
+        "revision": {
+          "name": "revision",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "1"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "uq_albums_family_id": {
+          "name": "uq_albums_family_id",
+          "columns": [
+            "family_id",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "idx_albums_family_deleted_id": {
+          "name": "idx_albums_family_deleted_id",
+          "columns": [
+            "family_id",
+            "deleted_at",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "idx_albums_family_owner": {
+          "name": "idx_albums_family_owner",
+          "columns": [
+            "family_id",
+            "owner_member_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_albums_family": {
+          "name": "fk_albums_family",
+          "tableFrom": "albums",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_albums_owner_member": {
+          "name": "fk_albums_owner_member",
+          "tableFrom": "albums",
+          "tableTo": "family_members",
+          "columnsFrom": [
+            "family_id",
+            "owner_member_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "albums_id": {
+          "name": "albums_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_albums_revision": {
+          "name": "chk_albums_revision",
+          "value": "`albums`.`revision` >= 1"
+        },
+        "chk_albums_deleted_at": {
+          "name": "chk_albums_deleted_at",
+          "value": "`albums`.`deleted_at` IS NULL OR `albums`.`deleted_at` >= `albums`.`created_at`"
+        }
+      }
+    },
+    "background_jobs": {
+      "name": "background_jobs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "media_id": {
+          "name": "media_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "recipe_id": {
+          "name": "recipe_id",
+          "type": "smallint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "job_type": {
+          "name": "job_type",
+          "type": "enum('MEDIA_PROBE','IMAGE_DERIVATIVES','VIDEO_POSTER')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "enum('QUEUED','RUNNING','RETRY_WAIT','SUCCEEDED','FAILED','CANCELLED')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'QUEUED'"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "tinyint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "max_attempts": {
+          "name": "max_attempts",
+          "type": "tinyint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 3
+        },
+        "available_at": {
+          "name": "available_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "locked_at": {
+          "name": "locked_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "heartbeat_at": {
+          "name": "heartbeat_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "locked_until": {
+          "name": "locked_until",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "worker_id": {
+          "name": "worker_id",
+          "type": "binary(16)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lease_epoch": {
+          "name": "lease_epoch",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "0"
+        },
+        "last_failure_code": {
+          "name": "last_failure_code",
+          "type": "enum('UNSUPPORTED_FORMAT','CAPABILITY_UNAVAILABLE','MALFORMED_MEDIA','INPUT_LIMIT','OUTPUT_LIMIT','PROCESS_TIMEOUT','RESOURCE_LIMIT','TEMPORARY_IO','STORAGE_UNAVAILABLE','ORIGINAL_MISSING','ORIGINAL_CORRUPT','DERIVED_INTEGRITY','WORKER_LOST','DB_UNAVAILABLE','COMMIT_OUTCOME_UNKNOWN')",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "uq_background_jobs_identity": {
+          "name": "uq_background_jobs_identity",
+          "columns": [
+            "family_id",
+            "media_id",
+            "generation",
+            "recipe_id",
+            "job_type"
+          ],
+          "isUnique": true
+        },
+        "uq_background_jobs_family_media_id": {
+          "name": "uq_background_jobs_family_media_id",
+          "columns": [
+            "family_id",
+            "media_id",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "idx_background_jobs_claim": {
+          "name": "idx_background_jobs_claim",
+          "columns": [
+            "state",
+            "available_at",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "idx_background_jobs_lease": {
+          "name": "idx_background_jobs_lease",
+          "columns": [
+            "state",
+            "locked_until",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_background_jobs_media": {
+          "name": "fk_background_jobs_media",
+          "tableFrom": "background_jobs",
+          "tableTo": "media_items",
+          "columnsFrom": [
+            "family_id",
+            "media_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "background_jobs_id": {
+          "name": "background_jobs_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_background_jobs_generation": {
+          "name": "chk_background_jobs_generation",
+          "value": "`background_jobs`.`generation` >= 1"
+        },
+        "chk_background_jobs_recipe": {
+          "name": "chk_background_jobs_recipe",
+          "value": "`background_jobs`.`recipe_id` >= 1"
+        },
+        "chk_background_jobs_attempts": {
+          "name": "chk_background_jobs_attempts",
+          "value": "`background_jobs`.`attempts` <= `background_jobs`.`max_attempts` AND `background_jobs`.`max_attempts` BETWEEN 1 AND 3"
+        },
+        "chk_background_jobs_lease": {
+          "name": "chk_background_jobs_lease",
+          "value": "(`background_jobs`.`state` = 'RUNNING' AND `background_jobs`.`locked_at` IS NOT NULL AND `background_jobs`.`heartbeat_at` IS NOT NULL AND `background_jobs`.`locked_until` IS NOT NULL AND `background_jobs`.`worker_id` IS NOT NULL AND `background_jobs`.`lease_epoch` > 0 AND `background_jobs`.`locked_at` <= `background_jobs`.`heartbeat_at` AND `background_jobs`.`heartbeat_at` < `background_jobs`.`locked_until`) OR (`background_jobs`.`state` <> 'RUNNING' AND `background_jobs`.`locked_at` IS NULL AND `background_jobs`.`heartbeat_at` IS NULL AND `background_jobs`.`locked_until` IS NULL AND `background_jobs`.`worker_id` IS NULL)"
+        },
+        "chk_background_jobs_terminal": {
+          "name": "chk_background_jobs_terminal",
+          "value": "(`background_jobs`.`state` IN ('SUCCEEDED','FAILED','CANCELLED') AND `background_jobs`.`finished_at` IS NOT NULL AND `background_jobs`.`finished_at` >= `background_jobs`.`created_at`) OR (`background_jobs`.`state` NOT IN ('SUCCEEDED','FAILED','CANCELLED') AND `background_jobs`.`finished_at` IS NULL)"
+        },
+        "chk_background_jobs_failure": {
+          "name": "chk_background_jobs_failure",
+          "value": "(`background_jobs`.`state` IN ('FAILED','RETRY_WAIT') AND `background_jobs`.`last_failure_code` IS NOT NULL) OR (`background_jobs`.`state` IN ('QUEUED','SUCCEEDED','CANCELLED') AND `background_jobs`.`last_failure_code` IS NULL) OR `background_jobs`.`state` = 'RUNNING'"
+        }
+      }
+    },
+    "derived_assets": {
+      "name": "derived_assets",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "media_id": {
+          "name": "media_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "recipe_id": {
+          "name": "recipe_id",
+          "type": "smallint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "enum('THUMBNAIL','PREVIEW','VIDEO_POSTER')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "enum('RESERVED','PUBLISHING','READY','MISSING','FAILED')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'RESERVED'"
+        },
+        "reserved_bytes": {
+          "name": "reserved_bytes",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "byte_size": {
+          "name": "byte_size",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "binary(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "width": {
+          "name": "width",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "height": {
+          "name": "height",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "output_mime": {
+          "name": "output_mime",
+          "type": "varchar(127)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "producer_job_id": {
+          "name": "producer_job_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "producer_lease_epoch": {
+          "name": "producer_lease_epoch",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "failure_code": {
+          "name": "failure_code",
+          "type": "enum('UNSUPPORTED_FORMAT','CAPABILITY_UNAVAILABLE','MALFORMED_MEDIA','INPUT_LIMIT','OUTPUT_LIMIT','PROCESS_TIMEOUT','RESOURCE_LIMIT','TEMPORARY_IO','STORAGE_UNAVAILABLE','ORIGINAL_MISSING','ORIGINAL_CORRUPT','DERIVED_INTEGRITY','WORKER_LOST','DB_UNAVAILABLE','COMMIT_OUTCOME_UNKNOWN')",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cleaned_at": {
+          "name": "cleaned_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_derived_assets_identity": {
+          "name": "uq_derived_assets_identity",
+          "columns": [
+            "family_id",
+            "media_id",
+            "generation",
+            "recipe_id",
+            "kind"
+          ],
+          "isUnique": true
+        },
+        "idx_derived_assets_state": {
+          "name": "idx_derived_assets_state",
+          "columns": [
+            "state",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "idx_derived_assets_cleanup": {
+          "name": "idx_derived_assets_cleanup",
+          "columns": [
+            "family_id",
+            "cleaned_at",
+            "state",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_derived_assets_media": {
+          "name": "fk_derived_assets_media",
+          "tableFrom": "derived_assets",
+          "tableTo": "media_items",
+          "columnsFrom": [
+            "family_id",
+            "media_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_derived_assets_producer_job": {
+          "name": "fk_derived_assets_producer_job",
+          "tableFrom": "derived_assets",
+          "tableTo": "background_jobs",
+          "columnsFrom": [
+            "family_id",
+            "media_id",
+            "producer_job_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "media_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "derived_assets_id": {
+          "name": "derived_assets_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_derived_assets_generation": {
+          "name": "chk_derived_assets_generation",
+          "value": "`derived_assets`.`generation` >= 1"
+        },
+        "chk_derived_assets_recipe": {
+          "name": "chk_derived_assets_recipe",
+          "value": "`derived_assets`.`recipe_id` >= 1"
+        },
+        "chk_derived_assets_reservation": {
+          "name": "chk_derived_assets_reservation",
+          "value": "(`derived_assets`.`kind` = 'THUMBNAIL' AND `derived_assets`.`reserved_bytes` BETWEEN 1 AND 524288) OR (`derived_assets`.`kind` = 'PREVIEW' AND `derived_assets`.`reserved_bytes` BETWEEN 1 AND 4194304) OR (`derived_assets`.`kind` = 'VIDEO_POSTER' AND `derived_assets`.`reserved_bytes` BETWEEN 1 AND 1048576)"
+        },
+        "chk_derived_assets_bytes_digest": {
+          "name": "chk_derived_assets_bytes_digest",
+          "value": "(`derived_assets`.`byte_size` IS NULL AND `derived_assets`.`sha256` IS NULL) OR (`derived_assets`.`byte_size` IS NOT NULL AND `derived_assets`.`sha256` IS NOT NULL AND `derived_assets`.`byte_size` > 0 AND `derived_assets`.`byte_size` <= `derived_assets`.`reserved_bytes`)"
+        },
+        "chk_derived_assets_dimensions": {
+          "name": "chk_derived_assets_dimensions",
+          "value": "(`derived_assets`.`width` IS NULL AND `derived_assets`.`height` IS NULL) OR (`derived_assets`.`width` IS NOT NULL AND `derived_assets`.`height` IS NOT NULL AND `derived_assets`.`width` > 0 AND `derived_assets`.`height` > 0)"
+        },
+        "chk_derived_assets_published_payload": {
+          "name": "chk_derived_assets_published_payload",
+          "value": "`derived_assets`.`state` NOT IN ('PUBLISHING','READY') OR (`derived_assets`.`byte_size` IS NOT NULL AND `derived_assets`.`sha256` IS NOT NULL AND `derived_assets`.`width` IS NOT NULL AND `derived_assets`.`height` IS NOT NULL AND `derived_assets`.`output_mime` = 'image/webp' AND `derived_assets`.`producer_lease_epoch` IS NOT NULL AND `derived_assets`.`producer_lease_epoch` > 0)"
+        },
+        "chk_derived_assets_ready": {
+          "name": "chk_derived_assets_ready",
+          "value": "`derived_assets`.`state` <> 'READY' OR (`derived_assets`.`published_at` IS NOT NULL AND `derived_assets`.`cleaned_at` IS NULL AND `derived_assets`.`published_at` >= `derived_assets`.`created_at`)"
+        },
+        "chk_derived_assets_failure": {
+          "name": "chk_derived_assets_failure",
+          "value": "(`derived_assets`.`state` IN ('MISSING','FAILED') AND `derived_assets`.`failure_code` IS NOT NULL) OR (`derived_assets`.`state` NOT IN ('MISSING','FAILED') AND `derived_assets`.`failure_code` IS NULL)"
+        },
+        "chk_derived_assets_times": {
+          "name": "chk_derived_assets_times",
+          "value": "(`derived_assets`.`published_at` IS NULL OR `derived_assets`.`published_at` >= `derived_assets`.`created_at`) AND (`derived_assets`.`cleaned_at` IS NULL OR `derived_assets`.`cleaned_at` >= `derived_assets`.`created_at`)"
+        }
+      }
+    },
+    "families": {
+      "name": "families",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "families_id": {
+          "name": "families_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "family_members": {
+      "name": "family_members",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "enum('SUPER_ADMIN','ADMIN','MEMBER')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'MEMBER'"
+        },
+        "joined_at": {
+          "name": "joined_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "disabled_at": {
+          "name": "disabled_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "left_at": {
+          "name": "left_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_family_members_family_user": {
+          "name": "uq_family_members_family_user",
+          "columns": [
+            "family_id",
+            "user_id"
+          ],
+          "isUnique": true
+        },
+        "uq_family_members_family_id": {
+          "name": "uq_family_members_family_id",
+          "columns": [
+            "family_id",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "idx_family_members_user": {
+          "name": "idx_family_members_user",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "family_members_family_id_families_id_fk": {
+          "name": "family_members_family_id_families_id_fk",
+          "tableFrom": "family_members",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "family_members_user_id_users_id_fk": {
+          "name": "family_members_user_id_users_id_fk",
+          "tableFrom": "family_members",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "family_members_id": {
+          "name": "family_members_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "invitations": {
+      "name": "invitations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by_member_id": {
+          "name": "created_by_member_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "enum('ADMIN','MEMBER')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'MEMBER'"
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "binary(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "used_by_member_id": {
+          "name": "used_by_member_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revoked_by_member_id": {
+          "name": "revoked_by_member_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_invitations_token_hash": {
+          "name": "uq_invitations_token_hash",
+          "columns": [
+            "token_hash"
+          ],
+          "isUnique": true
+        },
+        "idx_invitations_family_created": {
+          "name": "idx_invitations_family_created",
+          "columns": [
+            "family_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "idx_invitations_expires": {
+          "name": "idx_invitations_expires",
+          "columns": [
+            "expires_at"
+          ],
+          "isUnique": false
+        },
+        "idx_invitations_family_creator": {
+          "name": "idx_invitations_family_creator",
+          "columns": [
+            "family_id",
+            "created_by_member_id"
+          ],
+          "isUnique": false
+        },
+        "idx_invitations_family_used_by": {
+          "name": "idx_invitations_family_used_by",
+          "columns": [
+            "family_id",
+            "used_by_member_id"
+          ],
+          "isUnique": false
+        },
+        "idx_invitations_family_revoked_by": {
+          "name": "idx_invitations_family_revoked_by",
+          "columns": [
+            "family_id",
+            "revoked_by_member_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "invitations_family_id_families_id_fk": {
+          "name": "invitations_family_id_families_id_fk",
+          "tableFrom": "invitations",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_invitations_creator_member": {
+          "name": "fk_invitations_creator_member",
+          "tableFrom": "invitations",
+          "tableTo": "family_members",
+          "columnsFrom": [
+            "family_id",
+            "created_by_member_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_invitations_used_by_member": {
+          "name": "fk_invitations_used_by_member",
+          "tableFrom": "invitations",
+          "tableTo": "family_members",
+          "columnsFrom": [
+            "family_id",
+            "used_by_member_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_invitations_revoked_by_member": {
+          "name": "fk_invitations_revoked_by_member",
+          "tableFrom": "invitations",
+          "tableTo": "family_members",
+          "columnsFrom": [
+            "family_id",
+            "revoked_by_member_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "invitations_id": {
+          "name": "invitations_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_invitations_expiry": {
+          "name": "chk_invitations_expiry",
+          "value": "`invitations`.`expires_at` > `invitations`.`created_at`"
+        },
+        "chk_invitations_used_pair": {
+          "name": "chk_invitations_used_pair",
+          "value": "(`invitations`.`used_at` IS NULL AND `invitations`.`used_by_member_id` IS NULL) OR (`invitations`.`used_at` IS NOT NULL AND `invitations`.`used_by_member_id` IS NOT NULL)"
+        },
+        "chk_invitations_used_or_revoked": {
+          "name": "chk_invitations_used_or_revoked",
+          "value": "NOT (`invitations`.`used_at` IS NOT NULL AND `invitations`.`revoked_at` IS NOT NULL)"
+        },
+        "chk_invitations_revoker_requires_revoked_at": {
+          "name": "chk_invitations_revoker_requires_revoked_at",
+          "value": "`invitations`.`revoked_by_member_id` IS NULL OR `invitations`.`revoked_at` IS NOT NULL"
+        }
+      }
+    },
+    "media_items": {
+      "name": "media_items",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "storage_object_id": {
+          "name": "storage_object_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_upload_id": {
+          "name": "source_upload_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "media_type": {
+          "name": "media_type",
+          "type": "enum('UNKNOWN','IMAGE','VIDEO','OTHER')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'UNKNOWN'"
+        },
+        "detected_mime": {
+          "name": "detected_mime",
+          "type": "varchar(127)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "processing_state": {
+          "name": "processing_state",
+          "type": "enum('PENDING','PROCESSING','READY','PARTIAL','FAILED','BLOCKED')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'PENDING'"
+        },
+        "generation": {
+          "name": "generation",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "1"
+        },
+        "recipe_id": {
+          "name": "recipe_id",
+          "type": "smallint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "metadata_generation": {
+          "name": "metadata_generation",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "raw_width": {
+          "name": "raw_width",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "raw_height": {
+          "name": "raw_height",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "display_width": {
+          "name": "display_width",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "display_height": {
+          "name": "display_height",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "duration_ms": {
+          "name": "duration_ms",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "orientation": {
+          "name": "orientation",
+          "type": "tinyint unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "video_rotation_degrees": {
+          "name": "video_rotation_degrees",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "is_animated": {
+          "name": "is_animated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "motion_hint": {
+          "name": "motion_hint",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "captured_local_at": {
+          "name": "captured_local_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "captured_at_utc": {
+          "name": "captured_at_utc",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "captured_offset_minutes": {
+          "name": "captured_offset_minutes",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "captured_source": {
+          "name": "captured_source",
+          "type": "enum('NONE','EXIF_ORIGINAL','EXIF_CREATE','XMP_ORIGINAL','XMP_CREATE','QUICKTIME_CREATION','CONTAINER_CREATION')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'NONE'"
+        },
+        "captured_time_status": {
+          "name": "captured_time_status",
+          "type": "enum('ABSENT','OFFSET_KNOWN','OFFSET_UNKNOWN')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'ABSENT'"
+        },
+        "timeline_key": {
+          "name": "timeline_key",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "timeline_basis": {
+          "name": "timeline_basis",
+          "type": "enum('CAPTURE_LOCAL','UPLOAD_UTC')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'UPLOAD_UTC'"
+        },
+        "gps_latitude": {
+          "name": "gps_latitude",
+          "type": "decimal(9,6)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "gps_longitude": {
+          "name": "gps_longitude",
+          "type": "decimal(10,6)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "camera_make": {
+          "name": "camera_make",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "camera_model": {
+          "name": "camera_model",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "video_codec": {
+          "name": "video_codec",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "video_container": {
+          "name": "video_container",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "video_transfer": {
+          "name": "video_transfer",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "warning_flags": {
+          "name": "warning_flags",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "0"
+        },
+        "last_failure_code": {
+          "name": "last_failure_code",
+          "type": "enum('UNSUPPORTED_FORMAT','CAPABILITY_UNAVAILABLE','MALFORMED_MEDIA','INPUT_LIMIT','OUTPUT_LIMIT','PROCESS_TIMEOUT','RESOURCE_LIMIT','TEMPORARY_IO','STORAGE_UNAVAILABLE','ORIGINAL_MISSING','ORIGINAL_CORRUPT','DERIVED_INTEGRITY','WORKER_LOST','DB_UNAVAILABLE','COMMIT_OUTCOME_UNKNOWN')",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_media_items_family_storage_object": {
+          "name": "uq_media_items_family_storage_object",
+          "columns": [
+            "family_id",
+            "storage_object_id"
+          ],
+          "isUnique": true
+        },
+        "uq_media_items_family_id": {
+          "name": "uq_media_items_family_id",
+          "columns": [
+            "family_id",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "idx_media_items_family_timeline": {
+          "name": "idx_media_items_family_timeline",
+          "columns": [
+            "family_id",
+            "timeline_key",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "idx_media_items_processing": {
+          "name": "idx_media_items_processing",
+          "columns": [
+            "processing_state",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_media_items_storage_object": {
+          "name": "fk_media_items_storage_object",
+          "tableFrom": "media_items",
+          "tableTo": "storage_objects",
+          "columnsFrom": [
+            "family_id",
+            "storage_object_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_media_items_source_upload": {
+          "name": "fk_media_items_source_upload",
+          "tableFrom": "media_items",
+          "tableTo": "upload_sessions",
+          "columnsFrom": [
+            "family_id",
+            "source_upload_id",
+            "storage_object_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id",
+            "storage_object_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "media_items_id": {
+          "name": "media_items_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_media_items_generation": {
+          "name": "chk_media_items_generation",
+          "value": "`media_items`.`generation` >= 1"
+        },
+        "chk_media_items_recipe": {
+          "name": "chk_media_items_recipe",
+          "value": "`media_items`.`recipe_id` >= 1"
+        },
+        "chk_media_items_metadata_generation": {
+          "name": "chk_media_items_metadata_generation",
+          "value": "`media_items`.`metadata_generation` IS NULL OR (`media_items`.`metadata_generation` >= 1 AND `media_items`.`metadata_generation` <= `media_items`.`generation`)"
+        },
+        "chk_media_items_raw_dimensions": {
+          "name": "chk_media_items_raw_dimensions",
+          "value": "(`media_items`.`raw_width` IS NULL AND `media_items`.`raw_height` IS NULL) OR (`media_items`.`raw_width` IS NOT NULL AND `media_items`.`raw_height` IS NOT NULL AND `media_items`.`raw_width` > 0 AND `media_items`.`raw_height` > 0)"
+        },
+        "chk_media_items_display_dimensions": {
+          "name": "chk_media_items_display_dimensions",
+          "value": "(`media_items`.`display_width` IS NULL AND `media_items`.`display_height` IS NULL) OR (`media_items`.`display_width` IS NOT NULL AND `media_items`.`display_height` IS NOT NULL AND `media_items`.`display_width` > 0 AND `media_items`.`display_height` > 0)"
+        },
+        "chk_media_items_duration": {
+          "name": "chk_media_items_duration",
+          "value": "`media_items`.`duration_ms` IS NULL OR `media_items`.`duration_ms` <= 86400000"
+        },
+        "chk_media_items_orientation": {
+          "name": "chk_media_items_orientation",
+          "value": "`media_items`.`orientation` IS NULL OR `media_items`.`orientation` BETWEEN 1 AND 8"
+        },
+        "chk_media_items_video_rotation": {
+          "name": "chk_media_items_video_rotation",
+          "value": "`media_items`.`video_rotation_degrees` IS NULL OR `media_items`.`video_rotation_degrees` IN (0,90,180,270)"
+        },
+        "chk_media_items_animated_boolean": {
+          "name": "chk_media_items_animated_boolean",
+          "value": "`media_items`.`is_animated` IN (0,1)"
+        },
+        "chk_media_items_motion_boolean": {
+          "name": "chk_media_items_motion_boolean",
+          "value": "`media_items`.`motion_hint` IN (0,1)"
+        },
+        "chk_media_items_gps": {
+          "name": "chk_media_items_gps",
+          "value": "(`media_items`.`gps_latitude` IS NULL AND `media_items`.`gps_longitude` IS NULL) OR (`media_items`.`gps_latitude` IS NOT NULL AND `media_items`.`gps_longitude` IS NOT NULL AND `media_items`.`gps_latitude` BETWEEN -90 AND 90 AND `media_items`.`gps_longitude` BETWEEN -180 AND 180)"
+        },
+        "chk_media_items_capture": {
+          "name": "chk_media_items_capture",
+          "value": "(`media_items`.`captured_time_status` = 'ABSENT' AND `media_items`.`captured_source` = 'NONE' AND `media_items`.`captured_local_at` IS NULL AND `media_items`.`captured_at_utc` IS NULL AND `media_items`.`captured_offset_minutes` IS NULL) OR (`media_items`.`captured_time_status` = 'OFFSET_UNKNOWN' AND `media_items`.`captured_source` <> 'NONE' AND `media_items`.`captured_local_at` IS NOT NULL AND `media_items`.`captured_at_utc` IS NULL AND `media_items`.`captured_offset_minutes` IS NULL) OR (`media_items`.`captured_time_status` = 'OFFSET_KNOWN' AND `media_items`.`captured_source` <> 'NONE' AND `media_items`.`captured_local_at` IS NOT NULL AND `media_items`.`captured_at_utc` IS NOT NULL AND `media_items`.`captured_offset_minutes` IS NOT NULL AND `media_items`.`captured_offset_minutes` BETWEEN -840 AND 840 AND (ABS(`media_items`.`captured_offset_minutes`) < 840 OR MOD(`media_items`.`captured_offset_minutes`,60) = 0))"
+        },
+        "chk_media_items_timeline": {
+          "name": "chk_media_items_timeline",
+          "value": "(`media_items`.`timeline_basis` = 'CAPTURE_LOCAL' AND `media_items`.`captured_local_at` IS NOT NULL AND `media_items`.`timeline_key` = `media_items`.`captured_local_at`) OR (`media_items`.`timeline_basis` = 'UPLOAD_UTC' AND `media_items`.`timeline_key` = `media_items`.`uploaded_at`)"
+        },
+        "chk_media_items_ready_metadata": {
+          "name": "chk_media_items_ready_metadata",
+          "value": "`media_items`.`processing_state` <> 'READY' OR (`media_items`.`metadata_generation` IS NOT NULL AND `media_items`.`metadata_generation` = `media_items`.`generation`)"
+        },
+        "chk_media_items_warning_flags": {
+          "name": "chk_media_items_warning_flags",
+          "value": "`media_items`.`warning_flags` <= 255"
+        },
+        "chk_media_items_failure": {
+          "name": "chk_media_items_failure",
+          "value": "(`media_items`.`processing_state` IN ('FAILED','BLOCKED') AND `media_items`.`last_failure_code` IS NOT NULL) OR (`media_items`.`processing_state` NOT IN ('FAILED','BLOCKED') AND (`media_items`.`processing_state` = 'PARTIAL' OR `media_items`.`last_failure_code` IS NULL))"
+        }
+      }
+    },
+    "sessions": {
+      "name": "sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "binary(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "client_type": {
+          "name": "client_type",
+          "type": "enum('WEB','ANDROID')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "device_label": {
+          "name": "device_label",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "authenticated_at": {
+          "name": "authenticated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revoke_reason": {
+          "name": "revoke_reason",
+          "type": "enum('LOGOUT','USER_REVOKE','LOGOUT_ALL','PASSWORD_CHANGE','USER_DISABLED')",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "uq_sessions_token_hash": {
+          "name": "uq_sessions_token_hash",
+          "columns": [
+            "token_hash"
+          ],
+          "isUnique": true
+        },
+        "idx_sessions_user_revoked_created": {
+          "name": "idx_sessions_user_revoked_created",
+          "columns": [
+            "user_id",
+            "revoked_at",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "idx_sessions_expires": {
+          "name": "idx_sessions_expires",
+          "columns": [
+            "expires_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "sessions_user_id_users_id_fk": {
+          "name": "sessions_user_id_users_id_fk",
+          "tableFrom": "sessions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "sessions_id": {
+          "name": "sessions_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_sessions_expiry": {
+          "name": "chk_sessions_expiry",
+          "value": "`sessions`.`expires_at` > `sessions`.`created_at`"
+        },
+        "chk_sessions_last_seen": {
+          "name": "chk_sessions_last_seen",
+          "value": "`sessions`.`last_seen_at` >= `sessions`.`created_at`"
+        },
+        "chk_sessions_revoked_pair": {
+          "name": "chk_sessions_revoked_pair",
+          "value": "(`sessions`.`revoked_at` IS NULL AND `sessions`.`revoke_reason` IS NULL) OR (`sessions`.`revoked_at` IS NOT NULL AND `sessions`.`revoke_reason` IS NOT NULL)"
+        }
+      }
+    },
+    "storage_objects": {
+      "name": "storage_objects",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "binary(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "byte_size": {
+          "name": "byte_size",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "key_version": {
+          "name": "key_version",
+          "type": "smallint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "state": {
+          "name": "state",
+          "type": "enum('AVAILABLE','MISSING','CORRUPT')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "durable_at": {
+          "name": "durable_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_storage_objects_family_id": {
+          "name": "uq_storage_objects_family_id",
+          "columns": [
+            "family_id",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "uq_storage_objects_family_hash_size": {
+          "name": "uq_storage_objects_family_hash_size",
+          "columns": [
+            "family_id",
+            "sha256",
+            "byte_size"
+          ],
+          "isUnique": true
+        },
+        "idx_storage_objects_state_verified": {
+          "name": "idx_storage_objects_state_verified",
+          "columns": [
+            "state",
+            "verified_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_storage_objects_family": {
+          "name": "fk_storage_objects_family",
+          "tableFrom": "storage_objects",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "storage_objects_id": {
+          "name": "storage_objects_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_storage_objects_size": {
+          "name": "chk_storage_objects_size",
+          "value": "`storage_objects`.`byte_size` > 0"
+        },
+        "chk_storage_objects_key_version": {
+          "name": "chk_storage_objects_key_version",
+          "value": "`storage_objects`.`key_version` = 1"
+        },
+        "chk_storage_objects_verified": {
+          "name": "chk_storage_objects_verified",
+          "value": "`storage_objects`.`verified_at` >= `storage_objects`.`durable_at`"
+        }
+      }
+    },
+    "upload_sessions": {
+      "name": "upload_sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "binary(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by_member_id": {
+          "name": "created_by_member_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "original_filename": {
+          "name": "original_filename",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reported_mime": {
+          "name": "reported_mime",
+          "type": "varchar(127)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "declared_size": {
+          "name": "declared_size",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "committed_offset": {
+          "name": "committed_offset",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "0"
+        },
+        "state": {
+          "name": "state",
+          "type": "enum('CREATED','UPLOADING','FINALIZING','COMPLETE','FAILED','ABORTED','EXPIRED')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'CREATED'"
+        },
+        "computed_sha256": {
+          "name": "computed_sha256",
+          "type": "binary(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "finalize_started_at": {
+          "name": "finalize_started_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "storage_object_id": {
+          "name": "storage_object_id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "terminal_at": {
+          "name": "terminal_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "failure_code": {
+          "name": "failure_code",
+          "type": "varchar(48)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "staging_cleaned_at": {
+          "name": "staging_cleaned_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_upload_sessions_public_id": {
+          "name": "uq_upload_sessions_public_id",
+          "columns": [
+            "public_id"
+          ],
+          "isUnique": true
+        },
+        "uq_upload_sessions_family_id_object": {
+          "name": "uq_upload_sessions_family_id_object",
+          "columns": [
+            "family_id",
+            "id",
+            "storage_object_id"
+          ],
+          "isUnique": true
+        },
+        "idx_upload_sessions_family_creator_state": {
+          "name": "idx_upload_sessions_family_creator_state",
+          "columns": [
+            "family_id",
+            "created_by_member_id",
+            "state",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "idx_upload_sessions_state_expiry": {
+          "name": "idx_upload_sessions_state_expiry",
+          "columns": [
+            "state",
+            "expires_at",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "idx_upload_sessions_family_object": {
+          "name": "idx_upload_sessions_family_object",
+          "columns": [
+            "family_id",
+            "storage_object_id"
+          ],
+          "isUnique": false
+        },
+        "idx_upload_sessions_cleanup": {
+          "name": "idx_upload_sessions_cleanup",
+          "columns": [
+            "state",
+            "staging_cleaned_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_upload_sessions_family": {
+          "name": "fk_upload_sessions_family",
+          "tableFrom": "upload_sessions",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_upload_sessions_creator_member": {
+          "name": "fk_upload_sessions_creator_member",
+          "tableFrom": "upload_sessions",
+          "tableTo": "family_members",
+          "columnsFrom": [
+            "family_id",
+            "created_by_member_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "fk_upload_sessions_storage_object": {
+          "name": "fk_upload_sessions_storage_object",
+          "tableFrom": "upload_sessions",
+          "tableTo": "storage_objects",
+          "columnsFrom": [
+            "family_id",
+            "storage_object_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "upload_sessions_id": {
+          "name": "upload_sessions_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_upload_sessions_size_offset": {
+          "name": "chk_upload_sessions_size_offset",
+          "value": "`upload_sessions`.`declared_size` > 0 AND `upload_sessions`.`committed_offset` <= `upload_sessions`.`declared_size`"
+        },
+        "chk_upload_sessions_expiry": {
+          "name": "chk_upload_sessions_expiry",
+          "value": "`upload_sessions`.`expires_at` > `upload_sessions`.`created_at`"
+        },
+        "chk_upload_sessions_created": {
+          "name": "chk_upload_sessions_created",
+          "value": "`upload_sessions`.`state` <> 'CREATED' OR `upload_sessions`.`committed_offset` = 0"
+        },
+        "chk_upload_sessions_uploading": {
+          "name": "chk_upload_sessions_uploading",
+          "value": "`upload_sessions`.`state` <> 'UPLOADING' OR `upload_sessions`.`committed_offset` > 0"
+        },
+        "chk_upload_sessions_finalize_pair": {
+          "name": "chk_upload_sessions_finalize_pair",
+          "value": "(`upload_sessions`.`computed_sha256` IS NULL AND `upload_sessions`.`finalize_started_at` IS NULL) OR (`upload_sessions`.`computed_sha256` IS NOT NULL AND `upload_sessions`.`finalize_started_at` IS NOT NULL)"
+        },
+        "chk_upload_sessions_finalize_state": {
+          "name": "chk_upload_sessions_finalize_state",
+          "value": "(`upload_sessions`.`state` IN ('FINALIZING','COMPLETE') AND `upload_sessions`.`computed_sha256` IS NOT NULL AND `upload_sessions`.`finalize_started_at` IS NOT NULL AND `upload_sessions`.`committed_offset` = `upload_sessions`.`declared_size`) OR (`upload_sessions`.`state` IN ('CREATED','UPLOADING','ABORTED','EXPIRED') AND `upload_sessions`.`computed_sha256` IS NULL AND `upload_sessions`.`finalize_started_at` IS NULL) OR (`upload_sessions`.`state` = 'FAILED' AND ((`upload_sessions`.`computed_sha256` IS NULL AND `upload_sessions`.`finalize_started_at` IS NULL) OR (`upload_sessions`.`computed_sha256` IS NOT NULL AND `upload_sessions`.`finalize_started_at` IS NOT NULL AND `upload_sessions`.`committed_offset` = `upload_sessions`.`declared_size`)))"
+        },
+        "chk_upload_sessions_complete": {
+          "name": "chk_upload_sessions_complete",
+          "value": "(`upload_sessions`.`state` = 'COMPLETE' AND `upload_sessions`.`storage_object_id` IS NOT NULL AND `upload_sessions`.`completed_at` IS NOT NULL AND `upload_sessions`.`terminal_at` IS NULL) OR (`upload_sessions`.`state` <> 'COMPLETE' AND `upload_sessions`.`storage_object_id` IS NULL AND `upload_sessions`.`completed_at` IS NULL)"
+        },
+        "chk_upload_sessions_terminal": {
+          "name": "chk_upload_sessions_terminal",
+          "value": "(`upload_sessions`.`state` IN ('FAILED','ABORTED','EXPIRED') AND `upload_sessions`.`terminal_at` IS NOT NULL) OR (`upload_sessions`.`state` NOT IN ('FAILED','ABORTED','EXPIRED') AND `upload_sessions`.`terminal_at` IS NULL)"
+        },
+        "chk_upload_sessions_failure": {
+          "name": "chk_upload_sessions_failure",
+          "value": "(`upload_sessions`.`state` = 'FAILED' AND `upload_sessions`.`failure_code` IS NOT NULL) OR (`upload_sessions`.`state` <> 'FAILED' AND `upload_sessions`.`failure_code` IS NULL)"
+        },
+        "chk_upload_sessions_times": {
+          "name": "chk_upload_sessions_times",
+          "value": "(`upload_sessions`.`finalize_started_at` IS NULL OR `upload_sessions`.`finalize_started_at` >= `upload_sessions`.`created_at`) AND (`upload_sessions`.`completed_at` IS NULL OR `upload_sessions`.`completed_at` >= `upload_sessions`.`created_at`) AND (`upload_sessions`.`terminal_at` IS NULL OR `upload_sessions`.`terminal_at` >= `upload_sessions`.`created_at`) AND (`upload_sessions`.`staging_cleaned_at` IS NULL OR `upload_sessions`.`staging_cleaned_at` >= `upload_sessions`.`created_at`) AND (`upload_sessions`.`completed_at` IS NULL OR (`upload_sessions`.`finalize_started_at` IS NOT NULL AND `upload_sessions`.`completed_at` >= `upload_sessions`.`finalize_started_at`)) AND (`upload_sessions`.`staging_cleaned_at` IS NULL OR `upload_sessions`.`state` IN ('COMPLETE','FAILED','ABORTED','EXPIRED'))"
+        }
+      }
+    },
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "username": {
+          "name": "username",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "username_normalized": {
+          "name": "username_normalized",
+          "type": "varbinary(512)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "varchar(255) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "password_changed_at": {
+          "name": "password_changed_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "disabled_at": {
+          "name": "disabled_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "uq_users_username_normalized": {
+          "name": "uq_users_username_normalized",
+          "columns": [
+            "username_normalized"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "users_id": {
+          "name": "users_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    }
+  },
+  "views": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "tables": {},
+    "indexes": {}
+  }
+}

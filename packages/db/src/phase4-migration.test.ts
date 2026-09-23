@@ -171,12 +171,17 @@ describe("Phase 4A versioned migration", () => {
     });
     expect(getTableConfig(uploadSessions).indexes).toHaveLength(6);
     expect(snapshot.prevId).toBe(previous.id);
-    expect(journal.entries).toHaveLength(4);
-    expect(journal.entries.map((entry) => entry.idx)).toEqual([0, 1, 2, 3]);
+    expect(journal.entries).toHaveLength(5);
+    expect(journal.entries.map((entry) => entry.idx)).toEqual([0, 1, 2, 3, 4]);
     expect(journal.entries[3]).toMatchObject({
       idx: 3,
       tag: "0003_phase_04_media_processing",
     });
     expect(journal.entries[3]!.when).toBeGreaterThan(journal.entries[2]!.when);
+    expect(journal.entries[4]).toMatchObject({
+      idx: 4,
+      tag: "0004_phase_04_album_media",
+    });
+    expect(journal.entries[4]!.when).toBeGreaterThan(journal.entries[3]!.when);
   });
 });
