@@ -4,8 +4,8 @@ import "@family-album/ui-tokens/tokens.css";
 import "./styles.css";
 
 export const metadata: Metadata = {
-  title: "张家的时光",
-  description: "Private family album foundation",
+  title: "家庭相册",
+  description: "Private family album",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

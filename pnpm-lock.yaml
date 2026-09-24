@@ -131,6 +131,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@family-album/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@family-album/ui-tokens':
         specifier: workspace:*
         version: link:../../packages/ui-tokens
@@ -143,6 +146,9 @@ importers:
       react-dom:
         specifier: 19.2.3
         version: 19.2.3(react@19.2.3)
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   apps/worker:
     dependencies:

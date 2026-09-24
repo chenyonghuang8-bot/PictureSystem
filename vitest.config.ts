@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 process.loadEnvFile(resolve(import.meta.dirname, ".env"));
 
 export default defineConfig({
+  tsconfig: "tsconfig.vitest.json",
   test: {
     environment: "node",
     exclude: ["tests/e2e/**", "**/dist/**", "**/node_modules/**"],
