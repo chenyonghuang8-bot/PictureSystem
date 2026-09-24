@@ -37,7 +37,12 @@ export default async function AlbumDetailPage({
     );
     return (
       <GalleryShell familyName={family.familyName} active="albums">
-        <AlbumDetail albumId={albumId} albumName={album.name} initial={page} />
+        <AlbumDetail
+          albumId={albumId}
+          albumName={album.name}
+          familyId={family.familyId}
+          initial={page}
+        />
       </GalleryShell>
     );
   } catch (error) {

@@ -1,13 +1,27 @@
 "use client";
 
-import { galleryMediaDetailSchema } from "@family-album/contracts";
+import {
+  albumsResponseSchema,
+  galleryMediaDetailSchema,
+} from "@family-album/contracts";
 import { useEffect, useState } from "react";
 
 import {
   GalleryClientError,
   browserGalleryGet,
 } from "../../lib/gallery-client.js";
-import { derivedPath, mediaDetailPath } from "../../lib/gallery-paths.js";
+import {
+  addMediaToAlbum,
+  operableAlbums,
+  placementErrorMessage,
+} from "../../lib/gallery-placement.js";
+import {
+  albumsPath,
+  derivedPath,
+  mediaDetailPath,
+} from "../../lib/gallery-paths.js";
+import { AlbumSelector } from "./album-selector.js";
+import { RemovePlacement } from "./remove-placement.js";
 import { PhotoPlaceholder } from "./states.js";
 
 export type ViewerTarget = {
@@ -18,18 +32,27 @@ export type ViewerTarget = {
 export function Viewer({
   items,
   index,
+  familyId,
   onIndex,
   onClose,
+  onRemovePlacement,
 }: {
   items: ViewerTarget[];
   index: number;
+  familyId: string;
   onIndex: (index: number) => void;
   onClose: () => void;
+  onRemovePlacement?: (mediaId: string) => Promise<void>;
 }) {
   const item = items[index];
   const [brokenPreview, setBrokenPreview] = useState(false);
   const [detail, setDetail] = useState<string>("");
   const [missing, setMissing] = useState(false);
+  const [albums, setAlbums] = useState<{ id: string; name: string }[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [placementMessage, setPlacementMessage] = useState("");
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
 
   useEffect(() => {
     if (!item) return;
@@ -62,7 +85,53 @@ export function Viewer({
     return () => {
       cancelled = true;
     };
-  }, [item]);
+  }, [item?.albumId, item?.mediaId]);
+
+  useEffect(() => {
+    if (!item) return;
+    setSelectedIds(new Set([item.albumId]));
+    setConfirmingRemove(false);
+    setPlacementMessage("");
+  }, [item?.albumId, item?.mediaId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    browserGalleryGet(
+      albumsPath(familyId, { limit: 100 }),
+      albumsResponseSchema,
+    )
+      .then((page) => {
+        if (cancelled) return;
+        setAlbums(
+          operableAlbums(page.albums).map((album) => ({
+            id: album.id,
+            name: album.name,
+          })),
+        );
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setPlacementMessage(placementErrorMessage(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [familyId]);
+
+  async function addToAlbum(albumId: string) {
+    if (!item) return;
+    setPendingId(albumId);
+    try {
+      const result = await addMediaToAlbum(albumId, item.mediaId);
+      setSelectedIds((current) => new Set(current).add(albumId));
+      setPlacementMessage(
+        result.created ? "已加入相册。" : "这张照片已经在这个相册里。",
+      );
+    } catch (error) {
+      setPlacementMessage(placementErrorMessage(error));
+    } finally {
+      setPendingId(null);
+    }
+  }
 
   if (!item) return null;
   const preview = derivedPath(item.mediaId, "preview");
@@ -93,6 +162,26 @@ export function Viewer({
         <PhotoPlaceholder />
       </div>
       <p className="gallery-viewer-meta">{detail}</p>
+      <AlbumSelector
+        albums={albums}
+        selectedIds={selectedIds}
+        pendingId={pendingId}
+        message={placementMessage}
+        onAdd={(albumId) => void addToAlbum(albumId)}
+      />
+      {onRemovePlacement && item ? (
+        <RemovePlacement
+          confirming={confirmingRemove}
+          message={placementMessage}
+          onAsk={() => setConfirmingRemove(true)}
+          onCancel={() => setConfirmingRemove(false)}
+          onConfirm={() => {
+            void onRemovePlacement(item.mediaId).catch((error: unknown) => {
+              setPlacementMessage(placementErrorMessage(error));
+            });
+          }}
+        />
+      ) : null}
       <div className="gallery-viewer-nav">
         <button
           type="button"

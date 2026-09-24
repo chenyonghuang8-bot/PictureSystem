@@ -44,6 +44,13 @@ export function albumPath(albumId: string) {
   return `/api/v1/albums/${albumId}`;
 }
 
+export function albumPlacementPath(albumId: string, mediaId?: string) {
+  assertGalleryId(albumId);
+  if (mediaId === undefined) return `/api/v1/albums/${albumId}/media`;
+  assertGalleryId(mediaId);
+  return `/api/v1/albums/${albumId}/media/${mediaId}`;
+}
+
 export function albumMediaPath(
   albumId: string,
   input: { cursor?: string; limit: number },

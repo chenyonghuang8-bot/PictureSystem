@@ -83,6 +83,7 @@ export function Timeline({
             mediaId: item.mediaId,
             albumId: item.albumId,
           }))}
+          familyId={familyId}
           index={openIndex}
           onIndex={setOpenIndex}
           onClose={() => setOpenIndex(null)}

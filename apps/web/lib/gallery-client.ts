@@ -52,3 +52,30 @@ export async function browserGalleryGet<Schema extends z.ZodType>(
   }
   return readGalleryResponse(response, schema);
 }
+
+export async function browserGallerySend<Schema extends z.ZodType>(
+  method: "POST" | "DELETE",
+  path: string,
+  schema: Schema,
+  body: unknown,
+): Promise<z.output<Schema>> {
+  if (!path.startsWith("/api/v1/") || path.includes("://")) {
+    throw new GalleryClientError("UNAVAILABLE");
+  }
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method,
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      credentials: "same-origin",
+      cache: "no-store",
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new GalleryClientError("UNAVAILABLE");
+  }
+  return readGalleryResponse(response, schema);
+}

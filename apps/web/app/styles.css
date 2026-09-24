@@ -196,10 +196,49 @@ button,
   inset: 0;
   z-index: 2;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   gap: var(--fa-space-4);
   padding: var(--fa-space-6);
+  overflow: auto;
   background: var(--fa-color-background);
+}
+
+.gallery-selector p,
+.gallery-confirm h2,
+.gallery-confirm p {
+  margin: 0;
+}
+
+.gallery-selector div,
+.gallery-confirm div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fa-space-2);
+  margin-top: var(--fa-space-2);
+}
+
+.gallery-selector button,
+.gallery-quiet-button,
+.gallery-confirm button {
+  display: inline-flex;
+  gap: var(--fa-space-2);
+  align-items: center;
+  padding: var(--fa-space-2) var(--fa-space-4);
+  border: 1px solid var(--fa-color-border);
+  border-radius: var(--fa-radius-pill);
+  background: var(--fa-color-surface);
+  color: var(--fa-color-text);
+}
+
+.gallery-selector button[aria-pressed="true"] {
+  background: var(--fa-color-accent-soft);
+  color: var(--fa-color-accent-strong);
+}
+
+.gallery-selector-note,
+.gallery-selector small,
+.gallery-confirm p {
+  color: var(--fa-color-text-muted);
 }
 
 .gallery-viewer-stage {
