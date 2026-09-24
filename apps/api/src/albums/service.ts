@@ -27,6 +27,7 @@ export type AlbumRepository = Pick<
   | "removeAlbumMember"
   | "listAlbumMedia"
   | "getAlbumMedia"
+  | "listFamilyTimeline"
 >;
 
 export class AlbumService {
@@ -68,6 +69,21 @@ export class AlbumService {
   async get(context: AuthContext, albumId: string) {
     return this.database(() =>
       this.repository.getAlbum({ actor: actor(context), albumId }),
+    );
+  }
+
+  async listTimeline(
+    context: AuthContext,
+    familyId: string,
+    input: { limit: number; cursor?: { timelineKey: Date; mediaId: string } },
+  ) {
+    return this.database(() =>
+      this.repository.listFamilyTimeline({
+        actor: actor(context),
+        familyId,
+        limit: input.limit,
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+      }),
     );
   }
 
@@ -232,6 +248,26 @@ export function decodeGalleryCursor(cursor: string) {
     throw new PublicAuthError(400, "INVALID_REQUEST");
   }
   return { timelineKey, mediaId: result.data.mediaId };
+}
+
+export function familyTimelineItem(row: {
+  mediaId: string;
+  albumId: string;
+  timelineKey: Date;
+  timelineBasis: AlbumMediaRecord["timelineBasis"];
+  displayWidth: number | null;
+  displayHeight: number | null;
+}) {
+  return {
+    ...galleryMediaItem({
+      ...row,
+      orientation: null,
+      capturedLocalAt: null,
+      cameraMake: null,
+      cameraModel: null,
+    }),
+    albumId: row.albumId,
+  };
 }
 
 export function galleryMediaItem(row: AlbumMediaRecord) {

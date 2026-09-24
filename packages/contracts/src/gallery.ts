@@ -24,7 +24,7 @@ export const galleryCursorSchema = z
   })
   .strict();
 
-const galleryMediaItemSchema = z
+export const galleryMediaItemSchema = z
   .object({
     mediaId: unsignedBigIntStringSchema,
     timelineKey: z.iso.datetime(),
@@ -52,6 +52,26 @@ export const galleryMediaDetailSchema = galleryMediaItemSchema
   })
   .strict();
 
+export const familyTimelineParamsSchema = z
+  .object({
+    familyId: unsignedBigIntStringSchema,
+  })
+  .strict();
+
+export const familyTimelineItemSchema = galleryMediaItemSchema
+  .extend({
+    albumId: unsignedBigIntStringSchema,
+  })
+  .strict();
+
+export const familyTimelinePageSchema = z
+  .object({
+    media: z.array(familyTimelineItemSchema).max(100),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+
 export type GalleryMediaQuery = z.infer<typeof galleryMediaQuerySchema>;
+export type FamilyTimelinePage = z.infer<typeof familyTimelinePageSchema>;
 export type GalleryMediaPage = z.infer<typeof galleryMediaPageSchema>;
 export type GalleryMediaDetail = z.infer<typeof galleryMediaDetailSchema>;

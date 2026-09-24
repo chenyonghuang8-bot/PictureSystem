@@ -8,6 +8,8 @@ import {
   albumMembersResponseSchema,
   albumResponseSchema,
   albumsResponseSchema,
+  familyTimelinePageSchema,
+  familyTimelineParamsSchema,
   galleryMediaDetailSchema,
   galleryMediaPageSchema,
   galleryMediaParamsSchema,
@@ -29,6 +31,7 @@ import { PublicAuthError, type AuthService } from "../auth/service.js";
 import {
   decodeGalleryCursor,
   encodeGalleryCursor,
+  familyTimelineItem,
   galleryMediaDetail,
   galleryMediaItem,
   type AlbumService,
@@ -80,6 +83,32 @@ export function registerAlbumRoutes(
         albumsResponseSchema.parse({
           albums: albums.map(albumDto),
           nextAfterId: albums.length === query.limit ? albums.at(-1)!.id : null,
+        }),
+      );
+    }),
+  );
+
+  app.get("/api/v1/families/:familyId/timeline", async (request, reply) =>
+    handleAlbum(request, reply, "family_timeline", async () => {
+      const { familyId } = familyTimelineParamsSchema.parse(request.params);
+      const query = galleryMediaQuerySchema.parse(request.query);
+      const context = await authenticate(request, authService);
+      const cursor =
+        query.cursor === undefined
+          ? undefined
+          : decodeGalleryCursor(query.cursor);
+      const rows = await albumService.listTimeline(context, familyId, {
+        limit: query.limit,
+        ...(cursor ? { cursor } : {}),
+      });
+      const media = rows.map(familyTimelineItem);
+      return reply.header("cache-control", "no-store").send(
+        familyTimelinePageSchema.parse({
+          media,
+          nextCursor:
+            media.length === query.limit
+              ? encodeGalleryCursor(media.at(-1)!)
+              : null,
         }),
       );
     }),
