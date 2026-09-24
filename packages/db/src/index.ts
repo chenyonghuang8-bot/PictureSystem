@@ -7,6 +7,7 @@ export * from "./bootstrap.js";
 export * from "./migration-readiness.js";
 export * from "./phase1c-repository.js";
 export * from "./album-repository.js";
+export * from "./share-repository.js";
 export * from "./transaction.js";
 export * from "./upload-repository.js";
 export * from "./media-repository.js";

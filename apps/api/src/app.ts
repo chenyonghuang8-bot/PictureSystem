@@ -7,6 +7,10 @@ import { registerPhase1CRoutes } from "./phase1c/routes.js";
 import type { Phase1CService } from "./phase1c/service.js";
 import { registerAlbumRoutes } from "./albums/routes.js";
 import type { AlbumService } from "./albums/service.js";
+import { registerPublicShareRoutes } from "./shares/public-routes.js";
+import type { PublicShareService } from "./shares/public-service.js";
+import { registerShareManagementRoutes } from "./shares/routes.js";
+import type { ShareService } from "./shares/service.js";
 import { registerUploadRoutes } from "./uploads/routes.js";
 import type { UploadService } from "./uploads/service.js";
 import type { UploadMutex } from "./uploads/mutex.js";
@@ -17,6 +21,8 @@ export function createApp(options?: {
   authService: AuthService;
   phase1cService?: Phase1CService;
   albumService?: AlbumService;
+  shareService?: ShareService;
+  publicShareService?: PublicShareService;
   uploadService?: UploadService;
   derivedService?: DerivedReadService;
   publicApiOrigin?: string;
@@ -58,6 +64,18 @@ export function createApp(options?: {
         authService: options.authService,
         albumService: options.albumService,
         trustedOrigins: options.trustedOrigins,
+      });
+    }
+    if (options.shareService) {
+      registerShareManagementRoutes(app, {
+        authService: options.authService,
+        shareService: options.shareService,
+        trustedOrigins: options.trustedOrigins,
+      });
+    }
+    if (options.publicShareService) {
+      registerPublicShareRoutes(app, {
+        publicShareService: options.publicShareService,
       });
     }
     if (options.derivedService) {

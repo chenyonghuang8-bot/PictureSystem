@@ -5,6 +5,7 @@ export * from "./auth.js";
 export * from "./phase1c.js";
 export * from "./uploads.js";
 export * from "./albums.js";
+export * from "./shares.js";
 export * from "./media-processing.js";
 export * from "./derived-serving.js";
 export * from "./gallery.js";

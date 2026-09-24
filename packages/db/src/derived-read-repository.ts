@@ -98,4 +98,67 @@ export class MySqlDerivedReadRepository {
       sha256Hex: row.sha256Hex,
     };
   }
+
+  async findReadyDerivedInAlbum(input: {
+    familyId: string;
+    albumId: string;
+    mediaId: string;
+    kind: "THUMBNAIL" | "PREVIEW";
+  }): Promise<ReadyDerivedView | null> {
+    const [rows] = await this.pool.query<ReadyRow[]>(
+      `SELECT CAST(m.family_id AS CHAR) AS familyId,
+              CAST(m.id AS CHAR) AS mediaId,
+              CAST(m.generation AS CHAR) AS generation,
+              CAST(d.byte_size AS CHAR) AS byteSize,
+              LOWER(HEX(d.sha256)) AS sha256Hex
+         FROM album_media am
+         JOIN albums a
+           ON a.family_id = am.family_id
+          AND a.id = am.album_id
+          AND a.deleted_at IS NULL
+         JOIN media_items m
+           ON m.family_id = am.family_id
+          AND m.id = am.media_id
+          AND m.processing_state <> 'BLOCKED'
+         JOIN storage_objects s
+           ON s.family_id = m.family_id
+          AND s.id = m.storage_object_id
+          AND s.state = 'AVAILABLE'
+         JOIN derived_assets d
+           ON d.family_id = m.family_id
+          AND d.media_id = m.id
+          AND d.generation = m.generation
+          AND d.recipe_id = 1
+          AND d.kind = ?
+          AND d.state = 'READY'
+          AND d.output_mime = 'image/webp'
+          AND d.cleaned_at IS NULL
+          AND d.byte_size IS NOT NULL
+          AND d.sha256 IS NOT NULL
+        WHERE am.family_id = ?
+          AND am.album_id = ?
+          AND am.media_id = ?
+        LIMIT 1`,
+      [input.kind, input.familyId, input.albumId, input.mediaId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    if (
+      row.familyId !== input.familyId ||
+      row.mediaId !== input.mediaId ||
+      !/^[1-9][0-9]*$/u.test(row.generation) ||
+      !/^[1-9][0-9]*$/u.test(row.byteSize) ||
+      !/^[0-9a-f]{64}$/u.test(row.sha256Hex)
+    ) {
+      return null;
+    }
+    return {
+      familyId: row.familyId,
+      mediaId: row.mediaId,
+      generation: BigInt(row.generation),
+      kind: input.kind,
+      byteSize: BigInt(row.byteSize),
+      sha256Hex: row.sha256Hex,
+    };
+  }
 }

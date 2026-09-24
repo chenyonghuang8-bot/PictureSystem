@@ -10,6 +10,8 @@ import {
 
 import {
   albumMedia,
+  shareEvents,
+  shares,
   albumMembers,
   albums,
   families,
@@ -38,6 +40,8 @@ const PROJECT_TABLES = [
   backgroundJobs,
   derivedAssets,
   albumMedia,
+  shares,
+  shareEvents,
 ] as const;
 
 const PHASE_4_PREDECESSOR_TABLES = PROJECT_TABLES.slice(0, 9);

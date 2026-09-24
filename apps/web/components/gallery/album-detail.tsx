@@ -13,6 +13,7 @@ import {
   removeMediaFromAlbum,
 } from "../../lib/gallery-placement.js";
 import { PhotoGrid } from "./photo-grid.js";
+import { SharePanel } from "./share-panel.js";
 import { EmptyPhotos, UnavailableState } from "./states.js";
 import { Viewer } from "./viewer.js";
 
@@ -62,7 +63,14 @@ export function AlbumDetail({
 
   return (
     <div>
-      <h1 className="gallery-page-title">{albumName}</h1>
+      <div className="gallery-heading">
+        <h1 className="gallery-page-title">{albumName}</h1>
+        <SharePanel
+          albumId={albumId}
+          albumName={albumName}
+          familyId={familyId}
+        />
+      </div>
       {notice ? (
         <p className="gallery-selector-note" role="status">
           {notice}

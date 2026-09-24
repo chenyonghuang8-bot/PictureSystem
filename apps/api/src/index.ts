@@ -8,6 +8,7 @@ import {
   MySqlPhase1CRepository,
   MySqlAlbumRepository,
   MySqlDerivedReadRepository,
+  MySqlShareRepository,
   MySqlUploadRepository,
 } from "@family-album/db";
 import { resolve } from "node:path";
@@ -21,6 +22,8 @@ import { createApp } from "./app.js";
 import { AuthService } from "./auth/service.js";
 import { Phase1CService } from "./phase1c/service.js";
 import { AlbumService } from "./albums/service.js";
+import { PublicShareService } from "./shares/public-service.js";
+import { ShareService } from "./shares/service.js";
 import { UploadService } from "./uploads/service.js";
 import type { ReconciliationResult } from "./uploads/recovery.js";
 import { UploadMutex } from "./uploads/mutex.js";
@@ -39,7 +42,13 @@ const phase1cService = new Phase1CService(
   passwords,
   env.TRUSTED_WEB_ORIGINS[0]!,
 );
-const albumService = new AlbumService(new MySqlAlbumRepository(database.pool));
+const albumRepository = new MySqlAlbumRepository(database.pool);
+const albumService = new AlbumService(albumRepository);
+const shareRepository = new MySqlShareRepository(
+  database.pool,
+  albumRepository,
+);
+const shareService = new ShareService(shareRepository);
 let storageCapability: StorageCapability = {
   state: "UNAVAILABLE",
   reason: "STORAGE_NOT_CONFIGURED",
@@ -84,17 +93,30 @@ if (env.DEV_STORAGE_MARKER_ID) {
     connection.release();
   }
 }
-const derivedService = new DerivedReadService(
-  new MySqlDerivedReadRepository(database.pool),
-  {
-    async read(identity) {
-      const gate = sharedCapacityGate;
-      if (!gate) throw new StorageSafetyError("DERIVED_SERVE_UNAVAILABLE");
-      return gate.withLock(() =>
-        Promise.resolve(gate.readDerivedFinal(identity)),
-      );
-    },
+const derivedReads = new MySqlDerivedReadRepository(database.pool);
+const derivedReader = {
+  async read(identity: {
+    familyId: string;
+    mediaId: string;
+    generation: bigint;
+    recipeId: 1;
+    kind: "THUMBNAIL" | "PREVIEW";
+    sha256Hex: string;
+    byteSize: bigint;
+  }) {
+    const gate = sharedCapacityGate;
+    if (!gate) throw new StorageSafetyError("DERIVED_SERVE_UNAVAILABLE");
+    return gate.withLock(() =>
+      Promise.resolve(gate.readDerivedFinal(identity)),
+    );
   },
+};
+const derivedService = new DerivedReadService(derivedReads, derivedReader);
+const publicShareService = new PublicShareService(
+  shareService,
+  shareRepository,
+  derivedReads,
+  derivedReader,
 );
 const uploadService = new UploadService(
   uploadRepository,
@@ -105,6 +127,8 @@ const app = createApp({
   authService,
   phase1cService,
   albumService,
+  shareService,
+  publicShareService,
   uploadService,
   derivedService,
   publicApiOrigin: env.API_PUBLIC_ORIGIN,

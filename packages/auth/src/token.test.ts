@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   createInvitationToken,
   createSessionToken,
+  createShareToken,
   decodeInvitationToken,
   decodeSessionToken,
   hashInvitationToken,
   hashSessionToken,
+  hashShareToken,
   TokenValidationError,
 } from "./token.js";
 
@@ -19,6 +21,7 @@ describe("opaque token helpers", () => {
       decodeInvitationToken,
       hashInvitationToken,
     ],
+    ["share", createShareToken, hashShareToken, hashShareToken],
   ] as const)(
     "creates canonical 32-byte %s tokens",
     (_kind, create, decode, hash) => {
@@ -50,5 +53,11 @@ describe("opaque token helpers", () => {
 
   it("generates independent values for session and invitation domains", () => {
     expect(createSessionToken()).not.toBe(createInvitationToken());
+  });
+
+  it("rejects a malformed share token before hashing", () => {
+    expect(() => hashShareToken("not-a-share-token")).toThrow(
+      TokenValidationError,
+    );
   });
 });

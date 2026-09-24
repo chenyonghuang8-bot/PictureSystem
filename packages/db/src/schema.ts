@@ -811,6 +811,109 @@ export const albumMedia = mysqlTable(
   ],
 );
 
+export const shares = mysqlTable(
+  "shares",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    albumId: foreignId("album_id").notNull(),
+    tokenHash: tokenHash("token_hash").notNull(),
+    createdByMemberId: foreignId("created_by_member_id").notNull(),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    expiresAt: timestamp("expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    revokedByMemberId: foreignId("revoked_by_member_id"),
+  },
+  (table) => [
+    uniqueIndex("uq_shares_family_id").on(table.familyId, table.id),
+    uniqueIndex("uq_shares_token_hash").on(table.tokenHash),
+    index("idx_shares_family_album_id").on(
+      table.familyId,
+      table.albumId,
+      table.id,
+    ),
+    index("idx_shares_expires").on(table.expiresAt, table.id),
+    foreignKey({
+      name: "fk_shares_family",
+      columns: [table.familyId],
+      foreignColumns: [families.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_shares_album",
+      columns: [table.familyId, table.albumId],
+      foreignColumns: [albums.familyId, albums.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_shares_creator",
+      columns: [table.familyId, table.createdByMemberId],
+      foreignColumns: [familyMembers.familyId, familyMembers.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_shares_revoker",
+      columns: [table.familyId, table.revokedByMemberId],
+      foreignColumns: [familyMembers.familyId, familyMembers.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check("chk_shares_expiry", sql`${table.expiresAt} > ${table.createdAt}`),
+    check(
+      "chk_shares_revoke_pair",
+      sql`(${table.revokedAt} IS NULL AND ${table.revokedByMemberId} IS NULL) OR (${table.revokedAt} IS NOT NULL AND ${table.revokedByMemberId} IS NOT NULL)`,
+    ),
+    check(
+      "chk_shares_revoke_after_create",
+      sql`${table.revokedAt} IS NULL OR ${table.revokedAt} >= ${table.createdAt}`,
+    ),
+  ],
+);
+
+export const shareEvents = mysqlTable(
+  "share_events",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    shareId: foreignId("share_id").notNull(),
+    eventType: mysqlEnum("event_type", [
+      "CREATE",
+      "ACCESS",
+      "REVOKE",
+    ]).notNull(),
+    actorMemberId: foreignId("actor_member_id"),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (table) => [
+    index("idx_share_events_share").on(table.familyId, table.shareId, table.id),
+    foreignKey({
+      name: "fk_share_events_share",
+      columns: [table.familyId, table.shareId],
+      foreignColumns: [shares.familyId, shares.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_share_events_actor",
+      columns: [table.familyId, table.actorMemberId],
+      foreignColumns: [familyMembers.familyId, familyMembers.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check(
+      "chk_share_events_actor",
+      sql`(${table.eventType} IN ('CREATE','REVOKE') AND ${table.actorMemberId} IS NOT NULL) OR (${table.eventType} = 'ACCESS' AND ${table.actorMemberId} IS NULL)`,
+    ),
+  ],
+);
+
 export const backgroundJobs = mysqlTable(
   "background_jobs",
   {

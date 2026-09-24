@@ -62,3 +62,11 @@ export function decodeInvitationToken(token: unknown): Buffer {
 export function hashInvitationToken(token: unknown): Buffer {
   return hashRawToken(decodeInvitationToken(token));
 }
+
+export function createShareToken(): string {
+  return createOpaqueToken();
+}
+
+export function hashShareToken(token: unknown): Buffer {
+  return hashRawToken(decodeOpaqueToken(token));
+}

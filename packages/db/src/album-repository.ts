@@ -8,6 +8,7 @@ import type {
 import {
   canDeleteFromAlbum,
   canEditAlbum,
+  canManageAlbumMembers,
   canUploadToAlbum,
   evaluateAlbumPermissions,
   isPermissionSubset,
@@ -791,6 +792,78 @@ export class MySqlAlbumRepository {
         revision: nextRevision,
         changed: true,
       };
+    });
+  }
+
+  async withAlbumManager<T>(
+    input: { actor: Phase1CActor; albumId: string },
+    work: (
+      connection: PoolConnection,
+      scope: { album: AlbumRecord; actorMemberId: string; now: Date },
+    ) => Promise<T>,
+  ): Promise<T> {
+    const familyId = await this.locateAlbumFamily(input.albumId);
+    if (!familyId) throw new AlbumRepositoryError("NOT_FOUND");
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, familyId);
+      const actor = await lockActor(connection, familyId, input.actor);
+      const album = await lockAlbum(connection, familyId, input.albumId);
+      const grant = album
+        ? await lockGrant(connection, familyId, album.id, actor.member.id)
+        : undefined;
+      const now = await readServerTime(connection);
+      assertActor(actor, input.actor, now);
+      if (!album) throw new AlbumRepositoryError("NOT_FOUND");
+      const visible = assertVisible(album, actor.member, grant);
+      if (
+        !canManageAlbumMembers(
+          albumPermissionContext(album, actor.member, grant),
+        )
+      ) {
+        throw new AlbumRepositoryError("FORBIDDEN");
+      }
+      return work(connection, {
+        album: visible,
+        actorMemberId: actor.member.id,
+        now,
+      });
+    });
+  }
+
+  async listManagedAlbumIds(input: {
+    actor: Phase1CActor;
+    familyId: string;
+  }): Promise<string[]> {
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, input.familyId);
+      const actor = await lockActor(connection, input.familyId, input.actor);
+      const now = await readServerTime(connection);
+      assertActor(actor, input.actor, now);
+      const [rows] = await connection.query<(AlbumRow & GrantRow)[]>(
+        `SELECT CAST(a.id AS CHAR) AS id, CAST(a.family_id AS CHAR) AS familyId,
+                CAST(a.owner_member_id AS CHAR) AS ownerMemberId,
+                a.name, a.description, a.visibility,
+                CAST(a.revision AS CHAR) AS revision,
+                a.created_at AS createdAt, a.updated_at AS updatedAt,
+                a.deleted_at AS deletedAt,
+                COALESCE(am.can_view, 0) AS canView,
+                COALESCE(am.can_upload, 0) AS canUpload,
+                COALESCE(am.can_edit, 0) AS canEdit,
+                COALESCE(am.can_delete, 0) AS canDelete,
+                COALESCE(am.can_manage_members, 0) AS canManageMembers
+           FROM albums a
+           LEFT JOIN album_members am
+             ON am.family_id = a.family_id AND am.album_id = a.id
+            AND am.member_id = ?
+          WHERE a.family_id = ? AND a.deleted_at IS NULL
+            AND (a.owner_member_id = ? OR a.visibility = 'FAMILY'
+                 OR am.can_view = 1)`,
+        [actor.member.id, input.familyId, actor.member.id],
+      );
+      return rows
+        .map((row) => toAlbumRecord(row, actor.member, row))
+        .filter((album) => album.effectivePermissions.canManageMembers)
+        .map((album) => album.id);
     });
   }
 
