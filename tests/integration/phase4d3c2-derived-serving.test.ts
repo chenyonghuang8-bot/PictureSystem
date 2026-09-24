@@ -126,12 +126,37 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
       await assertMigrationReadiness(connection);
       familyA = await insertFamily(connection, `A ${suffix}`);
       familyB = await insertFamily(connection, `B ${suffix}`);
-      const owner = await insertMember(connection, familyA, `owner_${suffix}`, "MEMBER");
+      const owner = await insertMember(
+        connection,
+        familyA,
+        `owner_${suffix}`,
+        "MEMBER",
+      );
       ownerUser = users.get(owner) ?? "";
-      viewer = await insertMember(connection, familyA, `viewer_${suffix}`, "MEMBER");
-      outsider = await insertMember(connection, familyA, `out_${suffix}`, "MEMBER");
-      admin = await insertMember(connection, familyA, `admin_${suffix}`, "ADMIN");
-      foreignUser = await insertMember(connection, familyB, `foreign_${suffix}`, "MEMBER");
+      viewer = await insertMember(
+        connection,
+        familyA,
+        `viewer_${suffix}`,
+        "MEMBER",
+      );
+      outsider = await insertMember(
+        connection,
+        familyA,
+        `out_${suffix}`,
+        "MEMBER",
+      );
+      admin = await insertMember(
+        connection,
+        familyA,
+        `admin_${suffix}`,
+        "ADMIN",
+      );
+      foreignUser = await insertMember(
+        connection,
+        familyB,
+        `foreign_${suffix}`,
+        "MEMBER",
+      );
       albumId = await insertAlbum(connection, familyA, owner, "CUSTOM");
       deletedAlbumId = await insertAlbum(connection, familyA, owner, "FAMILY");
       await connection.query(
@@ -153,11 +178,46 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
       ]) {
         seal(familyA, mediaId);
       }
-      await insertReady(connection, familyA, visibleMedia, "THUMBNAIL", thumbnail, thumbnailSha);
-      await insertReady(connection, familyA, visibleMedia, "PREVIEW", preview, previewSha);
-      await insertReady(connection, familyA, orphanMedia, "THUMBNAIL", thumbnail, thumbnailSha);
-      await insertReady(connection, familyA, deletedMedia, "THUMBNAIL", thumbnail, thumbnailSha);
-      await insertReady(connection, familyA, blockedMedia, "THUMBNAIL", thumbnail, thumbnailSha);
+      await insertReady(
+        connection,
+        familyA,
+        visibleMedia,
+        "THUMBNAIL",
+        thumbnail,
+        thumbnailSha,
+      );
+      await insertReady(
+        connection,
+        familyA,
+        visibleMedia,
+        "PREVIEW",
+        preview,
+        previewSha,
+      );
+      await insertReady(
+        connection,
+        familyA,
+        orphanMedia,
+        "THUMBNAIL",
+        thumbnail,
+        thumbnailSha,
+      );
+      await insertReady(
+        connection,
+        familyA,
+        deletedMedia,
+        "THUMBNAIL",
+        thumbnail,
+        thumbnailSha,
+      );
+      await insertReady(
+        connection,
+        familyA,
+        blockedMedia,
+        "THUMBNAIL",
+        thumbnail,
+        thumbnailSha,
+      );
       for (const [album, mediaId] of [
         [albumId, visibleMedia],
         [albumId, stateMedia],
@@ -188,20 +248,52 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
     await app.close();
     const ids = [familyA, familyB].filter((id) => id !== "");
     if (ids.length > 0) {
-      await database.pool.query("DELETE FROM album_members WHERE family_id IN (?)", [ids]);
-      await database.pool.query("DELETE FROM album_media WHERE family_id IN (?)", [ids]);
-      await database.pool.query("DELETE FROM derived_assets WHERE family_id IN (?)", [ids]);
-      await database.pool.query("DELETE FROM background_jobs WHERE family_id IN (?)", [ids]);
-      await database.pool.query("DELETE FROM media_items WHERE family_id IN (?)", [ids]);
-      await database.pool.query("DELETE FROM upload_sessions WHERE family_id IN (?)", [ids]);
-      await database.pool.query("DELETE FROM storage_objects WHERE family_id IN (?)", [ids]);
-      await database.pool.query("DELETE FROM albums WHERE family_id IN (?)", [ids]);
-      await database.pool.query("DELETE FROM family_members WHERE family_id IN (?)", [ids]);
-      const userIds = [ownerUser, users.get(viewer), users.get(outsider), users.get(admin), users.get(foreignUser)].filter(
-        (id): id is string => Boolean(id),
+      await database.pool.query(
+        "DELETE FROM album_members WHERE family_id IN (?)",
+        [ids],
       );
+      await database.pool.query(
+        "DELETE FROM album_media WHERE family_id IN (?)",
+        [ids],
+      );
+      await database.pool.query(
+        "DELETE FROM derived_assets WHERE family_id IN (?)",
+        [ids],
+      );
+      await database.pool.query(
+        "DELETE FROM background_jobs WHERE family_id IN (?)",
+        [ids],
+      );
+      await database.pool.query(
+        "DELETE FROM media_items WHERE family_id IN (?)",
+        [ids],
+      );
+      await database.pool.query(
+        "DELETE FROM upload_sessions WHERE family_id IN (?)",
+        [ids],
+      );
+      await database.pool.query(
+        "DELETE FROM storage_objects WHERE family_id IN (?)",
+        [ids],
+      );
+      await database.pool.query("DELETE FROM albums WHERE family_id IN (?)", [
+        ids,
+      ]);
+      await database.pool.query(
+        "DELETE FROM family_members WHERE family_id IN (?)",
+        [ids],
+      );
+      const userIds = [
+        ownerUser,
+        users.get(viewer),
+        users.get(outsider),
+        users.get(admin),
+        users.get(foreignUser),
+      ].filter((id): id is string => Boolean(id));
       if (userIds.length > 0) {
-        await database.pool.query("DELETE FROM users WHERE id IN (?)", [userIds]);
+        await database.pool.query("DELETE FROM users WHERE id IN (?)", [
+          userIds,
+        ]);
       }
       await database.pool.query("DELETE FROM families WHERE id IN (?)", [ids]);
     }
@@ -249,7 +341,12 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
   it("does not serve a derived row that is not READY", async () => {
     userId = users.get(viewer) ?? "";
     const before = reads.length;
-    for (const state of ["RESERVED", "PUBLISHING", "FAILED", "MISSING"] as const) {
+    for (const state of [
+      "RESERVED",
+      "PUBLISHING",
+      "FAILED",
+      "MISSING",
+    ] as const) {
       await replaceDerived(state);
       const response = await read(stateMedia, "thumbnail");
       expect(response.statusCode).toBe(404);
@@ -260,7 +357,14 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
 
   it("does not serve a missing final or a digest mismatch", async () => {
     userId = users.get(viewer) ?? "";
-    await insertReady(database.pool, familyA, stateMedia, "THUMBNAIL", thumbnail, "b".repeat(64));
+    await insertReady(
+      database.pool,
+      familyA,
+      stateMedia,
+      "THUMBNAIL",
+      thumbnail,
+      "b".repeat(64),
+    );
     const mismatch = await read(stateMedia, "thumbnail");
     expect(mismatch.statusCode).toBe(404);
     expect(mismatch.json()).toMatchObject({ code: "NOT_FOUND" });
@@ -268,7 +372,14 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
       recursive: true,
       force: true,
     });
-    await insertReady(database.pool, familyA, stateMedia, "THUMBNAIL", thumbnail, thumbnailSha);
+    await insertReady(
+      database.pool,
+      familyA,
+      stateMedia,
+      "THUMBNAIL",
+      thumbnail,
+      thumbnailSha,
+    );
     const absent = await read(stateMedia, "thumbnail");
     expect(absent.statusCode).toBe(404);
   });
@@ -361,7 +472,11 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
     return String(album.insertId);
   }
 
-  async function insertMedia(connection: Query, familyId: string, memberId: string) {
+  async function insertMedia(
+    connection: Query,
+    familyId: string,
+    memberId: string,
+  ) {
     const sha = randomBytes(32);
     const [object] = await connection.query(
       `INSERT INTO storage_objects
@@ -404,11 +519,10 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
     bytes: Buffer,
     sha: string,
   ) {
-    await connection.query("DELETE FROM derived_assets WHERE family_id=? AND media_id=? AND kind=?", [
-      familyId,
-      mediaId,
-      kind,
-    ]);
+    await connection.query(
+      "DELETE FROM derived_assets WHERE family_id=? AND media_id=? AND kind=?",
+      [familyId, mediaId, kind],
+    );
     await connection.query(
       `INSERT INTO derived_assets
         (family_id,media_id,generation,recipe_id,kind,state,reserved_bytes,

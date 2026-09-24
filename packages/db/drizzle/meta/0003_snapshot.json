@@ -95,26 +95,17 @@
       "indexes": {
         "uq_album_members_album_member": {
           "name": "uq_album_members_album_member",
-          "columns": [
-            "album_id",
-            "member_id"
-          ],
+          "columns": ["album_id", "member_id"],
           "isUnique": true
         },
         "idx_album_members_family_album": {
           "name": "idx_album_members_family_album",
-          "columns": [
-            "family_id",
-            "album_id"
-          ],
+          "columns": ["family_id", "album_id"],
           "isUnique": false
         },
         "idx_album_members_family_member": {
           "name": "idx_album_members_family_member",
-          "columns": [
-            "family_id",
-            "member_id"
-          ],
+          "columns": ["family_id", "member_id"],
           "isUnique": false
         }
       },
@@ -123,14 +114,8 @@
           "name": "fk_album_members_album",
           "tableFrom": "album_members",
           "tableTo": "albums",
-          "columnsFrom": [
-            "family_id",
-            "album_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "album_id"],
+          "columnsTo": ["family_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         },
@@ -138,14 +123,8 @@
           "name": "fk_album_members_member",
           "tableFrom": "album_members",
           "tableTo": "family_members",
-          "columnsFrom": [
-            "family_id",
-            "member_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "member_id"],
+          "columnsTo": ["family_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         }
@@ -153,9 +132,7 @@
       "compositePrimaryKeys": {
         "album_members_id": {
           "name": "album_members_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -267,27 +244,17 @@
       "indexes": {
         "uq_albums_family_id": {
           "name": "uq_albums_family_id",
-          "columns": [
-            "family_id",
-            "id"
-          ],
+          "columns": ["family_id", "id"],
           "isUnique": true
         },
         "idx_albums_family_deleted_id": {
           "name": "idx_albums_family_deleted_id",
-          "columns": [
-            "family_id",
-            "deleted_at",
-            "id"
-          ],
+          "columns": ["family_id", "deleted_at", "id"],
           "isUnique": false
         },
         "idx_albums_family_owner": {
           "name": "idx_albums_family_owner",
-          "columns": [
-            "family_id",
-            "owner_member_id"
-          ],
+          "columns": ["family_id", "owner_member_id"],
           "isUnique": false
         }
       },
@@ -296,12 +263,8 @@
           "name": "fk_albums_family",
           "tableFrom": "albums",
           "tableTo": "families",
-          "columnsFrom": [
-            "family_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["family_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         },
@@ -309,14 +272,8 @@
           "name": "fk_albums_owner_member",
           "tableFrom": "albums",
           "tableTo": "family_members",
-          "columnsFrom": [
-            "family_id",
-            "owner_member_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "owner_member_id"],
+          "columnsTo": ["family_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         }
@@ -324,9 +281,7 @@
       "compositePrimaryKeys": {
         "albums_id": {
           "name": "albums_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -498,29 +453,17 @@
         },
         "uq_background_jobs_family_media_id": {
           "name": "uq_background_jobs_family_media_id",
-          "columns": [
-            "family_id",
-            "media_id",
-            "id"
-          ],
+          "columns": ["family_id", "media_id", "id"],
           "isUnique": true
         },
         "idx_background_jobs_claim": {
           "name": "idx_background_jobs_claim",
-          "columns": [
-            "state",
-            "available_at",
-            "id"
-          ],
+          "columns": ["state", "available_at", "id"],
           "isUnique": false
         },
         "idx_background_jobs_lease": {
           "name": "idx_background_jobs_lease",
-          "columns": [
-            "state",
-            "locked_until",
-            "id"
-          ],
+          "columns": ["state", "locked_until", "id"],
           "isUnique": false
         }
       },
@@ -529,14 +472,8 @@
           "name": "fk_background_jobs_media",
           "tableFrom": "background_jobs",
           "tableTo": "media_items",
-          "columnsFrom": [
-            "family_id",
-            "media_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "media_id"],
+          "columnsTo": ["family_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         }
@@ -544,9 +481,7 @@
       "compositePrimaryKeys": {
         "background_jobs_id": {
           "name": "background_jobs_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -738,20 +673,12 @@
         },
         "idx_derived_assets_state": {
           "name": "idx_derived_assets_state",
-          "columns": [
-            "state",
-            "id"
-          ],
+          "columns": ["state", "id"],
           "isUnique": false
         },
         "idx_derived_assets_cleanup": {
           "name": "idx_derived_assets_cleanup",
-          "columns": [
-            "family_id",
-            "cleaned_at",
-            "state",
-            "id"
-          ],
+          "columns": ["family_id", "cleaned_at", "state", "id"],
           "isUnique": false
         }
       },
@@ -760,14 +687,8 @@
           "name": "fk_derived_assets_media",
           "tableFrom": "derived_assets",
           "tableTo": "media_items",
-          "columnsFrom": [
-            "family_id",
-            "media_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "media_id"],
+          "columnsTo": ["family_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         },
@@ -775,16 +696,8 @@
           "name": "fk_derived_assets_producer_job",
           "tableFrom": "derived_assets",
           "tableTo": "background_jobs",
-          "columnsFrom": [
-            "family_id",
-            "media_id",
-            "producer_job_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "media_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "media_id", "producer_job_id"],
+          "columnsTo": ["family_id", "media_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         }
@@ -792,9 +705,7 @@
       "compositePrimaryKeys": {
         "derived_assets_id": {
           "name": "derived_assets_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -876,9 +787,7 @@
       "compositePrimaryKeys": {
         "families_id": {
           "name": "families_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -950,25 +859,17 @@
       "indexes": {
         "uq_family_members_family_user": {
           "name": "uq_family_members_family_user",
-          "columns": [
-            "family_id",
-            "user_id"
-          ],
+          "columns": ["family_id", "user_id"],
           "isUnique": true
         },
         "uq_family_members_family_id": {
           "name": "uq_family_members_family_id",
-          "columns": [
-            "family_id",
-            "id"
-          ],
+          "columns": ["family_id", "id"],
           "isUnique": true
         },
         "idx_family_members_user": {
           "name": "idx_family_members_user",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -977,12 +878,8 @@
           "name": "family_members_family_id_families_id_fk",
           "tableFrom": "family_members",
           "tableTo": "families",
-          "columnsFrom": [
-            "family_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["family_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         },
@@ -990,12 +887,8 @@
           "name": "family_members_user_id_users_id_fk",
           "tableFrom": "family_members",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         }
@@ -1003,9 +896,7 @@
       "compositePrimaryKeys": {
         "family_members_id": {
           "name": "family_members_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -1097,48 +988,32 @@
       "indexes": {
         "uq_invitations_token_hash": {
           "name": "uq_invitations_token_hash",
-          "columns": [
-            "token_hash"
-          ],
+          "columns": ["token_hash"],
           "isUnique": true
         },
         "idx_invitations_family_created": {
           "name": "idx_invitations_family_created",
-          "columns": [
-            "family_id",
-            "created_at"
-          ],
+          "columns": ["family_id", "created_at"],
           "isUnique": false
         },
         "idx_invitations_expires": {
           "name": "idx_invitations_expires",
-          "columns": [
-            "expires_at"
-          ],
+          "columns": ["expires_at"],
           "isUnique": false
         },
         "idx_invitations_family_creator": {
           "name": "idx_invitations_family_creator",
-          "columns": [
-            "family_id",
-            "created_by_member_id"
-          ],
+          "columns": ["family_id", "created_by_member_id"],
           "isUnique": false
         },
         "idx_invitations_family_used_by": {
           "name": "idx_invitations_family_used_by",
-          "columns": [
-            "family_id",
-            "used_by_member_id"
-          ],
+          "columns": ["family_id", "used_by_member_id"],
           "isUnique": false
         },
         "idx_invitations_family_revoked_by": {
           "name": "idx_invitations_family_revoked_by",
-          "columns": [
-            "family_id",
-            "revoked_by_member_id"
-          ],
+          "columns": ["family_id", "revoked_by_member_id"],
           "isUnique": false
         }
       },
@@ -1147,12 +1022,8 @@
           "name": "invitations_family_id_families_id_fk",
           "tableFrom": "invitations",
           "tableTo": "families",
-          "columnsFrom": [
-            "family_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["family_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         },
@@ -1160,14 +1031,8 @@
           "name": "fk_invitations_creator_member",
           "tableFrom": "invitations",
           "tableTo": "family_members",
-          "columnsFrom": [
-            "family_id",
-            "created_by_member_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "created_by_member_id"],
+          "columnsTo": ["family_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         },
@@ -1175,14 +1040,8 @@
           "name": "fk_invitations_used_by_member",
           "tableFrom": "invitations",
           "tableTo": "family_members",
-          "columnsFrom": [
-            "family_id",
-            "used_by_member_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "used_by_member_id"],
+          "columnsTo": ["family_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         },
@@ -1190,14 +1049,8 @@
           "name": "fk_invitations_revoked_by_member",
           "tableFrom": "invitations",
           "tableTo": "family_members",
-          "columnsFrom": [
-            "family_id",
-            "revoked_by_member_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "revoked_by_member_id"],
+          "columnsTo": ["family_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         }
@@ -1205,9 +1058,7 @@
       "compositePrimaryKeys": {
         "invitations_id": {
           "name": "invitations_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -1515,35 +1366,22 @@
       "indexes": {
         "uq_media_items_family_storage_object": {
           "name": "uq_media_items_family_storage_object",
-          "columns": [
-            "family_id",
-            "storage_object_id"
-          ],
+          "columns": ["family_id", "storage_object_id"],
           "isUnique": true
         },
         "uq_media_items_family_id": {
           "name": "uq_media_items_family_id",
-          "columns": [
-            "family_id",
-            "id"
-          ],
+          "columns": ["family_id", "id"],
           "isUnique": true
         },
         "idx_media_items_family_timeline": {
           "name": "idx_media_items_family_timeline",
-          "columns": [
-            "family_id",
-            "timeline_key",
-            "id"
-          ],
+          "columns": ["family_id", "timeline_key", "id"],
           "isUnique": false
         },
         "idx_media_items_processing": {
           "name": "idx_media_items_processing",
-          "columns": [
-            "processing_state",
-            "id"
-          ],
+          "columns": ["processing_state", "id"],
           "isUnique": false
         }
       },
@@ -1552,14 +1390,8 @@
           "name": "fk_media_items_storage_object",
           "tableFrom": "media_items",
           "tableTo": "storage_objects",
-          "columnsFrom": [
-            "family_id",
-            "storage_object_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "storage_object_id"],
+          "columnsTo": ["family_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         },
@@ -1567,16 +1399,8 @@
           "name": "fk_media_items_source_upload",
           "tableFrom": "media_items",
           "tableTo": "upload_sessions",
-          "columnsFrom": [
-            "family_id",
-            "source_upload_id",
-            "storage_object_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id",
-            "storage_object_id"
-          ],
+          "columnsFrom": ["family_id", "source_upload_id", "storage_object_id"],
+          "columnsTo": ["family_id", "id", "storage_object_id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         }
@@ -1584,9 +1408,7 @@
       "compositePrimaryKeys": {
         "media_items_id": {
           "name": "media_items_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -1742,25 +1564,17 @@
       "indexes": {
         "uq_sessions_token_hash": {
           "name": "uq_sessions_token_hash",
-          "columns": [
-            "token_hash"
-          ],
+          "columns": ["token_hash"],
           "isUnique": true
         },
         "idx_sessions_user_revoked_created": {
           "name": "idx_sessions_user_revoked_created",
-          "columns": [
-            "user_id",
-            "revoked_at",
-            "created_at"
-          ],
+          "columns": ["user_id", "revoked_at", "created_at"],
           "isUnique": false
         },
         "idx_sessions_expires": {
           "name": "idx_sessions_expires",
-          "columns": [
-            "expires_at"
-          ],
+          "columns": ["expires_at"],
           "isUnique": false
         }
       },
@@ -1769,12 +1583,8 @@
           "name": "sessions_user_id_users_id_fk",
           "tableFrom": "sessions",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         }
@@ -1782,9 +1592,7 @@
       "compositePrimaryKeys": {
         "sessions_id": {
           "name": "sessions_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -1883,28 +1691,17 @@
       "indexes": {
         "uq_storage_objects_family_id": {
           "name": "uq_storage_objects_family_id",
-          "columns": [
-            "family_id",
-            "id"
-          ],
+          "columns": ["family_id", "id"],
           "isUnique": true
         },
         "uq_storage_objects_family_hash_size": {
           "name": "uq_storage_objects_family_hash_size",
-          "columns": [
-            "family_id",
-            "sha256",
-            "byte_size"
-          ],
+          "columns": ["family_id", "sha256", "byte_size"],
           "isUnique": true
         },
         "idx_storage_objects_state_verified": {
           "name": "idx_storage_objects_state_verified",
-          "columns": [
-            "state",
-            "verified_at",
-            "id"
-          ],
+          "columns": ["state", "verified_at", "id"],
           "isUnique": false
         }
       },
@@ -1913,12 +1710,8 @@
           "name": "fk_storage_objects_family",
           "tableFrom": "storage_objects",
           "tableTo": "families",
-          "columnsFrom": [
-            "family_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["family_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         }
@@ -1926,9 +1719,7 @@
       "compositePrimaryKeys": {
         "storage_objects_id": {
           "name": "storage_objects_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -2091,54 +1882,32 @@
       "indexes": {
         "uq_upload_sessions_public_id": {
           "name": "uq_upload_sessions_public_id",
-          "columns": [
-            "public_id"
-          ],
+          "columns": ["public_id"],
           "isUnique": true
         },
         "uq_upload_sessions_family_id_object": {
           "name": "uq_upload_sessions_family_id_object",
-          "columns": [
-            "family_id",
-            "id",
-            "storage_object_id"
-          ],
+          "columns": ["family_id", "id", "storage_object_id"],
           "isUnique": true
         },
         "idx_upload_sessions_family_creator_state": {
           "name": "idx_upload_sessions_family_creator_state",
-          "columns": [
-            "family_id",
-            "created_by_member_id",
-            "state",
-            "id"
-          ],
+          "columns": ["family_id", "created_by_member_id", "state", "id"],
           "isUnique": false
         },
         "idx_upload_sessions_state_expiry": {
           "name": "idx_upload_sessions_state_expiry",
-          "columns": [
-            "state",
-            "expires_at",
-            "id"
-          ],
+          "columns": ["state", "expires_at", "id"],
           "isUnique": false
         },
         "idx_upload_sessions_family_object": {
           "name": "idx_upload_sessions_family_object",
-          "columns": [
-            "family_id",
-            "storage_object_id"
-          ],
+          "columns": ["family_id", "storage_object_id"],
           "isUnique": false
         },
         "idx_upload_sessions_cleanup": {
           "name": "idx_upload_sessions_cleanup",
-          "columns": [
-            "state",
-            "staging_cleaned_at",
-            "id"
-          ],
+          "columns": ["state", "staging_cleaned_at", "id"],
           "isUnique": false
         }
       },
@@ -2147,12 +1916,8 @@
           "name": "fk_upload_sessions_family",
           "tableFrom": "upload_sessions",
           "tableTo": "families",
-          "columnsFrom": [
-            "family_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["family_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         },
@@ -2160,14 +1925,8 @@
           "name": "fk_upload_sessions_creator_member",
           "tableFrom": "upload_sessions",
           "tableTo": "family_members",
-          "columnsFrom": [
-            "family_id",
-            "created_by_member_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "created_by_member_id"],
+          "columnsTo": ["family_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         },
@@ -2175,14 +1934,8 @@
           "name": "fk_upload_sessions_storage_object",
           "tableFrom": "upload_sessions",
           "tableTo": "storage_objects",
-          "columnsFrom": [
-            "family_id",
-            "storage_object_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
+          "columnsFrom": ["family_id", "storage_object_id"],
+          "columnsTo": ["family_id", "id"],
           "onDelete": "restrict",
           "onUpdate": "restrict"
         }
@@ -2190,9 +1943,7 @@
       "compositePrimaryKeys": {
         "upload_sessions_id": {
           "name": "upload_sessions_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},
@@ -2311,9 +2062,7 @@
       "indexes": {
         "uq_users_username_normalized": {
           "name": "uq_users_username_normalized",
-          "columns": [
-            "username_normalized"
-          ],
+          "columns": ["username_normalized"],
           "isUnique": true
         }
       },
@@ -2321,9 +2070,7 @@
       "compositePrimaryKeys": {
         "users_id": {
           "name": "users_id",
-          "columns": [
-            "id"
-          ]
+          "columns": ["id"]
         }
       },
       "uniqueConstraints": {},

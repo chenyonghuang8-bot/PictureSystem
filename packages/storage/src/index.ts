@@ -129,7 +129,9 @@ function readRecoveryFact(raw: NativeDerivedRecoveryFact) {
   const byteSize = canonicalUint64(raw.byteSize, true);
   const device = canonicalUint64(raw.device, true);
   const inode = canonicalUint64(raw.inode, true);
-  const mode = /^[0-7]{3,4}$/u.test(raw.mode) ? Number.parseInt(raw.mode, 8) : null;
+  const mode = /^[0-7]{3,4}$/u.test(raw.mode)
+    ? Number.parseInt(raw.mode, 8)
+    : null;
   const nlink = canonicalUint64(raw.nlink, false);
   if (
     byteSize === null ||
@@ -1340,7 +1342,11 @@ export class CapacityGate {
     };
   }
 
-  describeDerivedTemp(jobId: string, epoch: bigint, kind: "THUMBNAIL" | "PREVIEW") {
+  describeDerivedTemp(
+    jobId: string,
+    epoch: bigint,
+    kind: "THUMBNAIL" | "PREVIEW",
+  ) {
     this.#requireLock();
     const fact = readRecoveryFact(
       this.#native.describeDerivedTemp(
@@ -1350,7 +1356,8 @@ export class CapacityGate {
         kind,
       ),
     );
-    if (fact === null) throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
+    if (fact === null)
+      throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
     return fact;
   }
 
@@ -1372,7 +1379,8 @@ export class CapacityGate {
         input.kind,
       ),
     );
-    if (fact === null) throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
+    if (fact === null)
+      throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
     return fact;
   }
 
@@ -1431,7 +1439,10 @@ export class CapacityGate {
     this.#requireLock();
     let page: ReturnType<NativeBinding["derivedFinalInventoryPage"]>;
     try {
-      page = this.#native.derivedFinalInventoryPage(this.#requiredGate(), cursor);
+      page = this.#native.derivedFinalInventoryPage(
+        this.#requiredGate(),
+        cursor,
+      );
     } catch (error) {
       throw safetyError("DERIVED_RECOVERY_INCOMPLETE", error);
     }
@@ -1537,7 +1548,8 @@ export class CapacityGate {
 
   #requiredGate() {
     this.#requireLock();
-    if (this.#handle === null) throw new StorageSafetyError("CAPACITY_GATE_CLOSED");
+    if (this.#handle === null)
+      throw new StorageSafetyError("CAPACITY_GATE_CLOSED");
     return this.#handle;
   }
 

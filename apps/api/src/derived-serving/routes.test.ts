@@ -4,7 +4,7 @@ import { createSessionToken } from "@family-album/auth";
 
 import { createApp } from "../app.js";
 import type { AuthService } from "../auth/service.js";
-import { DerivedReadService } from "./service.js";
+import type { DerivedReadService } from "./service.js";
 
 const token = createSessionToken();
 
@@ -82,7 +82,9 @@ describe("derived asset routes", () => {
     expect(response.headers["cache-control"]).toBe("private, no-store");
     expect(response.rawPayload.equals(bytes)).toBe(true);
     expect(serve).toHaveBeenCalledWith(
-      expect.objectContaining({ identity: expect.objectContaining({ userId: "7" }) }),
+      expect.objectContaining({
+        identity: expect.objectContaining({ userId: "7" }),
+      }),
       "11",
       "preview",
     );

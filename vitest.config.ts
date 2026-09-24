@@ -7,12 +7,26 @@ process.loadEnvFile(resolve(import.meta.dirname, ".env"));
 export default defineConfig({
   test: {
     environment: "node",
-    include: [
-      "apps/**/*.test.ts",
-      "packages/**/*.test.ts",
-      "tests/integration/**/*.test.ts",
-    ],
     exclude: ["tests/e2e/**", "**/dist/**", "**/node_modules/**"],
     testTimeout: 10_000,
+    // Integration files share one DEV database. Unfiltered job claim and the
+    // named capacity lock are process-global, so these files must not overlap.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          include: ["apps/**/*.test.ts", "packages/**/*.test.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "integration",
+          include: ["tests/integration/**/*.test.ts"],
+          fileParallelism: false,
+        },
+      },
+    ],
   },
 });

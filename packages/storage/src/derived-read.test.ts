@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -40,9 +47,13 @@ describe("derived final read", () => {
   });
   place("thumbnail.webp");
   privateDirectory(join(rootPath, "originals", "7"));
-  writeFileSync(join(rootPath, "originals", "7", "decoy"), Buffer.from("original"), {
-    mode: 0o600,
-  });
+  writeFileSync(
+    join(rootPath, "originals", "7", "decoy"),
+    Buffer.from("original"),
+    {
+      mode: 0o600,
+    },
+  );
 
   afterAll(() => {
     root.close();

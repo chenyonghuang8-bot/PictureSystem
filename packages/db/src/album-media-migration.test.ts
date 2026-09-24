@@ -31,7 +31,10 @@ const snapshot0003 = JSON.parse(
     ),
     "utf8",
   ),
-) as { id: string; tables: Record<string, { columns: Record<string, unknown> }> };
+) as {
+  id: string;
+  tables: Record<string, { columns: Record<string, unknown> }>;
+};
 const snapshot0004 = JSON.parse(
   readFileSync(
     fileURLToPath(
@@ -88,9 +91,7 @@ describe("0004 album_media migration", () => {
     expect(migration).toContain(
       "FOREIGN KEY (`family_id`,`media_id`) REFERENCES `media_items`(`family_id`,`id`) ON DELETE restrict ON UPDATE restrict",
     );
-    expect(migration).toContain(
-      "UNIQUE(`family_id`,`album_id`,`media_id`)",
-    );
+    expect(migration).toContain("UNIQUE(`family_id`,`album_id`,`media_id`)");
     expect(migration).toContain(
       "CREATE INDEX `idx_album_media_media` ON `album_media` (`family_id`,`media_id`,`album_id`)",
     );

@@ -17,10 +17,7 @@ export type DerivedByteReader = {
   read(identity: DerivedReadIdentity): Promise<Buffer>;
 };
 
-const HIDDEN = new Set([
-  "DERIVED_SERVE_ABSENT",
-  "DERIVED_SERVE_MISMATCH",
-]);
+const HIDDEN = new Set(["DERIVED_SERVE_ABSENT", "DERIVED_SERVE_MISMATCH"]);
 
 export class DerivedReadService {
   constructor(
@@ -65,10 +62,7 @@ export class DerivedReadService {
         byteSize: view.byteSize,
       });
     } catch (error) {
-      if (
-        error instanceof StorageSafetyError &&
-        HIDDEN.has(error.reason)
-      ) {
+      if (error instanceof StorageSafetyError && HIDDEN.has(error.reason)) {
         throw new PublicAuthError(404, "NOT_FOUND");
       }
       throw new PublicAuthError(
