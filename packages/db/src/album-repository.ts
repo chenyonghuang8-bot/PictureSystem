@@ -6,8 +6,12 @@ import type {
 } from "mysql2/promise";
 
 import {
+  canDeleteFromAlbum,
+  canEditAlbum,
+  canUploadToAlbum,
   evaluateAlbumPermissions,
   isPermissionSubset,
+  type AlbumPermissionContext,
   type AlbumPermissionGrant,
   type AlbumVisibility,
   type FamilyRole,
@@ -310,6 +314,59 @@ export class MySqlAlbumRepository {
     const row = rows[0];
     if (!row) throw new AlbumRepositoryError("NOT_FOUND");
     return row;
+  }
+
+  async addAlbumMedia(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+  }): Promise<{ albumId: string; mediaId: string; created: boolean }> {
+    return this.mutatePlacement(
+      input,
+      (context) => {
+        return canUploadToAlbum(context) || canEditAlbum(context);
+      },
+      (connection, album) =>
+        insertPlacement(connection, album.familyId, album.id, input.mediaId),
+    );
+  }
+
+  async removeAlbumMedia(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+  }): Promise<{ albumId: string; mediaId: string; removed: boolean }> {
+    return this.mutatePlacement(
+      input,
+      canDeleteFromAlbum,
+      (connection, album) =>
+        deletePlacement(connection, album.familyId, album.id, input.mediaId),
+    );
+  }
+
+  private async mutatePlacement<T extends { albumId: string; mediaId: string }>(
+    input: { actor: Phase1CActor; albumId: string; mediaId: string },
+    allow: (context: AlbumPermissionContext) => boolean,
+    mutate: (connection: PoolConnection, album: AlbumRecord) => Promise<T>,
+  ): Promise<T> {
+    const familyId = await this.locateAlbumFamily(input.albumId);
+    if (!familyId) throw new AlbumRepositoryError("NOT_FOUND");
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, familyId);
+      const actor = await lockActor(connection, familyId, input.actor);
+      const album = await lockAlbum(connection, familyId, input.albumId);
+      const grant = album
+        ? await lockGrant(connection, familyId, album.id, actor.member.id)
+        : undefined;
+      const now = await readServerTime(connection);
+      assertActor(actor, input.actor, now);
+      if (!album) throw new AlbumRepositoryError("NOT_FOUND");
+      const visible = assertVisible(album, actor.member, grant);
+      if (!allow(albumPermissionContext(album, actor.member, grant))) {
+        throw new AlbumRepositoryError("FORBIDDEN");
+      }
+      return mutate(connection, visible);
+    });
   }
 
   private async withVisibleAlbum<T>(
@@ -1227,7 +1284,6 @@ function toAlbumRecord(
   actor: ActorMemberRow,
   grant?: Partial<Record<keyof AlbumPermissionGrant, unknown>>,
 ): AlbumRecord {
-  const explicitGrant = grant ? grantPermissions(grant) : null;
   return {
     id: String(row.id),
     familyId: String(row.familyId),
@@ -1238,17 +1294,65 @@ function toAlbumRecord(
     revision: String(row.revision),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    effectivePermissions: evaluateAlbumPermissions({
-      membershipExists: true,
-      memberActive: !actor.disabledAt && !actor.leftAt,
-      sameFamily: actor.familyId === String(row.familyId),
-      albumDeleted: row.deletedAt !== null,
-      isOwner: actor.id === String(row.ownerMemberId),
-      visibility: row.visibility,
-      explicitGrant,
-      familyRole: actor.role,
-    }),
+    effectivePermissions: evaluateAlbumPermissions(
+      albumPermissionContext(row, actor, grant),
+    ),
   };
+}
+
+function albumPermissionContext(
+  row: AlbumRow,
+  actor: ActorMemberRow,
+  grant?: Partial<Record<keyof AlbumPermissionGrant, unknown>>,
+): AlbumPermissionContext {
+  return {
+    membershipExists: true,
+    memberActive: !actor.disabledAt && !actor.leftAt,
+    sameFamily: actor.familyId === String(row.familyId),
+    albumDeleted: row.deletedAt !== null,
+    isOwner: actor.id === String(row.ownerMemberId),
+    visibility: row.visibility,
+    explicitGrant: grant ? grantPermissions(grant) : null,
+    familyRole: actor.role,
+  };
+}
+
+async function insertPlacement(
+  connection: PoolConnection,
+  familyId: string,
+  albumId: string,
+  mediaId: string,
+) {
+  const media = await connection.query<RowDataPacket[]>(
+    `SELECT id FROM media_items WHERE id = ? AND family_id = ? FOR UPDATE`,
+    [mediaId, familyId],
+  );
+  if (!media[0][0]) throw new AlbumRepositoryError("NOT_FOUND");
+  const existing = await connection.query<RowDataPacket[]>(
+    `SELECT id FROM album_media
+      WHERE family_id = ? AND album_id = ? AND media_id = ? FOR UPDATE`,
+    [familyId, albumId, mediaId],
+  );
+  if (existing[0][0]) return { albumId, mediaId, created: false };
+  await connection.query(
+    `INSERT INTO album_media (family_id, album_id, media_id) VALUES (?,?,?)`,
+    [familyId, albumId, mediaId],
+  );
+  return { albumId, mediaId, created: true };
+}
+
+async function deletePlacement(
+  connection: PoolConnection,
+  familyId: string,
+  albumId: string,
+  mediaId: string,
+) {
+  const [deleted] = await connection.query<ResultSetHeader>(
+    `DELETE FROM album_media
+      WHERE family_id = ? AND album_id = ? AND media_id = ?`,
+    [familyId, albumId, mediaId],
+  );
+  return { albumId, mediaId, removed: deleted.affectedRows === 1 };
 }
 
 function ownerPermissions(): AlbumPermissionGrant {

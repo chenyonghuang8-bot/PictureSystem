@@ -5,6 +5,10 @@ import {
   albumParamsSchema,
   albumMemberMutationResponseSchema,
   albumMemberParamsSchema,
+  emptyObjectRequestSchema,
+  albumMediaPlacementRequestSchema,
+  albumMediaPlacementSchema,
+  albumMediaRemovalSchema,
   albumMembersResponseSchema,
   albumResponseSchema,
   albumsResponseSchema,
@@ -111,6 +115,47 @@ export function registerAlbumRoutes(
               : null,
         }),
       );
+    }),
+  );
+
+  app.post(
+    "/api/v1/albums/:albumId/media",
+    { bodyLimit: 4_096 },
+    async (request, reply) =>
+      handleAlbum(request, reply, "album_media_add", async () => {
+        requireTrustedJsonOrigin(request, trustedOrigins);
+        const { albumId } = albumParamsSchema.parse(request.params);
+        const { mediaId } = albumMediaPlacementRequestSchema.parse(
+          request.body,
+        );
+        const context = await authenticate(request, authService);
+        const placement = await albumService.addMedia(
+          context,
+          albumId,
+          mediaId,
+        );
+        logAlbumEvent(request, "album_media_added", {
+          actorUserId: context.identity.userId,
+          albumId,
+        });
+        return reply.send(albumMediaPlacementSchema.parse(placement));
+      }),
+  );
+
+  app.delete("/api/v1/albums/:albumId/media/:mediaId", async (request, reply) =>
+    handleAlbum(request, reply, "album_media_remove", async () => {
+      requireTrustedJsonOrigin(request, trustedOrigins);
+      emptyObjectRequestSchema.parse(request.body);
+      const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+        request.params,
+      );
+      const context = await authenticate(request, authService);
+      const removal = await albumService.removeMedia(context, albumId, mediaId);
+      logAlbumEvent(request, "album_media_removed", {
+        actorUserId: context.identity.userId,
+        albumId,
+      });
+      return reply.send(albumMediaRemovalSchema.parse(removal));
     }),
   );
 

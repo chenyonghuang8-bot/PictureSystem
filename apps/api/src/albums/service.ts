@@ -27,6 +27,8 @@ export type AlbumRepository = Pick<
   | "removeAlbumMember"
   | "listAlbumMedia"
   | "getAlbumMedia"
+  | "addAlbumMedia"
+  | "removeAlbumMedia"
   | "listFamilyTimeline"
 >;
 
@@ -98,6 +100,26 @@ export class AlbumService {
         albumId,
         limit: input.limit,
         ...(input.cursor ? { cursor: input.cursor } : {}),
+      }),
+    );
+  }
+
+  async addMedia(context: AuthContext, albumId: string, mediaId: string) {
+    return this.database(() =>
+      this.repository.addAlbumMedia({
+        actor: actor(context),
+        albumId,
+        mediaId,
+      }),
+    );
+  }
+
+  async removeMedia(context: AuthContext, albumId: string, mediaId: string) {
+    return this.database(() =>
+      this.repository.removeAlbumMedia({
+        actor: actor(context),
+        albumId,
+        mediaId,
       }),
     );
   }

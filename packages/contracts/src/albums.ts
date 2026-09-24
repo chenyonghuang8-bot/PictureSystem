@@ -138,6 +138,26 @@ export const albumMemberMutationResponseSchema = z
   .object({ revision: unsignedBigIntStringSchema })
   .strict();
 
+export const albumMediaPlacementRequestSchema = z
+  .object({ mediaId: unsignedBigIntStringSchema })
+  .strict();
+
+export const albumMediaPlacementSchema = z
+  .object({
+    albumId: unsignedBigIntStringSchema,
+    mediaId: unsignedBigIntStringSchema,
+    created: z.boolean(),
+  })
+  .strict();
+
+export const albumMediaRemovalSchema = z
+  .object({
+    albumId: unsignedBigIntStringSchema,
+    mediaId: unsignedBigIntStringSchema,
+    removed: z.boolean(),
+  })
+  .strict();
+
 export type AlbumVisibility = z.infer<typeof albumVisibilitySchema>;
 export type CreateAlbumRequest = z.infer<typeof createAlbumRequestSchema>;
 export type UpdateAlbumRequest = z.infer<typeof updateAlbumRequestSchema>;
