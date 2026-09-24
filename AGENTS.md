@@ -762,10 +762,37 @@ Auth/Security 日志必须使用字段白名单。
 Phase 1: COMPLETE
 Phase 2: COMPLETE
 Phase 3: COMPLETE
-Phase 4: NOT STARTED
+Phase 4: IMPLEMENTATION COMPLETE THROUGH API SERVING
 READY_FOR_PHASE_4: YES
+PHASE_4_PRODUCTION_READY: NO
+PHASE_4_READY_FOR_COMPLETION: NO
 ```
 
 Phase 3 Final Quality Gate：Format、Lint、Typecheck、Unit/API、DEV MySQL integration/race、native storage、fault-injection/crash、Build、E2E 均 PASS；Phase 3 测试 skip = 0。Phase 3 安全审查原三个 P1 均 CLOSED，新 P0/P1 = 0。完整结果和仍需 Production 验证的项目见 `docs/progress/PHASE-03-FINAL-SUMMARY.md`。
 
-不得自动进入 Phase 4；等待用户明确指令。后续不再使用 `codex-bridge-chatgpt`。
+Phase 4 implementation complete through API Serving。当前 HEAD 是 `38b401d`，migration journal 是 `0000`–`0004`。`docs/progress/PHASE-04-FINAL-SUMMARY.md` 不存在。
+
+Completed:
+
+- Media processing pipeline
+- Renderer
+- Verifier
+- Publish
+- Recovery
+- Worker
+- READY transaction
+- album_media visibility
+- Derived API serving
+
+Final validation at `38b401d`：`pnpm lint` PASS，`pnpm format:check` PASS，`pnpm typecheck` PASS，`pnpm test` PASS，81 files，620 tests。`FINAL_VALIDATION_STABILIZED: YES`。
+
+Deferred:
+
+- production deployment validation
+- real power loss validation
+- SSD disconnect validation
+- production rate limiting
+- persistent audit storage
+- open P2/P3：uid-mismatch 与 cross-device fixture、verifier production deadline 与 DEV fixture 的差异、identical sealed temp 不自动进入 READY，以及 storage `READ_ONLY` 时 derived serving 返回 `503`。Phase 4C/D2 parallel claim collision 已由 `38b401d` 的 integration test isolation 关闭，不再作为未关闭缺陷。
+
+不得自动进入 Phase 5，不得打 `phase-4-complete` tag，不得把 Phase 4 写成 fully production ready。后续不再使用 `codex-bridge-chatgpt`。
