@@ -2430,6 +2430,7 @@ static napi_value consume_original_handle(napi_env env, napi_callback_info info)
 #include "image_verifier_launch.h"
 #include "derived_publish.h"
 #include "derived_recovery.h"
+#include "derived_serve.h"
 
 static napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
@@ -2509,6 +2510,8 @@ static napi_value init(napi_env env, napi_value exports) {
       {"describeDerivedTemp", NULL, describe_derived_temp, NULL, NULL, NULL,
        napi_default, NULL},
       {"inspectDerivedFinal", NULL, inspect_derived_final, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"readDerivedFinal", NULL, read_derived_final, NULL, NULL, NULL,
        napi_default, NULL},
       {"derivedFinalInventoryPage", NULL, derived_final_inventory_page, NULL,
        NULL, NULL, napi_default, NULL},

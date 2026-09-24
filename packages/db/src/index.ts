@@ -13,6 +13,7 @@ export * from "./media-repository.js";
 export * from "./job-repository.js";
 export * from "./metadata-repository.js";
 export * from "./derived-admission-repository.js";
+export * from "./derived-read-repository.js";
 export {
   MySqlDerivedAssetFence,
   derivativeFailureDisposition,

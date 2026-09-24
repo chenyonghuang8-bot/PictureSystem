@@ -7,12 +7,14 @@ import {
   MySqlAuthRepository,
   MySqlPhase1CRepository,
   MySqlAlbumRepository,
+  MySqlDerivedReadRepository,
   MySqlUploadRepository,
 } from "@family-album/db";
 import { resolve } from "node:path";
 import {
   CapacityGate,
   probeStorageCapability,
+  StorageSafetyError,
   type StorageCapability,
 } from "@family-album/storage";
 import { createApp } from "./app.js";
@@ -23,6 +25,7 @@ import { UploadService } from "./uploads/service.js";
 import type { ReconciliationResult } from "./uploads/recovery.js";
 import { UploadMutex } from "./uploads/mutex.js";
 import { assessStorageStartup } from "./uploads/startup.js";
+import { DerivedReadService } from "./derived-serving/service.js";
 
 const env = loadApiEnv();
 const database = createDatabase(env.DATABASE_URL);
@@ -81,6 +84,18 @@ if (env.DEV_STORAGE_MARKER_ID) {
     connection.release();
   }
 }
+const derivedService = new DerivedReadService(
+  new MySqlDerivedReadRepository(database.pool),
+  {
+    async read(identity) {
+      const gate = sharedCapacityGate;
+      if (!gate) throw new StorageSafetyError("DERIVED_SERVE_UNAVAILABLE");
+      return gate.withLock(() =>
+        Promise.resolve(gate.readDerivedFinal(identity)),
+      );
+    },
+  },
+);
 const uploadService = new UploadService(
   uploadRepository,
   storageCapability,
@@ -91,6 +106,7 @@ const app = createApp({
   phase1cService,
   albumService,
   uploadService,
+  derivedService,
   publicApiOrigin: env.API_PUBLIC_ORIGIN,
   trustedOrigins: new Set(env.TRUSTED_WEB_ORIGINS),
   trustedProxies: env.TRUSTED_PROXY_CIDRS,

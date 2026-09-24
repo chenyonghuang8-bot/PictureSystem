@@ -6,6 +6,7 @@ export * from "./phase1c.js";
 export * from "./uploads.js";
 export * from "./albums.js";
 export * from "./media-processing.js";
+export * from "./derived-serving.js";
 
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),

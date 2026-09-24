@@ -194,6 +194,16 @@ type NativeBinding = {
     recipeId: string,
     kind: string,
   ): NativeDerivedRecoveryFact;
+  readDerivedFinal(
+    handle: NativeCapacityGate,
+    familyId: string,
+    mediaId: string,
+    generation: string,
+    recipeId: string,
+    kind: string,
+    sha256Hex: string,
+    byteSize: string,
+  ): Buffer;
   derivedFinalInventoryPage(
     handle: NativeCapacityGate,
     cursor: string,
@@ -1364,6 +1374,53 @@ export class CapacityGate {
     );
     if (fact === null) throw new StorageSafetyError("DERIVED_RECOVERY_INCOMPLETE");
     return fact;
+  }
+
+  /**
+   * Read one sealed final by canonical identity. The caller supplies the
+   * authoritative family, media, generation, recipe, kind, SHA-256, and size.
+   * This does not accept a path and does not open an original.
+   */
+  readDerivedFinal(input: {
+    familyId: string;
+    mediaId: string;
+    generation: bigint;
+    recipeId: 1;
+    kind: "THUMBNAIL" | "PREVIEW";
+    sha256Hex: string;
+    byteSize: bigint;
+  }): Buffer {
+    this.#requireLock();
+    try {
+      const bytes = this.#native.readDerivedFinal(
+        this.#requiredGate(),
+        input.familyId,
+        input.mediaId,
+        input.generation.toString(),
+        String(input.recipeId),
+        input.kind,
+        input.sha256Hex,
+        input.byteSize.toString(),
+      );
+      if (!Buffer.isBuffer(bytes) || bytes.length !== Number(input.byteSize)) {
+        throw new StorageSafetyError("DERIVED_SERVE_MISMATCH");
+      }
+      return bytes;
+    } catch (error) {
+      if (error instanceof StorageSafetyError) throw error;
+      const code =
+        error instanceof Error && "code" in error ? String(error.code) : "";
+      if (
+        code === "DERIVED_SERVE_ABSENT" ||
+        code === "DERIVED_SERVE_MISMATCH" ||
+        code === "DERIVED_SERVE_IDENTITY" ||
+        code === "DERIVED_SERVE_UNAVAILABLE" ||
+        code === "CAPACITY_LOCK_REQUIRED"
+      ) {
+        throw new StorageSafetyError(code);
+      }
+      throw new StorageSafetyError("DERIVED_SERVE_UNAVAILABLE");
+    }
   }
 
   /**
