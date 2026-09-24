@@ -7,6 +7,7 @@ export * from "./uploads.js";
 export * from "./albums.js";
 export * from "./media-processing.js";
 export * from "./derived-serving.js";
+export * from "./gallery.js";
 
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),

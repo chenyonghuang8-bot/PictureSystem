@@ -43,6 +43,18 @@ export type AlbumMemberRecord = AlbumPermissionGrant & {
   isOwner: boolean;
 };
 
+export type AlbumMediaRecord = {
+  mediaId: string;
+  timelineKey: Date;
+  timelineBasis: "CAPTURE_LOCAL" | "UPLOAD_UTC";
+  displayWidth: number | null;
+  displayHeight: number | null;
+  orientation: number | null;
+  capturedLocalAt: Date | null;
+  cameraMake: string | null;
+  cameraModel: string | null;
+};
+
 export class AlbumRepositoryError extends Error {
   constructor(
     readonly reason: "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT",
@@ -237,6 +249,57 @@ export class MySqlAlbumRepository {
       const now = await readServerTime(connection);
       assertActor(actor, input.actor, now);
       return assertVisible(album, actor.member, grant);
+    });
+  }
+
+  async listAlbumMedia(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    limit: number;
+    cursor?: { timelineKey: Date; mediaId: string };
+  }): Promise<AlbumMediaRecord[]> {
+    return this.withVisibleAlbum(
+      input.actor,
+      input.albumId,
+      (connection, album) =>
+        readAlbumMedia(connection, album, input.limit, input.cursor),
+    );
+  }
+
+  async getAlbumMedia(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+  }): Promise<AlbumMediaRecord> {
+    const rows = await this.withVisibleAlbum(
+      input.actor,
+      input.albumId,
+      (connection, album) =>
+        readAlbumMedia(connection, album, 1, undefined, input.mediaId),
+    );
+    const row = rows[0];
+    if (!row) throw new AlbumRepositoryError("NOT_FOUND");
+    return row;
+  }
+
+  private async withVisibleAlbum<T>(
+    actor: Phase1CActor,
+    albumId: string,
+    read: (connection: PoolConnection, album: AlbumRecord) => Promise<T>,
+  ): Promise<T> {
+    const familyId = await this.locateAlbumFamily(albumId);
+    if (!familyId) throw new AlbumRepositoryError("NOT_FOUND");
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, familyId);
+      const locked = await lockActor(connection, familyId, actor);
+      const album = await lockAlbum(connection, familyId, albumId);
+      const grant = album
+        ? await lockGrant(connection, familyId, album.id, locked.member.id)
+        : undefined;
+      const now = await readServerTime(connection);
+      assertActor(locked, actor, now);
+      const visible = assertVisible(album, locked.member, grant);
+      return read(connection, visible);
     });
   }
 
@@ -983,6 +1046,76 @@ async function lockIds(
       id,
     ]);
   }
+}
+
+type AlbumMediaRow = RowDataPacket & {
+  mediaId: string;
+  timelineKey: Date;
+  timelineBasis: AlbumMediaRecord["timelineBasis"];
+  displayWidth: number | null;
+  displayHeight: number | null;
+  orientation: number | null;
+  capturedLocalAt: Date | null;
+  cameraMake: string | null;
+  cameraModel: string | null;
+};
+
+async function readAlbumMedia(
+  connection: PoolConnection,
+  album: AlbumRecord,
+  limit: number,
+  cursor?: { timelineKey: Date; mediaId: string },
+  mediaId?: string,
+): Promise<AlbumMediaRecord[]> {
+  const [rows] = await connection.query<AlbumMediaRow[]>(
+    `SELECT CAST(m.id AS CHAR) AS mediaId,
+            m.timeline_key AS timelineKey,
+            m.timeline_basis AS timelineBasis,
+            m.display_width AS displayWidth,
+            m.display_height AS displayHeight,
+            m.orientation AS orientation,
+            m.captured_local_at AS capturedLocalAt,
+            m.camera_make AS cameraMake,
+            m.camera_model AS cameraModel
+       FROM album_media am
+       JOIN media_items m
+         ON m.family_id = am.family_id AND m.id = am.media_id
+      WHERE am.family_id = ? AND am.album_id = ?
+        AND (? IS NULL OR am.media_id = ?)
+        AND (
+          ? = 0
+          OR m.timeline_key < ?
+          OR (m.timeline_key = ? AND m.id < ?)
+        )
+      ORDER BY m.timeline_key DESC, m.id DESC
+      LIMIT ?`,
+    [
+      album.familyId,
+      album.id,
+      mediaId ?? null,
+      mediaId ?? null,
+      cursor ? 1 : 0,
+      cursor?.timelineKey ?? new Date(0),
+      cursor?.timelineKey ?? new Date(0),
+      cursor?.mediaId ?? "0",
+      limit,
+    ],
+  );
+  return rows.map((row) => ({
+    mediaId: String(row.mediaId),
+    timelineKey: row.timelineKey,
+    timelineBasis: row.timelineBasis,
+    displayWidth: nullableInteger(row.displayWidth),
+    displayHeight: nullableInteger(row.displayHeight),
+    orientation: nullableInteger(row.orientation),
+    capturedLocalAt: row.capturedLocalAt,
+    cameraMake: row.cameraMake,
+    cameraModel: row.cameraModel,
+  }));
+}
+
+function nullableInteger(value: number | null) {
+  return value === null || value === undefined ? null : Number(value);
 }
 
 function assertVisible(

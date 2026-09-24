@@ -61,6 +61,10 @@ function setup() {
       revision: "2",
       changed: true,
     })),
+    listAlbumMedia: vi.fn(async () => []),
+    getAlbumMedia: vi.fn(async () => {
+      throw new Error("not used");
+    }),
   } satisfies AlbumRepository;
   return { album, repository, service: new AlbumService(repository) };
 }

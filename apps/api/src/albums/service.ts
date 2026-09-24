@@ -2,13 +2,15 @@ import { countCodePoints, hasMalformedUnicode } from "@family-album/auth";
 import {
   AlbumRepositoryError,
   CommitOutcomeUnknownError,
+  type AlbumMediaRecord,
   type MySqlAlbumRepository,
   TransactionRollbackFailedError,
 } from "@family-album/db";
-import type {
-  AlbumVisibility,
-  PutAlbumMemberRequest,
-  UpdateAlbumRequest,
+import {
+  galleryCursorSchema,
+  type AlbumVisibility,
+  type PutAlbumMemberRequest,
+  type UpdateAlbumRequest,
 } from "@family-album/contracts";
 
 import { PublicAuthError, type AuthContext } from "../auth/service.js";
@@ -23,6 +25,8 @@ export type AlbumRepository = Pick<
   | "listAlbumMembers"
   | "putAlbumMember"
   | "removeAlbumMember"
+  | "listAlbumMedia"
+  | "getAlbumMedia"
 >;
 
 export class AlbumService {
@@ -64,6 +68,31 @@ export class AlbumService {
   async get(context: AuthContext, albumId: string) {
     return this.database(() =>
       this.repository.getAlbum({ actor: actor(context), albumId }),
+    );
+  }
+
+  async listMedia(
+    context: AuthContext,
+    albumId: string,
+    input: { limit: number; cursor?: { timelineKey: Date; mediaId: string } },
+  ) {
+    return this.database(() =>
+      this.repository.listAlbumMedia({
+        actor: actor(context),
+        albumId,
+        limit: input.limit,
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+      }),
+    );
+  }
+
+  async getMedia(context: AuthContext, albumId: string, mediaId: string) {
+    return this.database(() =>
+      this.repository.getAlbumMedia({
+        actor: actor(context),
+        albumId,
+        mediaId,
+      }),
     );
   }
 
@@ -187,6 +216,58 @@ export class AlbumService {
       );
     }
   }
+}
+
+export function decodeGalleryCursor(cursor: string) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+  } catch {
+    throw new PublicAuthError(400, "INVALID_REQUEST");
+  }
+  const result = galleryCursorSchema.safeParse(parsed);
+  if (!result.success) throw new PublicAuthError(400, "INVALID_REQUEST");
+  const timelineKey = new Date(result.data.timelineKey);
+  if (Number.isNaN(timelineKey.getTime())) {
+    throw new PublicAuthError(400, "INVALID_REQUEST");
+  }
+  return { timelineKey, mediaId: result.data.mediaId };
+}
+
+export function galleryMediaItem(row: AlbumMediaRecord) {
+  return {
+    mediaId: row.mediaId,
+    timelineKey: row.timelineKey.toISOString(),
+    timelineBasis: row.timelineBasis,
+    displayWidth: row.displayWidth,
+    displayHeight: row.displayHeight,
+    thumbnail: { kind: "thumbnail" as const },
+  };
+}
+
+export function galleryMediaDetail(row: AlbumMediaRecord) {
+  return {
+    ...galleryMediaItem(row),
+    orientation: row.orientation,
+    capturedLocalAt: row.capturedLocalAt
+      ? row.capturedLocalAt.toISOString()
+      : null,
+    cameraMake: row.cameraMake,
+    cameraModel: row.cameraModel,
+    preview: { kind: "preview" as const },
+  };
+}
+
+export function encodeGalleryCursor(item: {
+  timelineKey: string;
+  mediaId: string;
+}) {
+  return Buffer.from(
+    JSON.stringify({
+      timelineKey: item.timelineKey,
+      mediaId: item.mediaId,
+    }),
+  ).toString("base64url");
 }
 
 function actor(context: AuthContext) {

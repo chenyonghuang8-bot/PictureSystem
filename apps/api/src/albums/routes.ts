@@ -8,6 +8,10 @@ import {
   albumMembersResponseSchema,
   albumResponseSchema,
   albumsResponseSchema,
+  galleryMediaDetailSchema,
+  galleryMediaPageSchema,
+  galleryMediaParamsSchema,
+  galleryMediaQuerySchema,
   createAlbumRequestSchema,
   createAuthErrorResponse,
   deleteAlbumRequestSchema,
@@ -22,7 +26,13 @@ import {
   requireTrustedJsonOrigin,
 } from "../auth/http.js";
 import { PublicAuthError, type AuthService } from "../auth/service.js";
-import type { AlbumService } from "./service.js";
+import {
+  decodeGalleryCursor,
+  encodeGalleryCursor,
+  galleryMediaDetail,
+  galleryMediaItem,
+  type AlbumService,
+} from "./service.js";
 
 export function registerAlbumRoutes(
   app: FastifyInstance,
@@ -71,6 +81,52 @@ export function registerAlbumRoutes(
           albums: albums.map(albumDto),
           nextAfterId: albums.length === query.limit ? albums.at(-1)!.id : null,
         }),
+      );
+    }),
+  );
+
+  app.get("/api/v1/albums/:albumId/media", async (request, reply) =>
+    handleAlbum(request, reply, "album_media_list", async () => {
+      const { albumId } = albumParamsSchema.parse(request.params);
+      const query = galleryMediaQuerySchema.parse(request.query);
+      const context = await authenticate(request, authService);
+      const cursor =
+        query.cursor === undefined
+          ? undefined
+          : decodeGalleryCursor(query.cursor);
+      const rows = await albumService.listMedia(context, albumId, {
+        limit: query.limit,
+        ...(cursor ? { cursor } : {}),
+      });
+      const media = rows.map(galleryMediaItem);
+      const page = galleryMediaPageSchema.parse({
+        media,
+        nextCursor:
+          media.length === query.limit
+            ? encodeGalleryCursor(media.at(-1)!)
+            : null,
+      });
+      logAlbumEvent(request, "album_media_list", {
+        actorUserId: context.identity.userId,
+        albumId,
+      });
+      return reply.send(page);
+    }),
+  );
+
+  app.get("/api/v1/albums/:albumId/media/:mediaId", async (request, reply) =>
+    handleAlbum(request, reply, "album_media_get", async () => {
+      const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+        request.params,
+      );
+      const context = await authenticate(request, authService);
+      const row = await albumService.getMedia(context, albumId, mediaId);
+      logAlbumEvent(request, "album_media_get", {
+        actorUserId: context.identity.userId,
+        albumId,
+      });
+      return reply.send(
+        galleryMediaDetailSchema.parse(galleryMediaDetail(row)),
       );
     }),
   );
