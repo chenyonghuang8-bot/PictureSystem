@@ -24,6 +24,7 @@ export default tseslint.config(
     files: [
       "packages/**/scripts/**/*.mjs",
       "tests/integration/fixtures/**/*.mjs",
+      "tests/e2e-web/**/*.mjs",
     ],
     languageOptions: {
       globals: {

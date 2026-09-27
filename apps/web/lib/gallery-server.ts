@@ -48,11 +48,12 @@ export async function serverGalleryGet<Schema extends z.ZodType>(
 }
 
 export async function loadFamily() {
-  const me = await serverGalleryGet("/api/v1/me", meResponseSchema);
+  const me = await serverGalleryGet("/api/v1/auth/me", meResponseSchema);
   const membership = me.memberships[0];
   if (!membership) throw new GalleryClientError("NOT_FOUND");
   return {
     familyId: membership.familyId,
     familyName: membership.familyName,
+    displayName: me.user.displayName ?? me.user.username,
   };
 }

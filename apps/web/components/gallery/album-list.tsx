@@ -64,8 +64,16 @@ export function AlbumList({
             className="gallery-album-card"
             href={`/albums/${album.id}`}
           >
-            <span>{album.name}</span>
-            <small>{VISIBILITY[album.visibility]}</small>
+            <span className="gallery-album-card-header">
+              <span className="gallery-album-name">{album.name}</span>
+              <span className="gallery-album-arrow" aria-hidden="true">
+                ↗
+              </span>
+            </span>
+            <span className="gallery-album-permission">
+              <span className="gallery-permission-dot" aria-hidden="true" />
+              <small>{VISIBILITY[album.visibility]}</small>
+            </span>
           </a>
         ))}
       </div>
@@ -73,6 +81,8 @@ export function AlbumList({
         <button
           type="button"
           className="gallery-text-button"
+          disabled={loading}
+          aria-busy={loading}
           onClick={() => void loadMore()}
         >
           {loading ? "正在加载" : "加载更多"}

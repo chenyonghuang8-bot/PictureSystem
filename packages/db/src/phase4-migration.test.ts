@@ -58,6 +58,13 @@ const journal = JSON.parse(
     "utf8",
   ),
 ) as { entries: Array<{ idx: number; tag: string; when: number }> };
+const phase4RequiredMigrations = [
+  "0000_phase_01a_identity_foundation",
+  "0001_phase_02_albums_permissions",
+  "0002_phase_03_storage_uploads",
+  "0003_phase_04_media_processing",
+  "0004_phase_04_album_media",
+] as const;
 
 describe("Phase 4A versioned migration", () => {
   it("creates only the three reviewed InnoDB utf8mb4 tables and one source index", () => {
@@ -171,8 +178,17 @@ describe("Phase 4A versioned migration", () => {
     });
     expect(getTableConfig(uploadSessions).indexes).toHaveLength(6);
     expect(snapshot.prevId).toBe(previous.id);
-    expect(journal.entries).toHaveLength(5);
-    expect(journal.entries.map((entry) => entry.idx)).toEqual([0, 1, 2, 3, 4]);
+    expect(journal.entries.slice(0, 5).map((entry) => entry.idx)).toEqual([
+      0, 1, 2, 3, 4,
+    ]);
+    expect(journal.entries.slice(0, 5).map((entry) => entry.tag)).toEqual(
+      phase4RequiredMigrations,
+    );
+    for (const tag of phase4RequiredMigrations) {
+      expect(journal.entries.filter((entry) => entry.tag === tag)).toHaveLength(
+        1,
+      );
+    }
     expect(journal.entries[3]).toMatchObject({
       idx: 3,
       tag: "0003_phase_04_media_processing",

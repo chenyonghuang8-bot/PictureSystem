@@ -16,6 +16,7 @@
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.config.ts tests/integration",
     "test:e2e": "playwright test",
+    "test:e2e:web": "playwright test --config playwright.web.config.ts",
     "typecheck": "pnpm -r --if-present typecheck"
   },
   "devDependencies": {

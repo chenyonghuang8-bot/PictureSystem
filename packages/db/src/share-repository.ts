@@ -1,9 +1,4 @@
-import type {
-  Pool,
-  PoolConnection,
-  ResultSetHeader,
-  RowDataPacket,
-} from "mysql2/promise";
+import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 
 import type { MySqlAlbumRepository } from "./album-repository.js";
 import { acquireCheckedConnection } from "./connection.js";

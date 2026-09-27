@@ -1,107 +1,226 @@
 # Phase 5 Final Summary
 
-# PHASE_05_FINAL_SUMMARY
-
-## Overview
-
-Phase 5 is Core Web UI & Sharing.
-
-It moves the product from the Phase 4 media backend to the family gallery, album placement, and controlled album sharing. Gallery reads and album changes stay behind the existing album ACL and `album_media`. Sharing adds a separate token capability for one album. Original media stays immutable.
-
-Baseline is `phase-4-complete` at `63cfee6`. Committed Phase 5 work runs from `0f36681` through `380f833` (Phase 5B album operations UI). Phase 5C implementation is complete. Git checkpoint is pending. There is no `phase-5-complete` tag.
-
-```text
-PHASE_4_PRODUCTION_READY: NO
-PHASE_5_COMPLETE: YES
-PHASE_5_PRODUCTION_READY: NO
-```
-
-## Phase 5A Gallery
-
-Committed in `642734b`, `195427a`, and `4318599`.
-
-- Album API: `GET /api/v1/albums`, `GET /api/v1/albums/:albumId/media`, and `GET /api/v1/albums/:albumId/media/:mediaId`. A member sees a photo only when album ACL and a current `album_media` placement both allow it.
-- Timeline API: `GET /api/v1/families/:familyId/timeline`. The home lists media that appears in at least one album the member can view, newest `timelineKey` first. The same photo in two visible albums appears once.
-- Web Gallery: warm three-column shell, 照片 timeline, and 相册 browse. Month groups are client-side. Empty and missing states stay quiet.
-- Viewer: grid cells load `GET /api/v1/media/:mediaId/derived/thumbnail`. The detail viewer loads `preview`. The client does not receive an original path, storage key, or filename.
-
-Phase 5A does not change schema.
-
-## Phase 5B Album Operations
-
-Committed in `d7483b4` and `380f833`.
-
-- Add media to album: `POST /api/v1/albums/:albumId/media` with `{ mediaId }`. A duplicate placement returns `created: false` and does not insert a second row.
-- Remove media from album: `DELETE /api/v1/albums/:albumId/media/:mediaId`. A missing placement returns `removed: false`.
-- `album_media` placement is the only row these calls write or delete. The media item, original storage object, and derived assets remain. One photo can stay in another album after one placement is removed.
-
-Add requires upload or edit permission. Remove requires delete-from-album permission. Cross-family placement is not found. The web viewer can add a photo to an operable album and remove it from the current album, and tells the member the photo stays in the family.
-
-Phase 5B does not change schema. Display ordering was not added.
-
-## Phase 5C Sharing
-
-Phase 5C implementation is complete. Git checkpoint is pending. V1 shares an album, not a single media item.
-
-Completed:
-
-- sharing migration
-- share service
-- management API
-- public API
-- public UI
-
-- `shares` stores `token_hash`, album, creator, `created_at`, `expires_at`, and revoke fields. The raw token is 32 random bytes, shown once in the create response, and is not stored.
-- `share_events` records `CREATE`, `ACCESS`, and `REVOKE`. `ACCESS` is written for a successful public album page with `actor_member_id` NULL. Derived image requests do not write another event. Failed verification writes nothing.
-- Management API: `POST /api/v1/albums/:albumId/share`, `GET /api/v1/shares`, and `DELETE /api/v1/shares/:shareId`. Create and revoke require album management permission. Revoke stops the link and keeps the row.
-- Public viewer: anonymous `GET /api/v1/share/:token` and `GET /api/v1/share/:token/media/:mediaId/derived/:kind` for `thumbnail` and `preview` only. The web page is `/share/[token]`. Album detail can create a link, list shares, and stop access. Every public failure is the same not-found result.
-
-## Security
-
-- ACL first. Gallery and album operations authenticate the session, then apply family membership and album permissions. A hidden or deleted album is not found. A share token does not change internal ACL.
-- Share capability. The public route trusts only the token hash lookup. Expired, revoked, and deleted-album links collapse to not found. The session cookie is ignored on those routes.
-- No original exposure. Share responses omit family data, member data, storage keys, original paths, GPS, and internal permissions. `original` is rejected.
-- Derived only. Member grids and the public page serve READY thumbnail and preview bytes through the existing derived reader. Public serving checks the current album placement before that read.
-
-## Schema
-
-New migration: `packages/db/drizzle/0005_phase_05c_sharing.sql`.
-
-It creates `shares` and `share_events` only. Journal `0000`–`0004` is unchanged. Foreign keys are `RESTRICT`. `family_album_dev` has been migrated through `0005`.
-
-```text
-Phase 5A/5B: NO schema
-Phase 5C: YES
-```
-
-## Validation
-
-Phase 5 used targeted checks.
-
-```text
-Phase 5 full validation gate: NOT RUN
-```
-
-No single regression gate covering the whole of Phase 5 was recorded.
-
-- Tests: Phase 5A gallery and timeline tests landed with the gallery commits. Phase 5B route and MySQL placement tests passed, including duplicate add, cross-family rejection, and removal that leaves media and derived assets in place. Phase 5C migration, share service (27), management API (9), public API (13), and share UI (6) tests passed on their targeted runs.
-- Typecheck: `@family-album/api`, `@family-album/db`, `@family-album/contracts`, and `@family-album/web` passed on the Phase 5C slices that changed them.
-- Migration: `0005` unit tests and the `family_album_dev` integration passed. Reapplying `0005` left existing album, placement, media, and derived rows in place.
-
-## Deferred
-
-- Rate limit. Public token and page limits are still required before production exposure.
-- QR. Share links are copied as text. No QR image is generated.
-- Analytics. Share events are the access record. There is no analytics dashboard.
-- Bulk album operations. Add and remove are one placement at a time. Album display ordering is also still deferred.
-
-Phase 4 production checks remain open: deployment validation, real power-loss validation, SSD disconnect validation, and persistent audit storage.
-
 ## Final State
 
 ```text
 PHASE_5_COMPLETE: YES
 PHASE_5_PRODUCTION_READY: NO
+FINAL_VALIDATION_PASS: YES
+AUTHENTICATED_UI_ACCEPTANCE: PASS
+PHOTO_RICH_UI_ACCEPTANCE: PASS
+PHASE_5_UI_REFERENCE_ALIGNMENT: PASS_WITH_DEFERRED
 ```
 
-Phase 5 scope for the web gallery, album placement, and album sharing is implemented. That is not a production-ready claim. The Phase 5C git checkpoint is pending, and public rate limiting is not implemented.
+Completion marker: `phase-5-complete`
+
+Phase 5 delivers the Web gallery, album placement operations, album sharing,
+the approved UI polish, and authenticated desktop/mobile acceptance. This is a
+completed development milestone, not a claim that the system as a whole is
+production ready.
+
+## Phase 5A — Gallery
+
+- Gallery: PASS.
+- Family timeline: PASS, including cursor pagination and deduplication when one
+  media item appears in multiple visible albums.
+- Viewer: PASS, using derived thumbnails and previews only.
+- Album list, album media, album detail, family timeline, Gallery UI, and viewer
+  regressions passed.
+- Album ACL and current `album_media` placement remain the server-side
+  visibility boundary.
+
+Phase 5A made no schema or migration changes.
+
+## Phase 5B — Album Placement Operations
+
+- Add placement: PASS.
+- Duplicate placement: PASS and remains idempotent.
+- Remove placement: PASS.
+- Canonical media, immutable original, and derived assets remain preserved when
+  an album placement is removed.
+- Cross-family placement remains rejected by the existing authorization and
+  database boundaries.
+
+Phase 5B made no schema or migration changes.
+
+## Phase 5C — Album Sharing
+
+- Migration `0005_phase_05c_sharing`: PASS.
+- Share service: PASS.
+- Management API create/list/revoke: PASS.
+- Public API: PASS.
+- Public Web UI: PASS.
+- Audit events `CREATE`, `ACCESS`, and `REVOKE`: PASS.
+- Original sharing: DENIED. Public access is limited to READY thumbnail and
+  preview derivatives.
+
+The raw 256-bit share token is returned only by successful creation. The
+database stores its SHA-256 hash. Expired, revoked, invalid, and deleted-album
+links collapse to the same public not-found result.
+
+## UI Polish
+
+### Step 1 — Home Timeline Polish
+
+- Added a stronger family header using existing API data.
+- Added a graceful member-avatar placeholder without inventing profile data.
+- Strengthened month hierarchy and the family-friendly empty/loading states.
+- Added a responsive proportional masonry grid using thumbnail derivatives and
+  lazy loading.
+
+### Step 2 — Photo Grid and Viewer Polish
+
+- Refined masonry spacing, responsive breakpoints, hover/focus treatment, and
+  image loading transitions.
+- Added a dark, centered preview viewer with bounded loading, thumbnail
+  fallback, Escape handling, and an explicit close control.
+- Viewer metadata remains limited to existing approved fields; it exposes no
+  GPS, original path, or storage identity.
+
+### Step 3 — Album Card and Sidebar Polish
+
+- Refined album-name and visibility/permission hierarchy without fake covers or
+  counts.
+- Improved left navigation active/disabled states and the right auxiliary
+  visual structure.
+- Desktop retains the approved left/center/right layout. Mobile uses a fixed
+  bottom navigation and hides desktop-only auxiliary structure.
+
+The result follows the warm, calm, minimal, photo-first reference direction.
+Alignment is `PASS_WITH_DEFERRED` because future product features intentionally
+remain absent.
+
+## Final Gate Remediation
+
+### Remediation A
+
+- Removed unused imports.
+- Applied formatting-only normalization to Drizzle journal/snapshot metadata.
+- Confirmed the parsed metadata remains semantically identical.
+- Changed Phase 4 migration-history tests to verify their required historical
+  prefix instead of permanently fixing the total repository migration count.
+
+### Remediation B
+
+The Web family loader incorrectly requested `/api/v1/me`; the implemented API
+route is `/api/v1/auth/me`.
+
+The Web request now uses `/api/v1/auth/me`. The backend API contract was not
+changed, no compatibility alias was added, and authentication semantics were
+not weakened. A regression test fixes the expected route and strict response
+schema.
+
+## Authenticated Web Acceptance
+
+The dedicated Playwright harness uses:
+
+- a temporary self-signed certificate;
+- browser-facing Next HTTPS;
+- the internal API over HTTP behind the existing Next rewrite;
+- `ignoreHTTPSErrors` only for that local test certificate;
+- real `AuthService` login;
+- the real `__Host-family_session` cookie.
+
+Verified cookie attributes:
+
+- `Secure`;
+- `HttpOnly`;
+- `Path=/`;
+- `SameSite=Lax`.
+
+Desktop acceptance passed for Home, Albums, Album detail, Viewer, and Sharing.
+Mobile acceptance passed for Home, Albums, fixed bottom navigation, and Viewer.
+Photo-rich acceptance passed with real browser-decoded synthetic thumbnail and
+preview derivatives.
+
+The tests observed zero original-media requests and no token hash, storage
+path, GPS, or raw session-token exposure. An authenticated family session did
+not increase the capability of a public share.
+
+Cleanup results:
+
+- Synthetic database residue: `0`.
+- Synthetic filesystem media residue: `0`.
+
+## Validation
+
+Final accepted results:
+
+```text
+lint: PASS
+format: PASS
+typecheck: PASS
+unit/API: 703/703 PASS (101 files, 0 skipped)
+integration: 173/173 PASS (22 files, 0 skipped)
+existing E2E: 5/5 PASS
+authenticated Web E2E: 2/2 PASS
+migration readiness: PASS
+migration chain: 0000-0005
+MySQL: 9.7.2
+native FK: ON
+foreign_key_checks: 1
+```
+
+Migration SQL semantics were unchanged by the final UI remediation. Migration
+`0005` retained the same SHA-256 identity, and the Drizzle metadata changes
+were formatting only.
+
+## Security Status
+
+```text
+P0: 0
+P1: 0
+```
+
+Confirmed invariants include server-side album ACL enforcement, cross-family
+isolation, immutable originals, derived-only Gallery/share serving, unchanged
+Secure cookie behavior, and unchanged exact HTTPS Origin enforcement.
+
+### Deferred P2 Production Work
+
+1. Persistent public-share rate limiting is not implemented.
+2. Token-bearing public-share URL paths still require deployment,
+   reverse-proxy, and CDN access-log redaction validation.
+3. Phase 4 production validation remains incomplete for real power-loss, SSD
+   disconnect, and previously documented platform-fixture scenarios.
+
+These findings do not block the Phase 5 development milestone, but they prevent
+`PHASE_5_PRODUCTION_READY` from becoming `YES`.
+
+### P3 Test-Infrastructure Finding
+
+The authenticated HTTPS harness may leave a temporary synthetic certificate
+directory instead of reliably removing it. This affects test cleanup hygiene
+only and does not change product authentication semantics. The current Final
+Gate run's owned certificate artifact was removed before checkpointing.
+
+## Deferred Product Features
+
+The following remain future-phase work and are not represented by fake data:
+
+- Search;
+- Memories;
+- Map;
+- Favorites;
+- Admin UI;
+- real member avatars;
+- real sidebar statistics, activity, and storage data;
+- album cover/count where no backend contract exists;
+- QR sharing;
+- analytics dashboard;
+- bulk album operations and advanced display ordering.
+
+## Completion Decision
+
+Phase 5 development acceptance is complete. The repository may be checkpointed
+and tagged with `phase-5-complete` after the checkpoint commit and remote tag
+verification succeed.
+
+```text
+PHASE_5_COMPLETE: YES
+PHASE_5_PRODUCTION_READY: NO
+FINAL_VALIDATION_PASS: YES
+AUTHENTICATED_UI_ACCEPTANCE: PASS
+PHOTO_RICH_UI_ACCEPTANCE: PASS
+PHASE_5_UI_REFERENCE_ALIGNMENT: PASS_WITH_DEFERRED
+```

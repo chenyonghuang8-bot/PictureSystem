@@ -2,6 +2,7 @@ import { familyTimelinePageSchema } from "@family-album/contracts";
 
 import { GalleryFallback } from "../components/gallery/fallback.js";
 import { GalleryShell } from "../components/gallery/shell.js";
+import { HomeHeader } from "../components/gallery/home-header.js";
 import { Timeline } from "../components/gallery/timeline.js";
 import { derivedPath, timelinePath } from "../lib/gallery-paths.js";
 import { loadFamily, serverGalleryGet } from "../lib/gallery-server.js";
@@ -38,6 +39,10 @@ export default async function HomePage() {
           ) : undefined
         }
       >
+        <HomeHeader
+          familyName={family.familyName}
+          displayName={family.displayName}
+        />
         <Timeline familyId={family.familyId} initial={page} />
       </GalleryShell>
     );

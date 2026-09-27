@@ -13,7 +13,6 @@ import {
   MySqlAlbumRepository,
   MySqlShareRepository,
 } from "../../packages/db/src/index.js";
-import { PublicAuthError } from "../../apps/api/src/auth/service.js";
 import { ShareService } from "../../apps/api/src/shares/service.js";
 
 const databaseUrl = process.env.DATABASE_URL;

@@ -63,13 +63,17 @@ function columnNames(table: Parameters<typeof getTableConfig>[0]): string[] {
 
 describe("0004 album_media migration", () => {
   it("appends one additive journal entry after the unchanged 0003 migration", () => {
-    expect(journal.entries.map((entry) => entry.tag)).toEqual([
+    expect(journal.entries.slice(0, 5).map((entry) => entry.tag)).toEqual([
       "0000_phase_01a_identity_foundation",
       "0001_phase_02_albums_permissions",
       "0002_phase_03_storage_uploads",
       "0003_phase_04_media_processing",
       "0004_phase_04_album_media",
     ]);
+    expect(journal.entries[4]).toMatchObject({
+      idx: 4,
+      tag: "0004_phase_04_album_media",
+    });
     expect(journal.entries[4]!.when).toBeGreaterThan(journal.entries[3]!.when);
     expect(snapshot0004.prevId).toBe(snapshot0003.id);
     expect(migration).toMatch(/CREATE TABLE `album_media`/);

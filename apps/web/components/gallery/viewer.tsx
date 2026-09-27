@@ -22,12 +22,82 @@ import {
 } from "../../lib/gallery-paths.js";
 import { AlbumSelector } from "./album-selector.js";
 import { RemovePlacement } from "./remove-placement.js";
-import { PhotoPlaceholder } from "./states.js";
 
 export type ViewerTarget = {
   mediaId: string;
   albumId: string;
 };
+
+export function PreviewFrame({
+  preview,
+  thumbnail,
+  loading,
+  broken,
+  fallbackBroken,
+  missing,
+  onPreviewError,
+  onThumbnailError,
+  onLoaded,
+}: {
+  preview: string;
+  thumbnail: string;
+  loading: boolean;
+  broken: boolean;
+  fallbackBroken: boolean;
+  missing: boolean;
+  onPreviewError: () => void;
+  onThumbnailError: () => void;
+  onLoaded: () => void;
+}) {
+  return (
+    <div
+      className="gallery-viewer-preview"
+      aria-busy={loading}
+      data-state={missing ? "missing" : broken ? "fallback" : "preview"}
+    >
+      {missing ? (
+        <p className="gallery-viewer-message">没有找到这张照片。</p>
+      ) : broken ? (
+        <>
+          {fallbackBroken ? (
+            <p className="gallery-viewer-message">暂时无法显示预览。</p>
+          ) : null}
+          {!fallbackBroken && loading ? (
+            <span
+              className="gallery-viewer-loading"
+              aria-label="正在加载预览"
+            />
+          ) : null}
+          {!fallbackBroken ? (
+            <img
+              className="gallery-viewer-image is-fallback"
+              src={thumbnail}
+              alt="家庭照片预览"
+              onLoad={onLoaded}
+              onError={onThumbnailError}
+            />
+          ) : null}
+        </>
+      ) : (
+        <>
+          {loading ? (
+            <span
+              className="gallery-viewer-loading"
+              aria-label="正在加载预览"
+            />
+          ) : null}
+          <img
+            className={`gallery-viewer-image${loading ? " is-loading" : ""}`}
+            src={preview}
+            alt="家庭照片预览"
+            onLoad={onLoaded}
+            onError={onPreviewError}
+          />
+        </>
+      )}
+    </div>
+  );
+}
 
 export function Viewer({
   items,
@@ -46,6 +116,8 @@ export function Viewer({
 }) {
   const item = items[index];
   const [brokenPreview, setBrokenPreview] = useState(false);
+  const [fallbackBroken, setFallbackBroken] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(true);
   const [detail, setDetail] = useState<string>("");
   const [missing, setMissing] = useState(false);
   const [albums, setAlbums] = useState<{ id: string; name: string }[]>([]);
@@ -58,6 +130,8 @@ export function Viewer({
     if (!item) return;
     let cancelled = false;
     setBrokenPreview(false);
+    setFallbackBroken(false);
+    setPreviewLoading(true);
     setDetail("");
     setMissing(false);
     browserGalleryGet(
@@ -117,6 +191,14 @@ export function Viewer({
     };
   }, [familyId]);
 
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   async function addToAlbum(albumId: string) {
     if (!item) return;
     setPendingId(albumId);
@@ -144,22 +226,33 @@ export function Viewer({
       aria-modal="true"
       aria-label="照片"
     >
-      <button type="button" className="gallery-viewer-close" onClick={onClose}>
-        关闭
+      <button
+        type="button"
+        className="gallery-viewer-close"
+        aria-label="关闭照片查看器"
+        onClick={onClose}
+      >
+        <span aria-hidden="true">×</span>
+        <span>关闭</span>
       </button>
       <div className="gallery-viewer-stage">
-        {missing ? (
-          <p>没有找到这张照片。</p>
-        ) : brokenPreview ? (
-          <img src={thumbnail} alt="家庭照片" />
-        ) : (
-          <img
-            src={preview}
-            alt="家庭照片"
-            onError={() => setBrokenPreview(true)}
-          />
-        )}
-        <PhotoPlaceholder />
+        <PreviewFrame
+          preview={preview}
+          thumbnail={thumbnail}
+          loading={previewLoading}
+          broken={brokenPreview}
+          fallbackBroken={fallbackBroken}
+          missing={missing}
+          onPreviewError={() => {
+            setBrokenPreview(true);
+            setPreviewLoading(false);
+          }}
+          onThumbnailError={() => {
+            setFallbackBroken(true);
+            setPreviewLoading(false);
+          }}
+          onLoaded={() => setPreviewLoading(false)}
+        />
       </div>
       <p className="gallery-viewer-meta">{detail}</p>
       <AlbumSelector

@@ -68,13 +68,31 @@ export function Timeline({
         </section>
       ))}
       {cursor ? (
-        <button
-          type="button"
-          className="gallery-text-button"
-          onClick={() => void loadMore()}
-        >
-          {loading ? "正在加载" : "加载更多"}
-        </button>
+        <>
+          {loading ? (
+            <div
+              className="gallery-skeleton-grid"
+              aria-label="正在加载"
+              aria-live="polite"
+            >
+              {Array.from({ length: 6 }, (_, index) => (
+                <span
+                  key={index}
+                  className="gallery-skeleton-cell"
+                  aria-hidden="true"
+                />
+              ))}
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="gallery-text-button"
+            onClick={() => void loadMore()}
+            disabled={loading}
+          >
+            {loading ? "正在加载" : "加载更多"}
+          </button>
+        </>
       ) : null}
       {failed ? <UnavailableState /> : null}
       {openIndex !== null ? (
