@@ -20,6 +20,18 @@ import {
   galleryMediaPageSchema,
   galleryMediaParamsSchema,
   galleryMediaQuerySchema,
+  createMediaCommentSchema,
+  createMediaTagSchema,
+  mediaCommentPageSchema,
+  mediaCommentParamsSchema,
+  mediaCommentQuerySchema,
+  mediaCommentResponseSchema,
+  mediaNoteResponseSchema,
+  mediaTagParamsSchema,
+  mediaTagRemovalSchema,
+  mediaTagResponseSchema,
+  mediaTagsResponseSchema,
+  updateMediaNoteSchema,
   createAlbumRequestSchema,
   createAuthErrorResponse,
   deleteAlbumRequestSchema,
@@ -36,10 +48,13 @@ import {
 import { PublicAuthError, type AuthService } from "../auth/service.js";
 import {
   decodeGalleryCursor,
+  decodeMediaCommentCursor,
   encodeGalleryCursor,
+  encodeMediaCommentCursor,
   familyTimelineItem,
   galleryMediaDetail,
   galleryMediaItem,
+  mediaCommentDto,
   type AlbumService,
 } from "./service.js";
 
@@ -193,6 +208,237 @@ export function registerAlbumRoutes(
         return reply.send(
           favoriteStateSchema.parse({ isFavorite: state.isFavorite }),
         );
+      }),
+  );
+
+  app.get(
+    "/api/v1/albums/:albumId/media/:mediaId/tags",
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_tags_list", async () => {
+        const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+          request.params,
+        );
+        const context = await authenticate(request, authService);
+        const tags = await albumService.listTags(context, albumId, mediaId);
+        return reply.send(mediaTagsResponseSchema.parse({ tags }));
+      }),
+  );
+
+  app.post(
+    "/api/v1/albums/:albumId/media/:mediaId/tags",
+    { bodyLimit: 24_576 },
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_tag_create", async () => {
+        requireTrustedJsonOrigin(request, trustedOrigins);
+        const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+          request.params,
+        );
+        const body = createMediaTagSchema.parse(request.body);
+        const context = await authenticate(request, authService);
+        const tag = await albumService.createTag(
+          context,
+          albumId,
+          mediaId,
+          body.name,
+        );
+        logAlbumEvent(request, "media_tag_applied", {
+          actorMemberId: tag.actorMemberId,
+          familyId: tag.familyId,
+          albumId,
+          mediaId,
+          tagId: tag.id,
+        });
+        return reply.send(
+          mediaTagResponseSchema.parse({
+            tag: { id: tag.id, name: tag.name },
+          }),
+        );
+      }),
+  );
+
+  app.put(
+    "/api/v1/albums/:albumId/media/:mediaId/tags/:tagId",
+    { bodyLimit: 24_576 },
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_tag_put", async () => {
+        requireTrustedJsonOrigin(request, trustedOrigins);
+        emptyObjectRequestSchema.parse(request.body);
+        const { albumId, mediaId, tagId } = mediaTagParamsSchema.parse(
+          request.params,
+        );
+        const context = await authenticate(request, authService);
+        const tag = await albumService.applyTag(
+          context,
+          albumId,
+          mediaId,
+          tagId,
+        );
+        logAlbumEvent(request, "media_tag_applied", {
+          actorMemberId: tag.actorMemberId,
+          familyId: tag.familyId,
+          albumId,
+          mediaId,
+          tagId,
+        });
+        return reply.send(
+          mediaTagResponseSchema.parse({
+            tag: { id: tag.id, name: tag.name },
+          }),
+        );
+      }),
+  );
+
+  app.delete(
+    "/api/v1/albums/:albumId/media/:mediaId/tags/:tagId",
+    { bodyLimit: 24_576 },
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_tag_delete", async () => {
+        requireTrustedJsonOrigin(request, trustedOrigins);
+        emptyObjectRequestSchema.parse(request.body);
+        const { albumId, mediaId, tagId } = mediaTagParamsSchema.parse(
+          request.params,
+        );
+        const context = await authenticate(request, authService);
+        const result = await albumService.removeTag(
+          context,
+          albumId,
+          mediaId,
+          tagId,
+        );
+        logAlbumEvent(request, "media_tag_removed", {
+          actorMemberId: result.actorMemberId,
+          familyId: result.familyId,
+          albumId,
+          mediaId,
+          tagId,
+        });
+        return reply.send(mediaTagRemovalSchema.parse({ removed: true }));
+      }),
+  );
+
+  app.put(
+    "/api/v1/albums/:albumId/media/:mediaId/note",
+    { bodyLimit: 24_576 },
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_note_put", async () => {
+        requireTrustedJsonOrigin(request, trustedOrigins);
+        const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+          request.params,
+        );
+        const body = updateMediaNoteSchema.parse(request.body);
+        const context = await authenticate(request, authService);
+        const note = await albumService.updateNote(
+          context,
+          albumId,
+          mediaId,
+          body.note,
+          body.expectedRevision,
+        );
+        logAlbumEvent(request, "media_note_updated", {
+          actorMemberId: note.actorMemberId,
+          familyId: note.familyId,
+          albumId,
+          mediaId,
+          noteRevision: note.noteRevision,
+        });
+        return reply.send(
+          mediaNoteResponseSchema.parse({
+            note: note.note,
+            noteRevision: note.noteRevision,
+          }),
+        );
+      }),
+  );
+
+  app.get(
+    "/api/v1/albums/:albumId/media/:mediaId/comments",
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_comments_list", async () => {
+        const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+          request.params,
+        );
+        const query = mediaCommentQuerySchema.parse(request.query);
+        const cursor = query.cursor
+          ? decodeMediaCommentCursor(query.cursor)
+          : undefined;
+        const context = await authenticate(request, authService);
+        const rows = await albumService.listComments(
+          context,
+          albumId,
+          mediaId,
+          { limit: query.limit, ...(cursor ? { cursor } : {}) },
+        );
+        const hasMore = rows.length > query.limit;
+        const comments = rows.slice(0, query.limit).map(mediaCommentDto);
+        return reply.send(
+          mediaCommentPageSchema.parse({
+            comments,
+            nextCursor:
+              hasMore && comments.length > 0
+                ? encodeMediaCommentCursor(comments.at(-1)!)
+                : null,
+          }),
+        );
+      }),
+  );
+
+  app.post(
+    "/api/v1/albums/:albumId/media/:mediaId/comments",
+    { bodyLimit: 24_576 },
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_comment_create", async () => {
+        requireTrustedJsonOrigin(request, trustedOrigins);
+        const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+          request.params,
+        );
+        const body = createMediaCommentSchema.parse(request.body);
+        const context = await authenticate(request, authService);
+        const comment = await albumService.createComment(
+          context,
+          albumId,
+          mediaId,
+          body.body,
+        );
+        logAlbumEvent(request, "media_comment_created", {
+          actorMemberId: comment.actorMemberId,
+          familyId: comment.familyId,
+          albumId,
+          mediaId,
+          commentId: comment.id,
+        });
+        return reply.status(201).send(
+          mediaCommentResponseSchema.parse({
+            comment: mediaCommentDto(comment),
+          }),
+        );
+      }),
+  );
+
+  app.delete(
+    "/api/v1/albums/:albumId/media/:mediaId/comments/:commentId",
+    { bodyLimit: 24_576 },
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_comment_delete", async () => {
+        requireTrustedJsonOrigin(request, trustedOrigins);
+        emptyObjectRequestSchema.parse(request.body);
+        const { albumId, mediaId, commentId } = mediaCommentParamsSchema.parse(
+          request.params,
+        );
+        const context = await authenticate(request, authService);
+        const result = await albumService.deleteComment(
+          context,
+          albumId,
+          mediaId,
+          commentId,
+        );
+        logAlbumEvent(request, "media_comment_deleted", {
+          actorMemberId: result.actorMemberId,
+          familyId: result.familyId,
+          albumId,
+          mediaId,
+          commentId,
+        });
+        return reply.status(204).send();
       }),
   );
 
@@ -542,6 +788,9 @@ type AlbumIdentifiers = {
   changedFields?: string[];
   targetMemberId?: string;
   mediaId?: string;
+  tagId?: string;
+  commentId?: string;
+  noteRevision?: string;
 };
 
 export function logAlbumEvent(
@@ -564,6 +813,9 @@ export function logAlbumEvent(
         changedFields: identifiers.changedFields,
         targetMemberId: identifiers.targetMemberId,
         mediaId: identifiers.mediaId,
+        tagId: identifiers.tagId,
+        commentId: identifiers.commentId,
+        noteRevision: identifiers.noteRevision,
       }),
     },
     "security event",

@@ -24,6 +24,10 @@ import {
   runCheckedTransaction,
 } from "./connection.js";
 import type { Phase1CActor } from "./phase1c-repository.js";
+import type {
+  AlbumRepositoryTestHook,
+  AlbumRepositoryTestOperation,
+} from "./album-repository-test-hooks.js";
 
 const IDLE_TIMEOUT_MS = 7 * 24 * 60 * 60_000;
 const RECENT_AUTH_MS = 15 * 60_000;
@@ -71,6 +75,31 @@ export type AlbumMediaRecord = {
   cameraModel: string | null;
   isFavorite: boolean;
   isFamilyFeatured: boolean;
+};
+
+export type MediaTagRecord = { id: string; name: string };
+
+export type MediaCommentRecord = {
+  id: string;
+  body: string;
+  createdAt: Date;
+  author: { memberId: string; displayName: string };
+  canDelete: boolean;
+};
+
+export type AlbumMediaDetailRecord = AlbumMediaRecord & {
+  tags: MediaTagRecord[];
+  note: string | null;
+  noteRevision: string;
+  commentCount: string;
+  capabilities: {
+    canManageFeatured: boolean;
+    canEditTags: boolean;
+    canEditNote: boolean;
+    canComment: boolean;
+    canDownloadOriginal: boolean;
+    canDownloadPreview: boolean;
+  };
 };
 
 export class AlbumRepositoryError extends Error {
@@ -130,7 +159,12 @@ type AclState = LockedActor & {
 };
 
 export class MySqlAlbumRepository {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly testOptions?: {
+      readonly testHook?: AlbumRepositoryTestHook;
+    },
+  ) {}
 
   async createAlbum(input: {
     actor: Phase1CActor;
@@ -315,23 +349,50 @@ export class MySqlAlbumRepository {
     actor: Phase1CActor;
     albumId: string;
     mediaId: string;
-  }): Promise<AlbumMediaRecord> {
-    const rows = await this.withVisibleAlbum(
-      input.actor,
-      input.albumId,
-      (connection, album, actorMemberId) =>
-        readAlbumMedia(
-          connection,
-          album,
-          actorMemberId,
-          1,
-          undefined,
-          input.mediaId,
-        ),
-    );
-    const row = rows[0];
-    if (!row) throw new AlbumRepositoryError("NOT_FOUND");
-    return row;
+  }): Promise<AlbumMediaDetailRecord> {
+    return this.mutateMediaState(input, {}, async (connection, scope) => {
+      const rows = await readAlbumMedia(
+        connection,
+        scope.album,
+        scope.actorMemberId,
+        1,
+        undefined,
+        input.mediaId,
+      );
+      const row = rows[0];
+      if (!row) throw new AlbumRepositoryError("NOT_FOUND");
+      const tags = await readMediaTags(
+        connection,
+        scope.familyId,
+        input.mediaId,
+      );
+      const commentCount = await readCommentCount(
+        connection,
+        scope.familyId,
+        input.mediaId,
+      );
+      const media = await readMediaNote(
+        connection,
+        scope.familyId,
+        input.mediaId,
+      );
+      return {
+        ...row,
+        tags,
+        note: media.note,
+        noteRevision: media.noteRevision,
+        commentCount,
+        capabilities: {
+          canManageFeatured:
+            scope.actorRole === "ADMIN" || scope.actorRole === "SUPER_ADMIN",
+          canEditTags: scope.album.effectivePermissions.canEdit,
+          canEditNote: scope.album.effectivePermissions.canEdit,
+          canComment: true,
+          canDownloadOriginal: false,
+          canDownloadPreview: false,
+        },
+      };
+    });
   }
 
   async addAlbumMedia(input: {
@@ -371,7 +432,7 @@ export class MySqlAlbumRepository {
     familyId: string;
     actorMemberId: string;
   }> {
-    return this.mutateMediaState(input, false, async (connection, scope) => {
+    return this.mutateMediaState(input, {}, async (connection, scope) => {
       const existing = await lockFavorite(
         connection,
         scope.familyId,
@@ -410,7 +471,7 @@ export class MySqlAlbumRepository {
     familyId: string;
     actorMemberId: string;
   }> {
-    return this.mutateMediaState(input, false, async (connection, scope) => {
+    return this.mutateMediaState(input, {}, async (connection, scope) => {
       const existing = await lockFavorite(
         connection,
         scope.familyId,
@@ -440,35 +501,39 @@ export class MySqlAlbumRepository {
     familyId: string;
     actorMemberId: string;
   }> {
-    return this.mutateMediaState(input, true, async (connection, scope) => {
-      const existing = await lockFeatured(
-        connection,
-        scope.familyId,
-        input.mediaId,
-      );
-      if (existing) return { isFamilyFeatured: true };
-      try {
-        await connection.query<ResultSetHeader>(
-          `INSERT INTO family_featured
-            (family_id, media_id, featured_by_member_id)
-           VALUES (?, ?, ?)`,
-          [scope.familyId, input.mediaId, scope.actorMemberId],
-        );
-      } catch (error) {
-        if (
-          !isApprovedIdentityDuplicate(error, "uq_family_featured_identity")
-        ) {
-          throw error;
-        }
-        const raced = await lockFeatured(
+    return this.mutateMediaState(
+      input,
+      { requireFeaturedManager: true },
+      async (connection, scope) => {
+        const existing = await lockFeatured(
           connection,
           scope.familyId,
           input.mediaId,
         );
-        if (!raced) throw error;
-      }
-      return { isFamilyFeatured: true };
-    });
+        if (existing) return { isFamilyFeatured: true };
+        try {
+          await connection.query<ResultSetHeader>(
+            `INSERT INTO family_featured
+            (family_id, media_id, featured_by_member_id)
+           VALUES (?, ?, ?)`,
+            [scope.familyId, input.mediaId, scope.actorMemberId],
+          );
+        } catch (error) {
+          if (
+            !isApprovedIdentityDuplicate(error, "uq_family_featured_identity")
+          ) {
+            throw error;
+          }
+          const raced = await lockFeatured(
+            connection,
+            scope.familyId,
+            input.mediaId,
+          );
+          if (!raced) throw error;
+        }
+        return { isFamilyFeatured: true };
+      },
+    );
   }
 
   async deleteFeatured(input: {
@@ -480,38 +545,316 @@ export class MySqlAlbumRepository {
     familyId: string;
     actorMemberId: string;
   }> {
-    return this.mutateMediaState(input, true, async (connection, scope) => {
-      const existing = await lockFeatured(
-        connection,
-        scope.familyId,
-        input.mediaId,
-      );
-      if (existing) {
-        const [removed] = await connection.query<ResultSetHeader>(
-          `DELETE FROM family_featured
-            WHERE id = ? AND family_id = ? AND media_id = ?`,
-          [existing, scope.familyId, input.mediaId],
+    return this.mutateMediaState(
+      input,
+      { requireFeaturedManager: true },
+      async (connection, scope) => {
+        const existing = await lockFeatured(
+          connection,
+          scope.familyId,
+          input.mediaId,
         );
-        if (removed.affectedRows !== 1) {
+        if (existing) {
+          const [removed] = await connection.query<ResultSetHeader>(
+            `DELETE FROM family_featured
+            WHERE id = ? AND family_id = ? AND media_id = ?`,
+            [existing, scope.familyId, input.mediaId],
+          );
+          if (removed.affectedRows !== 1) {
+            throw new AlbumRepositoryError("CONFLICT");
+          }
+        }
+        return { isFamilyFeatured: false };
+      },
+    );
+  }
+
+  async listMediaTags(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+  }): Promise<MediaTagRecord[]> {
+    const result = await this.mutateMediaState(
+      input,
+      {},
+      async (connection, scope) => ({
+        items: await readMediaTags(connection, scope.familyId, input.mediaId),
+      }),
+    );
+    return result.items;
+  }
+
+  async createAndApplyMediaTag(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+    name: string;
+    normalizedName: Buffer;
+  }): Promise<MediaTagRecord & { familyId: string; actorMemberId: string }> {
+    return this.mutateMediaState(
+      input,
+      { requireEdit: true },
+      async (connection, scope) => {
+        let tag = await lockTagByIdentity(
+          connection,
+          scope.familyId,
+          input.normalizedName,
+        );
+        if (!tag) {
+          try {
+            await connection.query<ResultSetHeader>(
+              `INSERT INTO tags (family_id, name, name_normalized)
+               VALUES (?, ?, ?)`,
+              [scope.familyId, input.name, input.normalizedName],
+            );
+          } catch (error) {
+            if (!isApprovedIdentityDuplicate(error, "uq_tags_identity")) {
+              throw error;
+            }
+          }
+          tag = await lockTagByIdentity(
+            connection,
+            scope.familyId,
+            input.normalizedName,
+          );
+          if (!tag) throw new AlbumRepositoryError("CONFLICT");
+        }
+        await attachMediaTag(connection, scope.familyId, input.mediaId, tag.id);
+        return tag;
+      },
+      "TAG_CREATE_APPLY",
+    );
+  }
+
+  async applyMediaTag(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+    tagId: string;
+  }): Promise<MediaTagRecord & { familyId: string; actorMemberId: string }> {
+    return this.mutateMediaState(
+      input,
+      { requireEdit: true },
+      async (connection, scope) => {
+        const tag = await lockVisibleTag(
+          connection,
+          scope.familyId,
+          scope.actorMemberId,
+          input.tagId,
+        );
+        if (!tag) throw new AlbumRepositoryError("NOT_FOUND");
+        await attachMediaTag(connection, scope.familyId, input.mediaId, tag.id);
+        return tag;
+      },
+      "TAG_APPLY_EXISTING",
+    );
+  }
+
+  async removeMediaTag(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+    tagId: string;
+  }): Promise<{ removed: true; familyId: string; actorMemberId: string }> {
+    return this.mutateMediaState(
+      input,
+      { requireEdit: true },
+      async (connection, scope) => {
+        await connection.query<ResultSetHeader>(
+          `DELETE FROM media_tags
+            WHERE family_id = ? AND media_id = ? AND tag_id = ?`,
+          [scope.familyId, input.mediaId, input.tagId],
+        );
+        return { removed: true as const };
+      },
+      "TAG_REMOVE",
+    );
+  }
+
+  async updateMediaNote(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+    note: string | null;
+    expectedRevision: string;
+  }): Promise<{
+    note: string | null;
+    noteRevision: string;
+    familyId: string;
+    actorMemberId: string;
+  }> {
+    return this.mutateMediaState(
+      input,
+      { requireEdit: true },
+      async (connection, scope) => {
+        if (input.expectedRevision === "18446744073709551615") {
           throw new AlbumRepositoryError("CONFLICT");
         }
-      }
-      return { isFamilyFeatured: false };
-    });
+        const [updated] = await connection.query<ResultSetHeader>(
+          `UPDATE media_items
+              SET description = ?, note_revision = note_revision + 1
+            WHERE family_id = ? AND id = ? AND note_revision = ?`,
+          [input.note, scope.familyId, input.mediaId, input.expectedRevision],
+        );
+        if (updated.affectedRows !== 1) {
+          throw new AlbumRepositoryError("CONFLICT");
+        }
+        return {
+          note: input.note,
+          noteRevision: (BigInt(input.expectedRevision) + 1n).toString(),
+        };
+      },
+      "NOTE_UPDATE",
+    );
+  }
+
+  async listMediaComments(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+    limit: number;
+    cursor?: { createdAt: Date; id: string };
+  }): Promise<MediaCommentRecord[]> {
+    const result = await this.mutateMediaState(
+      input,
+      {},
+      async (connection, scope) => ({
+        items: await readMediaComments(
+          connection,
+          scope.familyId,
+          input.mediaId,
+          scope.actorMemberId,
+          input.limit,
+          input.cursor,
+        ),
+      }),
+    );
+    return result.items;
+  }
+
+  async createMediaComment(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+    body: string;
+    admit: (actorMemberId: string) => void;
+  }): Promise<
+    MediaCommentRecord & { familyId: string; actorMemberId: string }
+  > {
+    let admitted = false;
+    return this.mutateMediaState(
+      input,
+      {},
+      async (connection, scope) => {
+        if (!admitted) {
+          input.admit(scope.actorMemberId);
+          admitted = true;
+        }
+        await connection.query<ResultSetHeader>(
+          `INSERT INTO comments (family_id, media_id, author_member_id, body)
+         VALUES (?, ?, ?, ?)`,
+          [scope.familyId, input.mediaId, scope.actorMemberId, input.body],
+        );
+        const [ids] = await connection.query<RowDataPacket[]>(
+          "SELECT CAST(LAST_INSERT_ID() AS CHAR) AS id",
+        );
+        const id = String(ids[0]?.id ?? "");
+        if (!id) throw new Error("Comment insert result is unavailable.");
+        const [createdRows] = await connection.query<
+          (RowDataPacket & { createdAt: Date })[]
+        >(
+          `SELECT created_at AS createdAt FROM comments
+          WHERE family_id = ? AND media_id = ? AND id = ?`,
+          [scope.familyId, input.mediaId, id],
+        );
+        const createdAt = createdRows[0]?.createdAt;
+        if (!createdAt) throw new Error("Comment insert row is unavailable.");
+        return {
+          id,
+          body: input.body,
+          createdAt,
+          author: {
+            memberId: scope.actorMemberId,
+            displayName: scope.actorDisplayName,
+          },
+          canDelete: true,
+        };
+      },
+      "COMMENT_CREATE",
+    );
+  }
+
+  async deleteMediaComment(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+    commentId: string;
+  }): Promise<{ familyId: string; actorMemberId: string }> {
+    return this.mutateMediaState(
+      input,
+      {},
+      async (connection, scope) => {
+        const [rows] = await connection.query<
+          (RowDataPacket & { id: string; authorMemberId: string })[]
+        >(
+          `SELECT CAST(id AS CHAR) AS id,
+                CAST(author_member_id AS CHAR) AS authorMemberId
+           FROM comments
+          WHERE family_id = ? AND media_id = ? AND id = ? FOR UPDATE`,
+          [scope.familyId, input.mediaId, input.commentId],
+        );
+        const comment = rows[0];
+        if (!comment) throw new AlbumRepositoryError("NOT_FOUND");
+        if (String(comment.authorMemberId) !== scope.actorMemberId) {
+          throw new AlbumRepositoryError("FORBIDDEN");
+        }
+        const [deleted] = await connection.query<ResultSetHeader>(
+          `DELETE FROM comments
+          WHERE id = ? AND family_id = ? AND media_id = ?
+            AND author_member_id = ?`,
+          [input.commentId, scope.familyId, input.mediaId, scope.actorMemberId],
+        );
+        if (deleted.affectedRows !== 1) {
+          throw new AlbumRepositoryError("NOT_FOUND");
+        }
+        return {};
+      },
+      "COMMENT_DELETE",
+    );
   }
 
   private async mutateMediaState<T>(
     input: { actor: Phase1CActor; albumId: string; mediaId: string },
-    requireFeaturedManager: boolean,
+    requirements: { requireFeaturedManager?: boolean; requireEdit?: boolean },
     mutate: (
       connection: PoolConnection,
-      scope: { familyId: string; actorMemberId: string },
+      scope: {
+        familyId: string;
+        actorMemberId: string;
+        actorDisplayName: string;
+        actorRole: FamilyRole;
+        album: AlbumRecord;
+        now: Date;
+      },
     ) => Promise<T>,
+    testOperation?: AlbumRepositoryTestOperation,
   ): Promise<T & { familyId: string; actorMemberId: string }> {
     const familyId = await this.locateAlbumFamily(input.albumId);
     if (!familyId) throw new AlbumRepositoryError("NOT_FOUND");
     return runCheckedTransaction(this.pool, async (connection) => {
-      await lockFamily(connection, familyId);
+      const testHook = testOperation ? this.testOptions?.testHook : undefined;
+      await lockFamily(
+        connection,
+        familyId,
+        testHook && testOperation
+          ? () =>
+              testHook({
+                stage: "FAMILY_LOCK_QUERY_DISPATCHED",
+                operation: testOperation,
+                familyId,
+              })
+          : undefined,
+      );
       const actor = await lockActor(connection, familyId, input.actor);
       const album = await lockAlbum(connection, familyId, input.albumId);
       const grant = album
@@ -525,20 +868,39 @@ export class MySqlAlbumRepository {
       );
       const now = await readServerTime(connection);
       assertActor(actor, input.actor, now);
-      assertVisible(album, actor.member, grant);
+      const visible = assertVisible(album, actor.member, grant);
       if (!hasPlacement) throw new AlbumRepositoryError("NOT_FOUND");
       if (
-        requireFeaturedManager &&
+        requirements.requireFeaturedManager &&
         actor.member.role !== "ADMIN" &&
         actor.member.role !== "SUPER_ADMIN"
       ) {
         throw new AlbumRepositoryError("FORBIDDEN");
       }
+      if (requirements.requireEdit && !visible.effectivePermissions.canEdit) {
+        throw new AlbumRepositoryError("FORBIDDEN");
+      }
       const scope = {
         familyId,
         actorMemberId: actor.member.id,
+        actorDisplayName: actor.user?.displayName ?? "Family member",
+        actorRole: actor.member.role,
+        album: visible,
+        now,
       };
-      return { ...(await mutate(connection, scope)), ...scope };
+      const result = await mutate(connection, scope);
+      if (testHook && testOperation) {
+        await testHook({
+          stage: "MUTATION_APPLIED_BEFORE_COMMIT",
+          operation: testOperation,
+          familyId,
+        });
+      }
+      return {
+        ...result,
+        familyId: scope.familyId,
+        actorMemberId: scope.actorMemberId,
+      };
     });
   }
 
@@ -1082,11 +1444,22 @@ export class MySqlAlbumRepository {
   }
 }
 
-async function lockFamily(connection: PoolConnection, familyId: string) {
-  const [rows] = await connection.query<RowDataPacket[]>(
+async function lockFamily(
+  connection: PoolConnection,
+  familyId: string,
+  onDispatched?: () => void | Promise<void>,
+) {
+  const pending = connection.query<RowDataPacket[]>(
     "SELECT CAST(id AS CHAR) AS id FROM families WHERE id = ? FOR UPDATE",
     [familyId],
   );
+  if (onDispatched) {
+    // Observe rejection immediately while a test hook may pause. Awaiting the
+    // original promise below still propagates SQL errors to normal rollback.
+    void pending.catch(() => undefined);
+    await onDispatched();
+  }
+  const [rows] = await pending;
   if (!rows[0]) throw new AlbumRepositoryError("NOT_FOUND");
 }
 
@@ -1610,9 +1983,201 @@ async function lockFeatured(
   return rows[0] ? String(rows[0].id) : null;
 }
 
+async function readMediaTags(
+  connection: PoolConnection,
+  familyId: string,
+  mediaId: string,
+): Promise<MediaTagRecord[]> {
+  const [rows] = await connection.query<(RowDataPacket & MediaTagRecord)[]>(
+    `SELECT CAST(t.id AS CHAR) AS id, t.name
+       FROM media_tags mt
+       JOIN tags t ON t.family_id = mt.family_id AND t.id = mt.tag_id
+      WHERE mt.family_id = ? AND mt.media_id = ?
+      ORDER BY t.name_normalized ASC, t.id ASC
+      LIMIT 64`,
+    [familyId, mediaId],
+  );
+  return rows.map((row) => ({ id: String(row.id), name: row.name }));
+}
+
+async function readMediaNote(
+  connection: PoolConnection,
+  familyId: string,
+  mediaId: string,
+) {
+  const [rows] = await connection.query<
+    (RowDataPacket & { note: string | null; noteRevision: string })[]
+  >(
+    `SELECT description AS note, CAST(note_revision AS CHAR) AS noteRevision
+       FROM media_items WHERE family_id = ? AND id = ?`,
+    [familyId, mediaId],
+  );
+  const row = rows[0];
+  if (!row) throw new AlbumRepositoryError("NOT_FOUND");
+  return { note: row.note, noteRevision: String(row.noteRevision) };
+}
+
+async function readCommentCount(
+  connection: PoolConnection,
+  familyId: string,
+  mediaId: string,
+) {
+  const [rows] = await connection.query<
+    (RowDataPacket & { commentCount: string })[]
+  >(
+    `SELECT CAST(COUNT(*) AS CHAR) AS commentCount
+       FROM comments WHERE family_id = ? AND media_id = ?`,
+    [familyId, mediaId],
+  );
+  return String(rows[0]?.commentCount ?? "0");
+}
+
+async function lockTagByIdentity(
+  connection: PoolConnection,
+  familyId: string,
+  normalizedName: Buffer,
+): Promise<MediaTagRecord | null> {
+  const [rows] = await connection.query<(RowDataPacket & MediaTagRecord)[]>(
+    `SELECT CAST(id AS CHAR) AS id, name FROM tags
+      WHERE family_id = ? AND name_normalized = ? FOR UPDATE`,
+    [familyId, normalizedName],
+  );
+  return rows[0] ? { id: String(rows[0].id), name: rows[0].name } : null;
+}
+
+async function lockVisibleTag(
+  connection: PoolConnection,
+  familyId: string,
+  actorMemberId: string,
+  tagId: string,
+): Promise<MediaTagRecord | null> {
+  const [rows] = await connection.query<(RowDataPacket & MediaTagRecord)[]>(
+    `SELECT CAST(t.id AS CHAR) AS id, t.name
+       FROM tags t
+       JOIN media_tags mt
+         ON mt.family_id = t.family_id AND mt.tag_id = t.id
+       JOIN album_media placement
+         ON placement.family_id = mt.family_id
+        AND placement.media_id = mt.media_id
+       JOIN albums a
+         ON a.family_id = placement.family_id
+        AND a.id = placement.album_id
+        AND a.deleted_at IS NULL
+       LEFT JOIN album_members grant_row
+         ON grant_row.family_id = a.family_id
+        AND grant_row.album_id = a.id
+        AND grant_row.member_id = ?
+      WHERE t.family_id = ? AND t.id = ?
+        AND (a.owner_member_id = ? OR a.visibility = 'FAMILY'
+             OR grant_row.can_view = 1)
+      ORDER BY placement.album_id ASC
+      LIMIT 1 FOR UPDATE`,
+    [actorMemberId, familyId, tagId, actorMemberId],
+  );
+  return rows[0] ? { id: String(rows[0].id), name: rows[0].name } : null;
+}
+
+async function attachMediaTag(
+  connection: PoolConnection,
+  familyId: string,
+  mediaId: string,
+  tagId: string,
+) {
+  const [existing] = await connection.query<RowDataPacket[]>(
+    `SELECT id FROM media_tags
+      WHERE family_id = ? AND media_id = ? AND tag_id = ? FOR UPDATE`,
+    [familyId, mediaId, tagId],
+  );
+  if (existing[0]) return;
+  const [counts] = await connection.query<
+    (RowDataPacket & { tagCount: string })[]
+  >(
+    `SELECT CAST(COUNT(*) AS CHAR) AS tagCount FROM media_tags
+      WHERE family_id = ? AND media_id = ?`,
+    [familyId, mediaId],
+  );
+  if (BigInt(String(counts[0]?.tagCount ?? "0")) >= 64n) {
+    throw new AlbumRepositoryError("CONFLICT");
+  }
+  try {
+    await connection.query<ResultSetHeader>(
+      `INSERT INTO media_tags (family_id, media_id, tag_id)
+       VALUES (?, ?, ?)`,
+      [familyId, mediaId, tagId],
+    );
+  } catch (error) {
+    if (!isApprovedIdentityDuplicate(error, "uq_media_tags_identity")) {
+      throw error;
+    }
+    const [raced] = await connection.query<RowDataPacket[]>(
+      `SELECT id FROM media_tags
+        WHERE family_id = ? AND media_id = ? AND tag_id = ? FOR UPDATE`,
+      [familyId, mediaId, tagId],
+    );
+    if (!raced[0]) throw error;
+  }
+}
+
+async function readMediaComments(
+  connection: PoolConnection,
+  familyId: string,
+  mediaId: string,
+  actorMemberId: string,
+  limit: number,
+  cursor?: { createdAt: Date; id: string },
+): Promise<MediaCommentRecord[]> {
+  const [rows] = await connection.query<
+    (RowDataPacket & {
+      id: string;
+      body: string;
+      createdAt: Date;
+      authorMemberId: string;
+      displayName: string;
+    })[]
+  >(
+    `SELECT CAST(c.id AS CHAR) AS id, c.body, c.created_at AS createdAt,
+            CAST(c.author_member_id AS CHAR) AS authorMemberId,
+            COALESCE(u.display_name, 'Family member') AS displayName
+       FROM comments c
+       JOIN family_members fm
+         ON fm.family_id = c.family_id AND fm.id = c.author_member_id
+       JOIN users u ON u.id = fm.user_id
+      WHERE c.family_id = ? AND c.media_id = ?
+        AND (
+          ? = 0 OR c.created_at > ?
+          OR (c.created_at = ? AND c.id > ?)
+        )
+      ORDER BY c.created_at ASC, c.id ASC
+      LIMIT ?`,
+    [
+      familyId,
+      mediaId,
+      cursor ? 1 : 0,
+      cursor?.createdAt ?? new Date(0),
+      cursor?.createdAt ?? new Date(0),
+      cursor?.id ?? "0",
+      limit,
+    ],
+  );
+  return rows.map((row) => ({
+    id: String(row.id),
+    body: row.body,
+    createdAt: row.createdAt,
+    author: {
+      memberId: String(row.authorMemberId),
+      displayName: row.displayName,
+    },
+    canDelete: String(row.authorMemberId) === actorMemberId,
+  }));
+}
+
 export function isApprovedIdentityDuplicate(
   error: unknown,
-  constraint: "uq_user_favorites_identity" | "uq_family_featured_identity",
+  constraint:
+    | "uq_user_favorites_identity"
+    | "uq_family_featured_identity"
+    | "uq_tags_identity"
+    | "uq_media_tags_identity",
 ) {
   if (!error || typeof error !== "object") return false;
   const candidate = error as {

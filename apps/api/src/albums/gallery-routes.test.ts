@@ -24,6 +24,49 @@ function setup(media = mediaRow()) {
     deleteFavorite: vi.fn(async () => ({ isFavorite: false as const })),
     putFeatured: vi.fn(async () => ({ isFamilyFeatured: true as const })),
     deleteFeatured: vi.fn(async () => ({ isFamilyFeatured: false as const })),
+    listTags: vi.fn(async () => [{ id: "12", name: "Trip" }]),
+    createTag: vi.fn(async () => ({
+      id: "12",
+      name: "Trip",
+      familyId: "4",
+      actorMemberId: "7",
+    })),
+    applyTag: vi.fn(async () => ({
+      id: "12",
+      name: "Trip",
+      familyId: "4",
+      actorMemberId: "7",
+    })),
+    removeTag: vi.fn(async () => ({
+      removed: true as const,
+      familyId: "4",
+      actorMemberId: "7",
+    })),
+    updateNote: vi.fn(async () => ({
+      note: "hello",
+      noteRevision: "2",
+      familyId: "4",
+      actorMemberId: "7",
+    })),
+    listComments: vi.fn(async () => [
+      {
+        id: "13",
+        body: "hello",
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        author: { memberId: "7", displayName: "Member" },
+        canDelete: true,
+      },
+    ]),
+    createComment: vi.fn(async () => ({
+      id: "13",
+      body: "hello",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      author: { memberId: "7", displayName: "Member" },
+      canDelete: true,
+      familyId: "4",
+      actorMemberId: "7",
+    })),
+    deleteComment: vi.fn(async () => ({})),
   } as unknown as AlbumService;
   return {
     authService,
@@ -49,6 +92,18 @@ function mediaRow() {
     cameraModel: "Camera",
     isFavorite: true,
     isFamilyFeatured: false,
+    tags: [{ id: "12", name: "Trip" }],
+    note: null,
+    noteRevision: "1",
+    commentCount: "1",
+    capabilities: {
+      canManageFeatured: false,
+      canEditTags: true,
+      canEditNote: true,
+      canComment: true,
+      canDownloadOriginal: false,
+      canDownloadPreview: false,
+    },
   };
 }
 
@@ -187,6 +242,115 @@ describe("gallery media routes", () => {
     });
     expect(response.statusCode).toBe(400);
     expect(albumService.putFavorite).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("supports strict tag, note and comment routes", async () => {
+    const { app, albumService } = setup();
+    const headers = {
+      ...cookie(),
+      origin,
+      "content-type": "application/json",
+    };
+    const tag = await app.inject({
+      method: "POST",
+      url: "/api/v1/albums/3/media/11/tags",
+      headers,
+      payload: { name: "Trip" },
+    });
+    expect(tag.statusCode).toBe(200);
+    expect(tag.json()).toEqual({ tag: { id: "12", name: "Trip" } });
+
+    const note = await app.inject({
+      method: "PUT",
+      url: "/api/v1/albums/3/media/11/note",
+      headers,
+      payload: { note: "hello", expectedRevision: "1" },
+    });
+    expect(note.statusCode).toBe(200);
+    expect(note.json()).toEqual({ note: "hello", noteRevision: "2" });
+
+    const comment = await app.inject({
+      method: "POST",
+      url: "/api/v1/albums/3/media/11/comments",
+      headers,
+      payload: { body: "hello" },
+    });
+    expect(comment.statusCode).toBe(201);
+    expect(comment.json().comment.author).toEqual({
+      memberId: "7",
+      displayName: "Member",
+    });
+    expect(albumService.createComment).toHaveBeenCalledWith(
+      expect.anything(),
+      "3",
+      "11",
+      "hello",
+    );
+
+    const tags = await app.inject({
+      method: "GET",
+      url: "/api/v1/albums/3/media/11/tags",
+      headers: cookie(),
+    });
+    expect(tags.json()).toEqual({ tags: [{ id: "12", name: "Trip" }] });
+
+    const putTag = await app.inject({
+      method: "PUT",
+      url: "/api/v1/albums/3/media/11/tags/12",
+      headers,
+      payload: {},
+    });
+    expect(putTag.json()).toEqual({ tag: { id: "12", name: "Trip" } });
+
+    const removeTag = await app.inject({
+      method: "DELETE",
+      url: "/api/v1/albums/3/media/11/tags/12",
+      headers,
+      payload: {},
+    });
+    expect(removeTag.json()).toEqual({ removed: true });
+
+    const comments = await app.inject({
+      method: "GET",
+      url: "/api/v1/albums/3/media/11/comments?limit=1",
+      headers: cookie(),
+    });
+    expect(comments.statusCode).toBe(200);
+    expect(comments.json().comments).toHaveLength(1);
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: "/api/v1/albums/3/media/11/comments/13",
+      headers,
+      payload: {},
+    });
+    expect(deleted.statusCode).toBe(204);
+    await app.close();
+  });
+
+  it("rejects forged ownership fields and malformed comment cursors", async () => {
+    const { app, albumService } = setup();
+    const forged = await app.inject({
+      method: "POST",
+      url: "/api/v1/albums/3/media/11/comments",
+      headers: {
+        ...cookie(),
+        origin,
+        "content-type": "application/json",
+      },
+      payload: { body: "hello", authorId: "99" },
+    });
+    expect(forged.statusCode).toBe(400);
+    expect(albumService.createComment).not.toHaveBeenCalled();
+
+    const cursor = await app.inject({
+      method: "GET",
+      url: "/api/v1/albums/3/media/11/comments?cursor=invalid",
+      headers: cookie(),
+    });
+    expect(cursor.statusCode).toBe(400);
+    expect(albumService.listComments).not.toHaveBeenCalled();
     await app.close();
   });
 });

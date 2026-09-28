@@ -264,6 +264,35 @@ describe.sequential("Phase 4D2 metadata persistence fencing", () => {
     );
   }
 
+  it("preserves canonical note fields through real metadata persistence", async () => {
+    const fixture = await createClaimed("phase6c-note-preservation");
+    await database.pool.query(
+      "UPDATE media_items SET description=?,note_revision=? WHERE family_id=? AND id=?",
+      ["synthetic canonical note", "7", familyId, fixture.item.id],
+    );
+    await expect(
+      metadata.persistResult(
+        fixture.fence,
+        fixture.preparation,
+        imageResult({ rawWidth: 96, rawHeight: 64 }),
+      ),
+    ).resolves.toMatchObject({ affectedRows: 1 });
+    const [rows] = await database.pool.query<RowDataPacket[]>(
+      `SELECT description,CAST(note_revision AS CHAR) AS noteRevision,
+              raw_width AS rawWidth,raw_height AS rawHeight,
+              CAST(metadata_generation AS CHAR) AS metadataGeneration
+         FROM media_items WHERE family_id=? AND id=?`,
+      [familyId, fixture.item.id],
+    );
+    expect(rows[0]).toMatchObject({
+      description: "synthetic canonical note",
+      noteRevision: "7",
+      rawWidth: 96,
+      rawHeight: 64,
+      metadataGeneration: "1",
+    });
+  });
+
   it("atomically replaces metadata, preserves provenance and enqueues only the approved next job", async () => {
     const fixture = await createClaimed("success");
     const before = await immutableRows(

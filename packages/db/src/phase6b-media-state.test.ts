@@ -19,6 +19,18 @@ describe("Phase 6B duplicate classification", () => {
     ).toBe(true);
     expect(
       isApprovedIdentityDuplicate(
+        duplicate("tags.uq_tags_identity"),
+        "uq_tags_identity",
+      ),
+    ).toBe(true);
+    expect(
+      isApprovedIdentityDuplicate(
+        duplicate("media_tags.uq_media_tags_identity"),
+        "uq_media_tags_identity",
+      ),
+    ).toBe(true);
+    expect(
+      isApprovedIdentityDuplicate(
         duplicate(
           "family_album_dev.family_featured.uq_family_featured_identity",
         ),
@@ -35,6 +47,15 @@ describe("Phase 6B duplicate classification", () => {
   ])("rejects the non-exact key %s", (key) => {
     expect(
       isApprovedIdentityDuplicate(duplicate(key), "uq_user_favorites_identity"),
+    ).toBe(false);
+  });
+
+  it("rejects a featured backup index against the featured expected index", () => {
+    expect(
+      isApprovedIdentityDuplicate(
+        duplicate("uq_family_featured_identity_backup"),
+        "uq_family_featured_identity",
+      ),
     ).toBe(false);
   });
 

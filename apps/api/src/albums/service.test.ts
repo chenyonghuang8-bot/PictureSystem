@@ -96,6 +96,44 @@ function setup() {
       familyId: "1",
       actorMemberId: "3",
     })),
+    listMediaTags: vi.fn(async () => []),
+    createAndApplyMediaTag: vi.fn(async () => ({
+      id: "4",
+      name: "Trip",
+      familyId: "1",
+      actorMemberId: "3",
+    })),
+    applyMediaTag: vi.fn(async () => ({
+      id: "4",
+      name: "Trip",
+      familyId: "1",
+      actorMemberId: "3",
+    })),
+    removeMediaTag: vi.fn(async () => ({
+      removed: true as const,
+      familyId: "1",
+      actorMemberId: "3",
+    })),
+    updateMediaNote: vi.fn(async () => ({
+      note: "note",
+      noteRevision: "2",
+      familyId: "1",
+      actorMemberId: "3",
+    })),
+    listMediaComments: vi.fn(async () => []),
+    createMediaComment: vi.fn(async () => ({
+      id: "5",
+      body: "comment",
+      createdAt: date,
+      author: { memberId: "3", displayName: "Member" },
+      canDelete: true,
+      familyId: "1",
+      actorMemberId: "3",
+    })),
+    deleteMediaComment: vi.fn(async () => ({
+      familyId: "1",
+      actorMemberId: "3",
+    })),
   } satisfies AlbumRepository;
   return { album, repository, service: new AlbumService(repository) };
 }
@@ -134,6 +172,50 @@ describe("AlbumService", () => {
         visibility: "CUSTOM",
       }),
     ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+  });
+
+  it("uses the canonical Phase 6C text normalizers once before repository writes", async () => {
+    const { service, repository } = setup();
+    await service.createTag(context, "1", "2", "  Ｔｒｉｐ\t");
+    expect(repository.createAndApplyMediaTag).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Trip",
+        normalizedName: Buffer.from("trip"),
+      }),
+    );
+    await service.updateNote(context, "1", "2", "  a\r\nb\r ", "1");
+    expect(repository.updateMediaNote).toHaveBeenCalledWith(
+      expect.objectContaining({ note: "  a\nb\n ", expectedRevision: "1" }),
+    );
+    await service.createComment(context, "1", "2", "<b>x</b>\r");
+    expect(repository.createMediaComment).toHaveBeenCalledWith(
+      expect.objectContaining({ body: "<b>x</b>\n" }),
+    );
+  });
+
+  it("maps invalid Phase 6C text to INVALID_REQUEST", async () => {
+    const { service, repository } = setup();
+    await expect(
+      service.createTag(context, "1", "2", "bad\u200btag"),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: "INVALID_REQUEST",
+    });
+    await expect(
+      service.updateNote(context, "1", "2", "bad\0note", "1"),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: "INVALID_REQUEST",
+    });
+    await expect(
+      service.createComment(context, "1", "2", " \n "),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: "INVALID_REQUEST",
+    });
+    expect(repository.createAndApplyMediaTag).not.toHaveBeenCalled();
+    expect(repository.updateMediaNote).not.toHaveBeenCalled();
+    expect(repository.createMediaComment).not.toHaveBeenCalled();
   });
 
   it("maps non-disclosure, conflicts and commit ambiguity", async () => {

@@ -2,18 +2,27 @@ import { countCodePoints, hasMalformedUnicode } from "@family-album/auth";
 import {
   AlbumRepositoryError,
   CommitOutcomeUnknownError,
+  type AlbumMediaDetailRecord,
   type AlbumMediaRecord,
   type MySqlAlbumRepository,
   TransactionRollbackFailedError,
 } from "@family-album/db";
 import {
   galleryCursorSchema,
+  mediaCommentCursorSchema,
   type AlbumVisibility,
   type PutAlbumMemberRequest,
   type UpdateAlbumRequest,
 } from "@family-album/contracts";
 
 import { PublicAuthError, type AuthContext } from "../auth/service.js";
+import { MediaCommentRateLimiter } from "./comment-rate-limit.js";
+import {
+  MediaTextValidationError,
+  normalizeMediaComment,
+  normalizeMediaNote,
+  normalizeTagName,
+} from "./text.js";
 
 export type AlbumRepository = Pick<
   MySqlAlbumRepository,
@@ -34,10 +43,21 @@ export type AlbumRepository = Pick<
   | "deleteFavorite"
   | "putFeatured"
   | "deleteFeatured"
+  | "listMediaTags"
+  | "createAndApplyMediaTag"
+  | "applyMediaTag"
+  | "removeMediaTag"
+  | "updateMediaNote"
+  | "listMediaComments"
+  | "createMediaComment"
+  | "deleteMediaComment"
 >;
 
 export class AlbumService {
-  constructor(private readonly repository: AlbumRepository) {}
+  constructor(
+    private readonly repository: AlbumRepository,
+    private readonly commentRateLimiter = new MediaCommentRateLimiter(),
+  ) {}
 
   async create(
     context: AuthContext,
@@ -178,6 +198,136 @@ export class AlbumService {
     );
   }
 
+  async listTags(context: AuthContext, albumId: string, mediaId: string) {
+    return this.database(() =>
+      this.repository.listMediaTags({
+        actor: actor(context),
+        albumId,
+        mediaId,
+      }),
+    );
+  }
+
+  async createTag(
+    context: AuthContext,
+    albumId: string,
+    mediaId: string,
+    name: unknown,
+  ) {
+    const normalized = this.mediaText(() => normalizeTagName(name));
+    return this.database(() =>
+      this.repository.createAndApplyMediaTag({
+        actor: actor(context),
+        albumId,
+        mediaId,
+        name: normalized.name,
+        normalizedName: normalized.normalizedBytes,
+      }),
+    );
+  }
+
+  async applyTag(
+    context: AuthContext,
+    albumId: string,
+    mediaId: string,
+    tagId: string,
+  ) {
+    return this.database(() =>
+      this.repository.applyMediaTag({
+        actor: actor(context),
+        albumId,
+        mediaId,
+        tagId,
+      }),
+    );
+  }
+
+  async removeTag(
+    context: AuthContext,
+    albumId: string,
+    mediaId: string,
+    tagId: string,
+  ) {
+    return this.database(() =>
+      this.repository.removeMediaTag({
+        actor: actor(context),
+        albumId,
+        mediaId,
+        tagId,
+      }),
+    );
+  }
+
+  async updateNote(
+    context: AuthContext,
+    albumId: string,
+    mediaId: string,
+    note: unknown,
+    expectedRevision: string,
+  ) {
+    const normalized = this.mediaText(() => normalizeMediaNote(note));
+    return this.database(() =>
+      this.repository.updateMediaNote({
+        actor: actor(context),
+        albumId,
+        mediaId,
+        note: normalized,
+        expectedRevision,
+      }),
+    );
+  }
+
+  async listComments(
+    context: AuthContext,
+    albumId: string,
+    mediaId: string,
+    input: { limit: number; cursor?: { createdAt: Date; id: string } },
+  ) {
+    return this.database(() =>
+      this.repository.listMediaComments({
+        actor: actor(context),
+        albumId,
+        mediaId,
+        limit: input.limit + 1,
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+      }),
+    );
+  }
+
+  async createComment(
+    context: AuthContext,
+    albumId: string,
+    mediaId: string,
+    body: unknown,
+  ) {
+    const normalized = this.mediaText(() => normalizeMediaComment(body));
+    return this.database(() =>
+      this.repository.createMediaComment({
+        actor: actor(context),
+        albumId,
+        mediaId,
+        body: normalized,
+        admit: (memberId) => this.commentRateLimiter.consume(memberId),
+      }),
+    );
+  }
+
+  async deleteComment(
+    context: AuthContext,
+    albumId: string,
+    mediaId: string,
+    commentId: string,
+  ) {
+    return this.database(() =>
+      this.repository.deleteMediaComment({
+        actor: actor(context),
+        albumId,
+        mediaId,
+        commentId,
+      }),
+    );
+  }
+
   async update(
     context: AuthContext,
     albumId: string,
@@ -298,6 +448,17 @@ export class AlbumService {
       );
     }
   }
+
+  private mediaText<T>(normalize: () => T) {
+    try {
+      return normalize();
+    } catch (error) {
+      if (error instanceof MediaTextValidationError) {
+        throw new PublicAuthError(400, "INVALID_REQUEST");
+      }
+      throw error;
+    }
+  }
 }
 
 export function decodeGalleryCursor(cursor: string) {
@@ -314,6 +475,31 @@ export function decodeGalleryCursor(cursor: string) {
     throw new PublicAuthError(400, "INVALID_REQUEST");
   }
   return { timelineKey, mediaId: result.data.mediaId };
+}
+
+export function decodeMediaCommentCursor(cursor: string) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+  } catch {
+    throw new PublicAuthError(400, "INVALID_REQUEST");
+  }
+  const result = mediaCommentCursorSchema.safeParse(parsed);
+  if (!result.success) throw new PublicAuthError(400, "INVALID_REQUEST");
+  const createdAt = new Date(result.data.createdAt);
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new PublicAuthError(400, "INVALID_REQUEST");
+  }
+  return { createdAt, id: result.data.id };
+}
+
+export function encodeMediaCommentCursor(item: {
+  createdAt: string;
+  id: string;
+}) {
+  return Buffer.from(
+    JSON.stringify({ version: 1, createdAt: item.createdAt, id: item.id }),
+  ).toString("base64url");
 }
 
 export function familyTimelineItem(row: {
@@ -370,7 +556,7 @@ export function publicGalleryMediaItem(row: {
   };
 }
 
-export function galleryMediaDetail(row: AlbumMediaRecord) {
+export function galleryMediaDetail(row: AlbumMediaDetailRecord) {
   return {
     ...galleryMediaItem(row),
     orientation: row.orientation,
@@ -380,6 +566,27 @@ export function galleryMediaDetail(row: AlbumMediaRecord) {
     cameraMake: row.cameraMake,
     cameraModel: row.cameraModel,
     preview: { kind: "preview" as const },
+    tags: row.tags,
+    note: row.note,
+    noteRevision: row.noteRevision,
+    commentCount: row.commentCount,
+    capabilities: row.capabilities,
+  };
+}
+
+export function mediaCommentDto(row: {
+  id: string;
+  body: string;
+  createdAt: Date;
+  author: { memberId: string; displayName: string };
+  canDelete: boolean;
+}) {
+  return {
+    id: row.id,
+    body: row.body,
+    createdAt: row.createdAt.toISOString(),
+    author: row.author,
+    canDelete: row.canDelete,
   };
 }
 
