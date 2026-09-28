@@ -16,6 +16,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <time.h>
 #include <CommonCrypto/CommonDigest.h>
 
@@ -50,6 +51,13 @@ typedef struct {
   dev_t device;
   ino_t root_inode;
   ino_t originals_inode;
+  dev_t marker_device;
+  ino_t marker_inode;
+  uid_t marker_uid;
+  off_t marker_size;
+  mode_t marker_mode;
+  struct timespec marker_mtime;
+  struct timespec marker_ctime;
   char marker[33];
   char canonical_path[PATH_MAX];
 } original_reader_t;
@@ -2127,12 +2135,25 @@ static int reader_identity_is_current(original_reader_t *reader) {
   struct stat root_status;
   char marker[33];
   int failure = 0;
+  struct stat marker_status;
   if (validate_directory_fd(current_root, &root_status) != 0 ||
       root_status.st_uid != geteuid() || (root_status.st_mode & 077) != 0 ||
       root_status.st_dev != reader->device ||
       root_status.st_ino != reader->root_inode ||
       read_marker(current_root, marker, sizeof(marker), 0) != 0 ||
-      strcmp(marker, reader->marker) != 0)
+      strcmp(marker, reader->marker) != 0 ||
+      fstatat(current_root, ".storage-root", &marker_status,
+              AT_SYMLINK_NOFOLLOW) != 0 ||
+      marker_status.st_dev != reader->marker_device ||
+      marker_status.st_ino != reader->marker_inode ||
+      marker_status.st_uid != reader->marker_uid ||
+      marker_status.st_size != reader->marker_size ||
+      (marker_status.st_mode & 0777) != reader->marker_mode ||
+      marker_status.st_nlink != 1 ||
+      marker_status.st_mtimespec.tv_sec != reader->marker_mtime.tv_sec ||
+      marker_status.st_mtimespec.tv_nsec != reader->marker_mtime.tv_nsec ||
+      marker_status.st_ctimespec.tv_sec != reader->marker_ctime.tv_sec ||
+      marker_status.st_ctimespec.tv_nsec != reader->marker_ctime.tv_nsec)
     failure = errno == 0 ? ESTALE : errno;
   int current_originals = -1;
   if (failure == 0) {
@@ -2187,13 +2208,15 @@ static napi_value open_original_reader(napi_env env, napi_callback_info info) {
     return NULL;
   }
   int root_fd = open_absolute_directory(path, 0);
-  struct stat root_status;
+  struct stat root_status, marker_status;
   char marker[33];
   int failure = root_fd < 0 ? errno : 0;
   if (failure == 0 &&
       (validate_directory_fd(root_fd, &root_status) != 0 ||
        root_status.st_uid != geteuid() || (root_status.st_mode & 077) != 0 ||
        read_marker(root_fd, marker, sizeof(marker), 0) != 0 ||
+       fstatat(root_fd, ".storage-root", &marker_status,
+               AT_SYMLINK_NOFOLLOW) != 0 ||
        strcmp(marker, expected_marker) != 0))
     failure = errno == 0 ? EPERM : errno;
   int originals_fd = -1;
@@ -2224,6 +2247,13 @@ static napi_value open_original_reader(napi_env env, napi_callback_info info) {
   reader->device = root_status.st_dev;
   reader->root_inode = root_status.st_ino;
   reader->originals_inode = originals_status.st_ino;
+  reader->marker_device = marker_status.st_dev;
+  reader->marker_inode = marker_status.st_ino;
+  reader->marker_uid = marker_status.st_uid;
+  reader->marker_size = marker_status.st_size;
+  reader->marker_mode = marker_status.st_mode & 0777;
+  reader->marker_mtime = marker_status.st_mtimespec;
+  reader->marker_ctime = marker_status.st_ctimespec;
   strcpy(reader->marker, marker);
   if (fcntl(root_fd, F_GETPATH, reader->canonical_path) != 0) {
     finalize_original_reader(env, reader, NULL);
@@ -2426,6 +2456,8 @@ static napi_value consume_original_handle(napi_env env, napi_callback_info info)
   return result;
 }
 
+#include "original_download.h"
+
 #include "derived_store.h"
 #include "image_verifier_launch.h"
 #include "derived_publish.h"
@@ -2487,6 +2519,27 @@ static napi_value init(napi_env env, napi_value exports) {
        napi_default, NULL},
       {"consumeOriginalHandle", NULL, consume_original_handle, NULL, NULL,
        NULL, napi_default, NULL},
+      {"startVerifiedOriginalDownload", NULL,
+       start_verified_original_download, NULL, NULL, NULL, napi_default,
+       NULL},
+      {"startOriginalDownloadRead", NULL, start_original_download_read, NULL,
+       NULL,
+       NULL, napi_default, NULL},
+      {"pollOriginalDownload", NULL, poll_original_download, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"cancelOriginalDownload", NULL, cancel_original_download, NULL, NULL,
+       NULL, napi_default, NULL},
+      {"closeOriginalDownload", NULL, close_original_download, NULL, NULL,
+       NULL, napi_default, NULL},
+#ifdef PS_STORAGE_TEST_HOOKS
+      {"originalDownloadTestBarrier", NULL,
+       original_download_test_barrier, NULL, NULL, NULL, napi_default, NULL},
+      {"originalDownloadTestFault", NULL, original_download_test_fault, NULL,
+       NULL, NULL, napi_default, NULL},
+      {"originalDownloadTestDiagnostics", NULL,
+       original_download_test_diagnostics, NULL, NULL, NULL, napi_default,
+       NULL},
+#endif
       {"provisionDerivedWriterLock", NULL, provision_derived_writer_lock, NULL,
        NULL, NULL, napi_default, NULL},
       {"openDerivedStore", NULL, open_derived_store, NULL, NULL, NULL,

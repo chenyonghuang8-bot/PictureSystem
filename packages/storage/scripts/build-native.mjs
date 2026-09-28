@@ -606,3 +606,37 @@ if (storageWithVerifier.status !== 0) {
     `Verifier storage build failed (${storageWithVerifier.status ?? "signal"}): ${storageWithVerifier.stderr.trim()}`,
   );
 }
+
+// Test-only addon: identical storage implementation plus deterministic native
+// lifecycle/fault hooks. Production code loads storage_native.node, which does
+// not compile or export these controls.
+const storageTestAddon = spawnSync(
+  "clang",
+  [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    "-fPIC",
+    "-bundle",
+    "-undefined",
+    "dynamic_lookup",
+    `-I${nodeInclude}`,
+    "-DPS_STORAGE_TEST_HOOKS",
+    `-DPS_VERIFIER_SUPERVISOR_PATH="${verifierSupervisor}"`,
+    `-DPS_VERIFIER_TIMEOUT_PATH="${join(outputDirectory, "image_verifier_timeout_supervisor")}"`,
+    `-DPS_VERIFIER_CRASH_PATH="${join(outputDirectory, "image_verifier_crash_supervisor")}"`,
+    `-DPS_VERIFIER_IGNORE_TERM_PATH="${join(outputDirectory, "image_verifier_ignore-term_supervisor")}"`,
+    `-DPS_VERIFIER_HIGH_FD_PATH="${join(outputDirectory, "image_verifier_high-fd_supervisor")}"`,
+    join(packageRoot, "native/storage_native.c"),
+    "-o",
+    join(outputDirectory, "storage_native_test.node"),
+  ],
+  { encoding: "utf8" },
+);
+if (storageTestAddon.status !== 0) {
+  throw new Error(
+    `Test storage addon build failed (${storageTestAddon.status ?? "signal"}): ${storageTestAddon.stderr.trim()}`,
+  );
+}

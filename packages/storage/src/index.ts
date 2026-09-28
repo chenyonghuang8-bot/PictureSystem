@@ -8,6 +8,7 @@ import {
   type ImageProducerKind,
   type UnverifiedRenderedCandidate,
 } from "./image-renderer-producer.js";
+import { pollWithBoundedBackoff } from "./original-download-polling.js";
 
 export type {
   ImageProducerKind,
@@ -17,6 +18,7 @@ export type {
 type NativeRoot = object;
 type NativeOriginalReader = object;
 type NativeOriginalHandle = object;
+type NativeOriginalDownload = object;
 type NativeCapacityGate = object;
 type NativeOpenResult = {
   handle: NativeRoot;
@@ -270,6 +272,18 @@ type NativeBinding = {
     fd: number;
     rootPath: string;
   };
+  startVerifiedOriginalDownload(
+    handle: NativeOriginalReader,
+    familyId: string,
+    sha256Hex: string,
+    byteSize: string,
+  ): NativeOriginalDownload;
+  startOriginalDownloadRead(handle: NativeOriginalDownload): void;
+  pollOriginalDownload(
+    handle: NativeOriginalDownload,
+  ): null | { kind: "open" } | { kind: "read"; bytes: Buffer; final: boolean };
+  cancelOriginalDownload(handle: NativeOriginalDownload): void;
+  closeOriginalDownload(handle: NativeOriginalDownload): void;
   fileSize(handle: NativeRoot, relativePath: string): string;
   verifyControlledFile(
     handle: NativeRoot,
@@ -347,6 +361,15 @@ export interface VerifiedOriginalHandle {
   close(): void;
 }
 
+export type OriginalDownloadReadResult =
+  | Readonly<{ done: false; bytes: Buffer; final: boolean }>
+  | Readonly<{ done: true }>;
+
+export interface VerifiedOriginalDownload {
+  readNext(): Promise<OriginalDownloadReadResult>;
+  cancel(): Promise<void>;
+}
+
 export type ApprovedOriginalProbeKind =
   | "capabilities"
   | "fork-denied"
@@ -417,6 +440,141 @@ class VerifiedOriginalHandleImpl implements VerifiedOriginalHandle {
   }
 }
 
+async function pollOriginalDownload(
+  native: NativeBinding,
+  handle: NativeOriginalDownload,
+) {
+  return await pollWithBoundedBackoff(() =>
+    native.pollOriginalDownload(handle),
+  );
+}
+
+async function waitForOriginalDownloadOpen(
+  native: NativeBinding,
+  handle: NativeOriginalDownload,
+) {
+  const result = await pollOriginalDownload(native, handle);
+  if (result.kind !== "open") {
+    throw new StorageSafetyError("ORIGINAL_DOWNLOAD_PROTOCOL_INVALID");
+  }
+}
+
+async function waitForOriginalDownloadRead(
+  native: NativeBinding,
+  handle: NativeOriginalDownload,
+) {
+  const result = await pollOriginalDownload(native, handle);
+  if (result.kind !== "read") {
+    throw new StorageSafetyError("ORIGINAL_DOWNLOAD_PROTOCOL_INVALID");
+  }
+  return { bytes: result.bytes, final: result.final };
+}
+
+class VerifiedOriginalDownloadImpl implements VerifiedOriginalDownload {
+  #handle: NativeOriginalDownload | null;
+  #native: NativeBinding;
+  #active: Promise<unknown> | null = null;
+  #closePromise: Promise<void> | null = null;
+  #cancelled = false;
+  #finished = false;
+  #abortSignal: AbortSignal;
+  #onAbort: () => void;
+
+  constructor(
+    handle: NativeOriginalDownload,
+    native: NativeBinding,
+    signal: AbortSignal,
+  ) {
+    this.#handle = handle;
+    this.#native = native;
+    this.#abortSignal = signal;
+    this.#onAbort = () => {
+      void this.cancel().catch(() => undefined);
+    };
+    signal.addEventListener("abort", this.#onAbort, { once: true });
+  }
+
+  async readNext(): Promise<OriginalDownloadReadResult> {
+    if (this.#cancelled || this.#handle === null) {
+      throw new StorageSafetyError("ORIGINAL_DOWNLOAD_CLOSED");
+    }
+    if (this.#active !== null) {
+      throw new StorageSafetyError("ORIGINAL_DOWNLOAD_BUSY");
+    }
+    if (this.#finished) return { done: true };
+    let operation: Promise<{ bytes: Buffer; final: boolean }>;
+    try {
+      this.#native.startOriginalDownloadRead(this.#handle);
+      operation = waitForOriginalDownloadRead(this.#native, this.#handle);
+    } catch (error) {
+      throw safetyError("ORIGINAL_DOWNLOAD_READ_FAILED", error);
+    }
+    this.#active = operation;
+    try {
+      const result = await operation;
+      if (this.#cancelled || this.#abortSignal.aborted) {
+        throw new StorageSafetyError("ORIGINAL_DOWNLOAD_CANCELLED");
+      }
+      if (
+        !Buffer.isBuffer(result.bytes) ||
+        result.bytes.length < 1 ||
+        result.bytes.length > 256 * 1024 ||
+        typeof result.final !== "boolean"
+      ) {
+        throw new StorageSafetyError("ORIGINAL_DOWNLOAD_PROTOCOL_INVALID");
+      }
+      if (result.final) this.#finished = true;
+      return { done: false, bytes: result.bytes, final: result.final };
+    } catch (error) {
+      if (error instanceof StorageSafetyError) throw error;
+      throw safetyError("ORIGINAL_DOWNLOAD_READ_FAILED", error);
+    } finally {
+      if (this.#active === operation) this.#active = null;
+    }
+  }
+
+  cancel(): Promise<void> {
+    this.#cancelled = true;
+    return this.#close(true);
+  }
+
+  closeScope(): Promise<void> {
+    return this.#close(!this.#finished);
+  }
+
+  #close(cancel: boolean): Promise<void> {
+    if (this.#closePromise !== null) return this.#closePromise;
+    const handle = this.#handle;
+    if (handle === null) return Promise.resolve();
+    if (cancel) {
+      try {
+        this.#native.cancelOriginalDownload(handle);
+      } catch (error) {
+        return Promise.reject(
+          safetyError("ORIGINAL_DOWNLOAD_CANCEL_FAILED", error),
+        );
+      }
+    }
+    const active = this.#active;
+    this.#closePromise = (async () => {
+      try {
+        await active;
+      } catch {
+        // Cancellation/read failure is reported to the read/open caller.
+      }
+      try {
+        this.#native.closeOriginalDownload(handle);
+      } catch (error) {
+        throw safetyError("ORIGINAL_DOWNLOAD_CLOSE_FAILED", error);
+      } finally {
+        this.#handle = null;
+        this.#abortSignal.removeEventListener("abort", this.#onAbort);
+      }
+    })();
+    return this.#closePromise;
+  }
+}
+
 export class OriginalReader {
   readonly markerId: string;
   readonly device: string;
@@ -482,6 +640,71 @@ export class OriginalReader {
       return await callback(handle);
     } finally {
       handle.close();
+    }
+  }
+
+  async withVerifiedDownload<T>(
+    input: { familyId: string; sha256Hex: string; byteSize: string },
+    options: { signal: AbortSignal },
+    callback: (download: VerifiedOriginalDownload) => Promise<T> | T,
+  ): Promise<T> {
+    assertIdentifier(input.familyId, FAMILY_ID, "FAMILY_ID_INVALID");
+    assertIdentifier(input.sha256Hex, SHA256, "SHA256_INVALID");
+    assertIdentifier(input.byteSize, BYTE_SIZE, "BYTE_SIZE_INVALID");
+    options.signal.throwIfAborted();
+    const reader = this.#requiredHandle();
+    let handle: NativeOriginalDownload;
+    try {
+      handle = this.#native.startVerifiedOriginalDownload(
+        reader,
+        input.familyId,
+        input.sha256Hex,
+        input.byteSize,
+      );
+    } catch (error) {
+      throw safetyError("ORIGINAL_DOWNLOAD_OPEN_FAILED", error);
+    }
+    const completion = waitForOriginalDownloadOpen(this.#native, handle);
+    const cancelOpening = () => {
+      try {
+        this.#native.cancelOriginalDownload(handle);
+      } catch {
+        // The completion/close path remains authoritative.
+      }
+    };
+    options.signal.addEventListener("abort", cancelOpening, { once: true });
+    let download: VerifiedOriginalDownloadImpl | undefined;
+    try {
+      try {
+        await completion;
+      } catch (error) {
+        throw safetyError("ORIGINAL_DOWNLOAD_OPEN_FAILED", error);
+      }
+      options.signal.throwIfAborted();
+      options.signal.removeEventListener("abort", cancelOpening);
+      download = new VerifiedOriginalDownloadImpl(
+        handle,
+        this.#native,
+        options.signal,
+      );
+      return await callback(download);
+    } finally {
+      options.signal.removeEventListener("abort", cancelOpening);
+      if (download) {
+        await download.closeScope();
+      } else {
+        cancelOpening();
+        try {
+          await completion;
+        } catch {
+          // Preserve the open/abort error while ensuring native settlement.
+        }
+        try {
+          this.#native.closeOriginalDownload(handle);
+        } catch {
+          // Native open failure already closed its owned resources.
+        }
+      }
     }
   }
 
