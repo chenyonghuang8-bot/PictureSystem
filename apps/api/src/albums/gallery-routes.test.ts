@@ -20,6 +20,10 @@ function setup(media = mediaRow()) {
     list: vi.fn(async () => []),
     listMedia: vi.fn(async () => [media]),
     getMedia: vi.fn(async () => media),
+    putFavorite: vi.fn(async () => ({ isFavorite: true as const })),
+    deleteFavorite: vi.fn(async () => ({ isFavorite: false as const })),
+    putFeatured: vi.fn(async () => ({ isFamilyFeatured: true as const })),
+    deleteFeatured: vi.fn(async () => ({ isFamilyFeatured: false as const })),
   } as unknown as AlbumService;
   return {
     authService,
@@ -43,6 +47,8 @@ function mediaRow() {
     capturedLocalAt: null,
     cameraMake: "Synthetic",
     cameraModel: "Camera",
+    isFavorite: true,
+    isFamilyFeatured: false,
   };
 }
 
@@ -80,6 +86,8 @@ describe("gallery media routes", () => {
         displayWidth: 100,
         displayHeight: 80,
         thumbnail: { kind: "thumbnail" },
+        isFavorite: true,
+        isFamilyFeatured: false,
       },
     ]);
     expect(body.nextCursor).toBe(encodeGalleryCursor(body.media[0]));
@@ -122,8 +130,63 @@ describe("gallery media routes", () => {
       cameraModel: "Camera",
       preview: { kind: "preview" },
       thumbnail: { kind: "thumbnail" },
+      isFavorite: true,
+      isFamilyFeatured: false,
     });
     expect(response.json()).not.toHaveProperty("gpsLatitude");
+    await app.close();
+  });
+
+  it.each([
+    ["PUT", "favorite", { isFavorite: true }],
+    ["DELETE", "favorite", { isFavorite: false }],
+    ["PUT", "featured", { isFamilyFeatured: true }],
+    ["DELETE", "featured", { isFamilyFeatured: false }],
+  ] as const)(
+    "supports %s %s with strict empty JSON",
+    async (method, kind, expected) => {
+      const { app, albumService } = setup();
+      const response = await app.inject({
+        method,
+        url: `/api/v1/albums/3/media/11/${kind}`,
+        headers: {
+          ...cookie(),
+          origin,
+          "content-type": "application/json",
+        },
+        payload: {},
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual(expected);
+      const methodName =
+        kind === "favorite"
+          ? method === "PUT"
+            ? "putFavorite"
+            : "deleteFavorite"
+          : method === "PUT"
+            ? "putFeatured"
+            : "deleteFeatured";
+      expect(albumService[methodName]).toHaveBeenCalledWith(
+        expect.objectContaining({
+          identity: expect.objectContaining({ userId: "7" }),
+        }),
+        "3",
+        "11",
+      );
+      await app.close();
+    },
+  );
+
+  it("rejects extra mutation fields before reaching the service", async () => {
+    const { app, albumService } = setup();
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/v1/albums/3/media/11/favorite",
+      headers: { ...cookie(), origin, "content-type": "application/json" },
+      payload: { memberId: "9" },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(albumService.putFavorite).not.toHaveBeenCalled();
     await app.close();
   });
 });

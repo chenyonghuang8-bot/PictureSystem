@@ -76,6 +76,26 @@ function setup() {
       mediaId: "2",
       removed: true,
     })),
+    putFavorite: vi.fn(async () => ({
+      isFavorite: true as const,
+      familyId: "1",
+      actorMemberId: "3",
+    })),
+    deleteFavorite: vi.fn(async () => ({
+      isFavorite: false as const,
+      familyId: "1",
+      actorMemberId: "3",
+    })),
+    putFeatured: vi.fn(async () => ({
+      isFamilyFeatured: true as const,
+      familyId: "1",
+      actorMemberId: "3",
+    })),
+    deleteFeatured: vi.fn(async () => ({
+      isFamilyFeatured: false as const,
+      familyId: "1",
+      actorMemberId: "3",
+    })),
   } satisfies AlbumRepository;
   return { album, repository, service: new AlbumService(repository) };
 }

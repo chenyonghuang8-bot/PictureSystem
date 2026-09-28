@@ -81,6 +81,34 @@ describe("public share routes", () => {
     await app.close();
   });
 
+  it("returns the exact same public keys with or without a session cookie", async () => {
+    const { app } = setup();
+    const anonymous = await app.inject({
+      method: "GET",
+      url: `/api/v1/share/${token}`,
+    });
+    const authenticated = await app.inject({
+      method: "GET",
+      url: `/api/v1/share/${token}`,
+      headers: { cookie: "__Host-family_session=present-but-irrelevant" },
+    });
+    expect(Object.keys(anonymous.json())).toEqual([
+      "album",
+      "media",
+      "nextCursor",
+    ]);
+    expect(Object.keys(anonymous.json().media[0])).toEqual([
+      "mediaId",
+      "timelineKey",
+      "timelineBasis",
+      "displayWidth",
+      "displayHeight",
+      "thumbnail",
+    ]);
+    expect(authenticated.json()).toEqual(anonymous.json());
+    await app.close();
+  });
+
   it("serves thumbnail bytes and rejects original as not found", async () => {
     const { app } = setup();
     const thumbnail = await app.inject({

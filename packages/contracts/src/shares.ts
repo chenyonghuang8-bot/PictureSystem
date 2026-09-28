@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { unsignedBigIntStringSchema } from "./auth.js";
-import { galleryMediaItemSchema } from "./gallery.js";
+import { publicGalleryMediaItemSchema } from "./gallery.js";
 
 export const createShareRequestSchema = z
   .object({
@@ -55,10 +55,12 @@ export const publicSharePageSchema = z
         name: z.string().min(1).max(128),
       })
       .strict(),
-    media: z.array(galleryMediaItemSchema).max(100),
+    media: z.array(publicGalleryMediaItemSchema).max(100),
     nextCursor: z.string().min(1).nullable(),
   })
   .strict();
+
+export type PublicSharePage = z.infer<typeof publicSharePageSchema>;
 
 export const revokeShareResponseSchema = z
   .object({

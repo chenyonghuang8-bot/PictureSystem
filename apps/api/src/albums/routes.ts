@@ -13,6 +13,8 @@ import {
   albumResponseSchema,
   albumsResponseSchema,
   familyTimelinePageSchema,
+  favoriteStateSchema,
+  featuredStateSchema,
   familyTimelineParamsSchema,
   galleryMediaDetailSchema,
   galleryMediaPageSchema,
@@ -139,6 +141,114 @@ export function registerAlbumRoutes(
           albumId,
         });
         return reply.send(albumMediaPlacementSchema.parse(placement));
+      }),
+  );
+
+  app.put(
+    "/api/v1/albums/:albumId/media/:mediaId/favorite",
+    { bodyLimit: 4_096 },
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_favorite_put", async () => {
+        requireTrustedJsonOrigin(request, trustedOrigins);
+        emptyObjectRequestSchema.parse(request.body);
+        const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+          request.params,
+        );
+        const context = await authenticate(request, authService);
+        const state = await albumService.putFavorite(context, albumId, mediaId);
+        logAlbumEvent(request, "media_favorite_added", {
+          actorMemberId: state.actorMemberId,
+          familyId: state.familyId,
+          albumId,
+          mediaId,
+        });
+        return reply.send(
+          favoriteStateSchema.parse({ isFavorite: state.isFavorite }),
+        );
+      }),
+  );
+
+  app.delete(
+    "/api/v1/albums/:albumId/media/:mediaId/favorite",
+    { bodyLimit: 4_096 },
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_favorite_delete", async () => {
+        requireTrustedJsonOrigin(request, trustedOrigins);
+        emptyObjectRequestSchema.parse(request.body);
+        const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+          request.params,
+        );
+        const context = await authenticate(request, authService);
+        const state = await albumService.deleteFavorite(
+          context,
+          albumId,
+          mediaId,
+        );
+        logAlbumEvent(request, "media_favorite_removed", {
+          actorMemberId: state.actorMemberId,
+          familyId: state.familyId,
+          albumId,
+          mediaId,
+        });
+        return reply.send(
+          favoriteStateSchema.parse({ isFavorite: state.isFavorite }),
+        );
+      }),
+  );
+
+  app.put(
+    "/api/v1/albums/:albumId/media/:mediaId/featured",
+    { bodyLimit: 4_096 },
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_featured_put", async () => {
+        requireTrustedJsonOrigin(request, trustedOrigins);
+        emptyObjectRequestSchema.parse(request.body);
+        const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+          request.params,
+        );
+        const context = await authenticate(request, authService);
+        const state = await albumService.putFeatured(context, albumId, mediaId);
+        logAlbumEvent(request, "media_featured_added", {
+          actorMemberId: state.actorMemberId,
+          familyId: state.familyId,
+          albumId,
+          mediaId,
+        });
+        return reply.send(
+          featuredStateSchema.parse({
+            isFamilyFeatured: state.isFamilyFeatured,
+          }),
+        );
+      }),
+  );
+
+  app.delete(
+    "/api/v1/albums/:albumId/media/:mediaId/featured",
+    { bodyLimit: 4_096 },
+    async (request, reply) =>
+      handleAlbum(request, reply, "media_featured_delete", async () => {
+        requireTrustedJsonOrigin(request, trustedOrigins);
+        emptyObjectRequestSchema.parse(request.body);
+        const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+          request.params,
+        );
+        const context = await authenticate(request, authService);
+        const state = await albumService.deleteFeatured(
+          context,
+          albumId,
+          mediaId,
+        );
+        logAlbumEvent(request, "media_featured_removed", {
+          actorMemberId: state.actorMemberId,
+          familyId: state.familyId,
+          albumId,
+          mediaId,
+        });
+        return reply.send(
+          featuredStateSchema.parse({
+            isFamilyFeatured: state.isFamilyFeatured,
+          }),
+        );
       }),
   );
 
@@ -431,6 +541,7 @@ type AlbumIdentifiers = {
   revision?: string;
   changedFields?: string[];
   targetMemberId?: string;
+  mediaId?: string;
 };
 
 export function logAlbumEvent(
@@ -452,6 +563,7 @@ export function logAlbumEvent(
         revision: identifiers.revision,
         changedFields: identifiers.changedFields,
         targetMemberId: identifiers.targetMemberId,
+        mediaId: identifiers.mediaId,
       }),
     },
     "security event",

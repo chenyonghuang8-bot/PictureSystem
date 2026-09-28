@@ -16,6 +16,8 @@ const item = {
   displayWidth: 320,
   displayHeight: 240,
   thumbnail: { kind: "thumbnail" },
+  isFavorite: false,
+  isFamilyFeatured: false,
 };
 
 afterEach(() => {

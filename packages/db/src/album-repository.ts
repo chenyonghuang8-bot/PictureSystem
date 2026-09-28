@@ -55,6 +55,8 @@ export type FamilyTimelineRecord = {
   timelineBasis: "CAPTURE_LOCAL" | "UPLOAD_UTC";
   displayWidth: number | null;
   displayHeight: number | null;
+  isFavorite: boolean;
+  isFamilyFeatured: boolean;
 };
 
 export type AlbumMediaRecord = {
@@ -67,6 +69,8 @@ export type AlbumMediaRecord = {
   capturedLocalAt: Date | null;
   cameraMake: string | null;
   cameraModel: string | null;
+  isFavorite: boolean;
+  isFamilyFeatured: boolean;
 };
 
 export class AlbumRepositoryError extends Error {
@@ -296,8 +300,14 @@ export class MySqlAlbumRepository {
     return this.withVisibleAlbum(
       input.actor,
       input.albumId,
-      (connection, album) =>
-        readAlbumMedia(connection, album, input.limit, input.cursor),
+      (connection, album, actorMemberId) =>
+        readAlbumMedia(
+          connection,
+          album,
+          actorMemberId,
+          input.limit,
+          input.cursor,
+        ),
     );
   }
 
@@ -309,8 +319,15 @@ export class MySqlAlbumRepository {
     const rows = await this.withVisibleAlbum(
       input.actor,
       input.albumId,
-      (connection, album) =>
-        readAlbumMedia(connection, album, 1, undefined, input.mediaId),
+      (connection, album, actorMemberId) =>
+        readAlbumMedia(
+          connection,
+          album,
+          actorMemberId,
+          1,
+          undefined,
+          input.mediaId,
+        ),
     );
     const row = rows[0];
     if (!row) throw new AlbumRepositoryError("NOT_FOUND");
@@ -345,6 +362,186 @@ export class MySqlAlbumRepository {
     );
   }
 
+  async putFavorite(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+  }): Promise<{
+    isFavorite: true;
+    familyId: string;
+    actorMemberId: string;
+  }> {
+    return this.mutateMediaState(input, false, async (connection, scope) => {
+      const existing = await lockFavorite(
+        connection,
+        scope.familyId,
+        scope.actorMemberId,
+        input.mediaId,
+      );
+      if (existing) return { isFavorite: true };
+      try {
+        await connection.query<ResultSetHeader>(
+          `INSERT INTO user_favorites (family_id, member_id, media_id)
+           VALUES (?, ?, ?)`,
+          [scope.familyId, scope.actorMemberId, input.mediaId],
+        );
+      } catch (error) {
+        if (!isApprovedIdentityDuplicate(error, "uq_user_favorites_identity")) {
+          throw error;
+        }
+        const raced = await lockFavorite(
+          connection,
+          scope.familyId,
+          scope.actorMemberId,
+          input.mediaId,
+        );
+        if (!raced) throw error;
+      }
+      return { isFavorite: true };
+    });
+  }
+
+  async deleteFavorite(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+  }): Promise<{
+    isFavorite: false;
+    familyId: string;
+    actorMemberId: string;
+  }> {
+    return this.mutateMediaState(input, false, async (connection, scope) => {
+      const existing = await lockFavorite(
+        connection,
+        scope.familyId,
+        scope.actorMemberId,
+        input.mediaId,
+      );
+      if (existing) {
+        const [removed] = await connection.query<ResultSetHeader>(
+          `DELETE FROM user_favorites
+            WHERE id = ? AND family_id = ? AND member_id = ? AND media_id = ?`,
+          [existing, scope.familyId, scope.actorMemberId, input.mediaId],
+        );
+        if (removed.affectedRows !== 1) {
+          throw new AlbumRepositoryError("CONFLICT");
+        }
+      }
+      return { isFavorite: false };
+    });
+  }
+
+  async putFeatured(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+  }): Promise<{
+    isFamilyFeatured: true;
+    familyId: string;
+    actorMemberId: string;
+  }> {
+    return this.mutateMediaState(input, true, async (connection, scope) => {
+      const existing = await lockFeatured(
+        connection,
+        scope.familyId,
+        input.mediaId,
+      );
+      if (existing) return { isFamilyFeatured: true };
+      try {
+        await connection.query<ResultSetHeader>(
+          `INSERT INTO family_featured
+            (family_id, media_id, featured_by_member_id)
+           VALUES (?, ?, ?)`,
+          [scope.familyId, input.mediaId, scope.actorMemberId],
+        );
+      } catch (error) {
+        if (
+          !isApprovedIdentityDuplicate(error, "uq_family_featured_identity")
+        ) {
+          throw error;
+        }
+        const raced = await lockFeatured(
+          connection,
+          scope.familyId,
+          input.mediaId,
+        );
+        if (!raced) throw error;
+      }
+      return { isFamilyFeatured: true };
+    });
+  }
+
+  async deleteFeatured(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+  }): Promise<{
+    isFamilyFeatured: false;
+    familyId: string;
+    actorMemberId: string;
+  }> {
+    return this.mutateMediaState(input, true, async (connection, scope) => {
+      const existing = await lockFeatured(
+        connection,
+        scope.familyId,
+        input.mediaId,
+      );
+      if (existing) {
+        const [removed] = await connection.query<ResultSetHeader>(
+          `DELETE FROM family_featured
+            WHERE id = ? AND family_id = ? AND media_id = ?`,
+          [existing, scope.familyId, input.mediaId],
+        );
+        if (removed.affectedRows !== 1) {
+          throw new AlbumRepositoryError("CONFLICT");
+        }
+      }
+      return { isFamilyFeatured: false };
+    });
+  }
+
+  private async mutateMediaState<T>(
+    input: { actor: Phase1CActor; albumId: string; mediaId: string },
+    requireFeaturedManager: boolean,
+    mutate: (
+      connection: PoolConnection,
+      scope: { familyId: string; actorMemberId: string },
+    ) => Promise<T>,
+  ): Promise<T & { familyId: string; actorMemberId: string }> {
+    const familyId = await this.locateAlbumFamily(input.albumId);
+    if (!familyId) throw new AlbumRepositoryError("NOT_FOUND");
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, familyId);
+      const actor = await lockActor(connection, familyId, input.actor);
+      const album = await lockAlbum(connection, familyId, input.albumId);
+      const grant = album
+        ? await lockGrant(connection, familyId, album.id, actor.member.id)
+        : undefined;
+      const hasPlacement = await lockMediaPlacement(
+        connection,
+        familyId,
+        input.albumId,
+        input.mediaId,
+      );
+      const now = await readServerTime(connection);
+      assertActor(actor, input.actor, now);
+      assertVisible(album, actor.member, grant);
+      if (!hasPlacement) throw new AlbumRepositoryError("NOT_FOUND");
+      if (
+        requireFeaturedManager &&
+        actor.member.role !== "ADMIN" &&
+        actor.member.role !== "SUPER_ADMIN"
+      ) {
+        throw new AlbumRepositoryError("FORBIDDEN");
+      }
+      const scope = {
+        familyId,
+        actorMemberId: actor.member.id,
+      };
+      return { ...(await mutate(connection, scope)), ...scope };
+    });
+  }
+
   private async mutatePlacement<T extends { albumId: string; mediaId: string }>(
     input: { actor: Phase1CActor; albumId: string; mediaId: string },
     allow: (context: AlbumPermissionContext) => boolean,
@@ -373,7 +570,11 @@ export class MySqlAlbumRepository {
   private async withVisibleAlbum<T>(
     actor: Phase1CActor,
     albumId: string,
-    read: (connection: PoolConnection, album: AlbumRecord) => Promise<T>,
+    read: (
+      connection: PoolConnection,
+      album: AlbumRecord,
+      actorMemberId: string,
+    ) => Promise<T>,
   ): Promise<T> {
     const familyId = await this.locateAlbumFamily(albumId);
     if (!familyId) throw new AlbumRepositoryError("NOT_FOUND");
@@ -387,7 +588,7 @@ export class MySqlAlbumRepository {
       const now = await readServerTime(connection);
       assertActor(locked, actor, now);
       const visible = assertVisible(album, locked.member, grant);
-      return read(connection, visible);
+      return read(connection, visible, locked.member.id);
     });
   }
 
@@ -1218,6 +1419,8 @@ type AlbumMediaRow = RowDataPacket & {
   capturedLocalAt: Date | null;
   cameraMake: string | null;
   cameraModel: string | null;
+  isFavorite: number;
+  isFamilyFeatured: number;
 };
 
 async function readFamilyTimeline(
@@ -1235,7 +1438,9 @@ async function readFamilyTimeline(
             m.timeline_key AS timelineKey,
             m.timeline_basis AS timelineBasis,
             m.display_width AS displayWidth,
-            m.display_height AS displayHeight
+            m.display_height AS displayHeight,
+            MAX(CASE WHEN favorite.id IS NULL THEN 0 ELSE 1 END) AS isFavorite,
+            MAX(CASE WHEN featured.id IS NULL THEN 0 ELSE 1 END) AS isFamilyFeatured
        FROM media_items m
        JOIN album_media placement
          ON placement.family_id = m.family_id
@@ -1248,6 +1453,13 @@ async function readFamilyTimeline(
          ON grant_row.family_id = a.family_id
         AND grant_row.album_id = a.id
         AND grant_row.member_id = ?
+       LEFT JOIN user_favorites favorite
+         ON favorite.family_id = m.family_id
+        AND favorite.media_id = m.id
+        AND favorite.member_id = ?
+       LEFT JOIN family_featured featured
+         ON featured.family_id = m.family_id
+        AND featured.media_id = m.id
       WHERE m.family_id = ?
         AND (a.owner_member_id = ? OR a.visibility = 'FAMILY'
              OR grant_row.can_view = 1)
@@ -1261,6 +1473,7 @@ async function readFamilyTimeline(
       ORDER BY m.timeline_key DESC, m.id DESC
       LIMIT ?`,
     [
+      memberId,
       memberId,
       familyId,
       memberId,
@@ -1278,12 +1491,15 @@ async function readFamilyTimeline(
     timelineBasis: row.timelineBasis,
     displayWidth: nullableInteger(row.displayWidth),
     displayHeight: nullableInteger(row.displayHeight),
+    isFavorite: Number(row.isFavorite) === 1,
+    isFamilyFeatured: Number(row.isFamilyFeatured) === 1,
   }));
 }
 
 async function readAlbumMedia(
   connection: PoolConnection,
   album: AlbumRecord,
+  actorMemberId: string,
   limit: number,
   cursor?: { timelineKey: Date; mediaId: string },
   mediaId?: string,
@@ -1297,10 +1513,19 @@ async function readAlbumMedia(
             m.orientation AS orientation,
             m.captured_local_at AS capturedLocalAt,
             m.camera_make AS cameraMake,
-            m.camera_model AS cameraModel
+            m.camera_model AS cameraModel,
+            CASE WHEN favorite.id IS NULL THEN 0 ELSE 1 END AS isFavorite,
+            CASE WHEN featured.id IS NULL THEN 0 ELSE 1 END AS isFamilyFeatured
        FROM album_media am
        JOIN media_items m
          ON m.family_id = am.family_id AND m.id = am.media_id
+       LEFT JOIN user_favorites favorite
+         ON favorite.family_id = m.family_id
+        AND favorite.media_id = m.id
+        AND favorite.member_id = ?
+       LEFT JOIN family_featured featured
+         ON featured.family_id = m.family_id
+        AND featured.media_id = m.id
       WHERE am.family_id = ? AND am.album_id = ?
         AND (? IS NULL OR am.media_id = ?)
         AND (
@@ -1311,6 +1536,7 @@ async function readAlbumMedia(
       ORDER BY m.timeline_key DESC, m.id DESC
       LIMIT ?`,
     [
+      actorMemberId,
       album.familyId,
       album.id,
       mediaId ?? null,
@@ -1332,7 +1558,90 @@ async function readAlbumMedia(
     capturedLocalAt: row.capturedLocalAt,
     cameraMake: row.cameraMake,
     cameraModel: row.cameraModel,
+    isFavorite: Number(row.isFavorite) === 1,
+    isFamilyFeatured: Number(row.isFamilyFeatured) === 1,
   }));
+}
+
+async function lockMediaPlacement(
+  connection: PoolConnection,
+  familyId: string,
+  albumId: string,
+  mediaId: string,
+) {
+  const [media] = await connection.query<RowDataPacket[]>(
+    `SELECT id FROM media_items
+      WHERE family_id = ? AND id = ? FOR UPDATE`,
+    [familyId, mediaId],
+  );
+  if (!media[0]) return false;
+  const [placement] = await connection.query<RowDataPacket[]>(
+    `SELECT id FROM album_media
+      WHERE family_id = ? AND album_id = ? AND media_id = ? FOR UPDATE`,
+    [familyId, albumId, mediaId],
+  );
+  return Boolean(placement[0]);
+}
+
+async function lockFavorite(
+  connection: PoolConnection,
+  familyId: string,
+  memberId: string,
+  mediaId: string,
+) {
+  const [rows] = await connection.query<RowDataPacket[]>(
+    `SELECT CAST(id AS CHAR) AS id FROM user_favorites
+      WHERE family_id = ? AND member_id = ? AND media_id = ? FOR UPDATE`,
+    [familyId, memberId, mediaId],
+  );
+  return rows[0] ? String(rows[0].id) : null;
+}
+
+async function lockFeatured(
+  connection: PoolConnection,
+  familyId: string,
+  mediaId: string,
+) {
+  const [rows] = await connection.query<RowDataPacket[]>(
+    `SELECT CAST(id AS CHAR) AS id FROM family_featured
+      WHERE family_id = ? AND media_id = ? FOR UPDATE`,
+    [familyId, mediaId],
+  );
+  return rows[0] ? String(rows[0].id) : null;
+}
+
+export function isApprovedIdentityDuplicate(
+  error: unknown,
+  constraint: "uq_user_favorites_identity" | "uq_family_featured_identity",
+) {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as {
+    code?: string;
+    errno?: number;
+    sqlState?: string;
+    sqlMessage?: string;
+    message?: string;
+  };
+  if (
+    candidate.code !== "ER_DUP_ENTRY" ||
+    candidate.errno !== 1062 ||
+    candidate.sqlState !== "23000"
+  ) {
+    return false;
+  }
+  const message = candidate.sqlMessage ?? candidate.message;
+  if (!message) return false;
+  const match = /^Duplicate entry .* for key '([^']+)'$/u.exec(message);
+  if (!match?.[1]) return false;
+  const identifiers = match[1].split(".");
+  if (
+    identifiers.length < 1 ||
+    identifiers.length > 3 ||
+    identifiers.some((identifier) => !/^[A-Za-z0-9_$]+$/u.test(identifier))
+  ) {
+    return false;
+  }
+  return identifiers.at(-1) === constraint;
 }
 
 function nullableInteger(value: unknown) {

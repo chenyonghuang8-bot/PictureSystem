@@ -20,6 +20,8 @@ const item = {
   displayWidth: 320,
   displayHeight: 240,
   thumbnail: { kind: "thumbnail" as const },
+  isFavorite: false,
+  isFamilyFeatured: false,
 };
 
 describe("gallery pages", () => {

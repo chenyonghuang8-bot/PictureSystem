@@ -7,7 +7,7 @@ import { StorageSafetyError } from "@family-album/storage";
 import {
   decodeGalleryCursor,
   encodeGalleryCursor,
-  galleryMediaItem,
+  publicGalleryMediaItem,
 } from "../albums/service.js";
 import { PublicAuthError } from "../auth/service.js";
 import type { DerivedByteReader } from "../derived-serving/service.js";
@@ -49,15 +49,7 @@ export class PublicShareService {
         shareId: capability.shareId,
       }),
     );
-    const media = page.media.map((item) =>
-      galleryMediaItem({
-        ...item,
-        orientation: null,
-        capturedLocalAt: null,
-        cameraMake: null,
-        cameraModel: null,
-      }),
-    );
+    const media = page.media.map((item) => publicGalleryMediaItem(item));
     return {
       shareId: capability.shareId,
       album: { name: page.name },

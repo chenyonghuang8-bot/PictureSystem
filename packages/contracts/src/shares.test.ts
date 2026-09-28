@@ -5,7 +5,13 @@ import {
   createShareResponseSchema,
   listSharesQuerySchema,
   shareListResponseSchema,
+  publicSharePageSchema,
 } from "./shares.js";
+import {
+  favoriteStateSchema,
+  featuredStateSchema,
+  galleryMediaItemSchema,
+} from "./gallery.js";
 
 describe("share management contracts", () => {
   it("requires an expiry and rejects a token on the request", () => {
@@ -54,5 +60,45 @@ describe("share management contracts", () => {
       limit: 20,
     });
     expect(listSharesQuerySchema.safeParse({}).success).toBe(false);
+  });
+
+  it("separates strict public media from private gallery state", () => {
+    const publicMedia = {
+      mediaId: "11",
+      timelineKey: "2026-01-01T00:00:00.000Z",
+      timelineBasis: "UPLOAD_UTC",
+      displayWidth: 10,
+      displayHeight: 20,
+      thumbnail: { kind: "thumbnail" },
+    };
+    expect(
+      publicSharePageSchema.parse({
+        album: { name: "Album" },
+        media: [publicMedia],
+        nextCursor: null,
+      }).media[0],
+    ).toEqual(publicMedia);
+    expect(
+      publicSharePageSchema.safeParse({
+        album: { name: "Album" },
+        media: [{ ...publicMedia, isFavorite: true }],
+        nextCursor: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      galleryMediaItemSchema.parse({
+        ...publicMedia,
+        isFavorite: true,
+        isFamilyFeatured: false,
+      }),
+    ).toMatchObject({ isFavorite: true, isFamilyFeatured: false });
+    expect(
+      favoriteStateSchema.safeParse({ isFavorite: true, memberId: "1" })
+        .success,
+    ).toBe(false);
+    expect(
+      featuredStateSchema.safeParse({ isFamilyFeatured: true, familyId: "1" })
+        .success,
+    ).toBe(false);
   });
 });

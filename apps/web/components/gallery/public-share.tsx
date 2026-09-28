@@ -2,7 +2,7 @@
 
 import {
   publicSharePageSchema,
-  type GalleryMediaPage,
+  type PublicSharePage,
 } from "@family-album/contracts";
 import { useState } from "react";
 
@@ -16,7 +16,7 @@ import { PhotoPlaceholder } from "./states.js";
 
 const PAGE_SIZE = 24;
 
-type PublicMedia = GalleryMediaPage["media"][number];
+type PublicMedia = PublicSharePage["media"][number];
 
 export function PublicShareMissing() {
   return (

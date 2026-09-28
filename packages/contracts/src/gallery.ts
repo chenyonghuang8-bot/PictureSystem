@@ -24,7 +24,7 @@ export const galleryCursorSchema = z
   })
   .strict();
 
-export const galleryMediaItemSchema = z
+export const publicGalleryMediaItemSchema = z
   .object({
     mediaId: unsignedBigIntStringSchema,
     timelineKey: z.iso.datetime(),
@@ -33,6 +33,21 @@ export const galleryMediaItemSchema = z
     displayHeight: z.number().int().positive().nullable(),
     thumbnail: z.object({ kind: z.literal("thumbnail") }).strict(),
   })
+  .strict();
+
+export const galleryMediaItemSchema = publicGalleryMediaItemSchema
+  .extend({
+    isFavorite: z.boolean(),
+    isFamilyFeatured: z.boolean(),
+  })
+  .strict();
+
+export const favoriteStateSchema = z
+  .object({ isFavorite: z.boolean() })
+  .strict();
+
+export const featuredStateSchema = z
+  .object({ isFamilyFeatured: z.boolean() })
   .strict();
 
 export const galleryMediaPageSchema = z

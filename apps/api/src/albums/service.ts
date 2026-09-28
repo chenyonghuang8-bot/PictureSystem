@@ -30,6 +30,10 @@ export type AlbumRepository = Pick<
   | "addAlbumMedia"
   | "removeAlbumMedia"
   | "listFamilyTimeline"
+  | "putFavorite"
+  | "deleteFavorite"
+  | "putFeatured"
+  | "deleteFeatured"
 >;
 
 export class AlbumService {
@@ -127,6 +131,46 @@ export class AlbumService {
   async getMedia(context: AuthContext, albumId: string, mediaId: string) {
     return this.database(() =>
       this.repository.getAlbumMedia({
+        actor: actor(context),
+        albumId,
+        mediaId,
+      }),
+    );
+  }
+
+  async putFavorite(context: AuthContext, albumId: string, mediaId: string) {
+    return this.database(() =>
+      this.repository.putFavorite({
+        actor: actor(context),
+        albumId,
+        mediaId,
+      }),
+    );
+  }
+
+  async deleteFavorite(context: AuthContext, albumId: string, mediaId: string) {
+    return this.database(() =>
+      this.repository.deleteFavorite({
+        actor: actor(context),
+        albumId,
+        mediaId,
+      }),
+    );
+  }
+
+  async putFeatured(context: AuthContext, albumId: string, mediaId: string) {
+    return this.database(() =>
+      this.repository.putFeatured({
+        actor: actor(context),
+        albumId,
+        mediaId,
+      }),
+    );
+  }
+
+  async deleteFeatured(context: AuthContext, albumId: string, mediaId: string) {
+    return this.database(() =>
+      this.repository.deleteFeatured({
         actor: actor(context),
         albumId,
         mediaId,
@@ -279,10 +323,14 @@ export function familyTimelineItem(row: {
   timelineBasis: AlbumMediaRecord["timelineBasis"];
   displayWidth: number | null;
   displayHeight: number | null;
+  isFavorite?: boolean;
+  isFamilyFeatured?: boolean;
 }) {
   return {
     ...galleryMediaItem({
       ...row,
+      isFavorite: row.isFavorite ?? false,
+      isFamilyFeatured: row.isFamilyFeatured ?? false,
       orientation: null,
       capturedLocalAt: null,
       cameraMake: null,
@@ -293,6 +341,25 @@ export function familyTimelineItem(row: {
 }
 
 export function galleryMediaItem(row: AlbumMediaRecord) {
+  return {
+    mediaId: row.mediaId,
+    timelineKey: row.timelineKey.toISOString(),
+    timelineBasis: row.timelineBasis,
+    displayWidth: row.displayWidth,
+    displayHeight: row.displayHeight,
+    thumbnail: { kind: "thumbnail" as const },
+    isFavorite: row.isFavorite ?? false,
+    isFamilyFeatured: row.isFamilyFeatured ?? false,
+  };
+}
+
+export function publicGalleryMediaItem(row: {
+  mediaId: string;
+  timelineKey: Date;
+  timelineBasis: AlbumMediaRecord["timelineBasis"];
+  displayWidth: number | null;
+  displayHeight: number | null;
+}) {
   return {
     mediaId: row.mediaId,
     timelineKey: row.timelineKey.toISOString(),

@@ -3,14 +3,21 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createShareToken } from "../../packages/auth/src/token.js";
+import {
+  createSessionToken,
+  createShareToken,
+  hashSessionToken,
+} from "../../packages/auth/src/token.js";
 import {
   assertMigrationReadiness,
   createDatabase,
   MySqlAlbumRepository,
+  MySqlAuthRepository,
   MySqlDerivedReadRepository,
   MySqlShareRepository,
 } from "../../packages/db/src/index.js";
+import { createApp } from "../../apps/api/src/app.js";
+import { AuthService } from "../../apps/api/src/auth/service.js";
 import { PublicShareService } from "../../apps/api/src/shares/public-service.js";
 import { ShareService } from "../../apps/api/src/shares/service.js";
 
@@ -31,7 +38,8 @@ describe.sequential("Phase 5C public share API", () => {
     },
   });
   const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
-  const ownerHash = randomBytes(32);
+  const ownerSessionToken = createSessionToken();
+  const ownerHash = hashSessionToken(ownerSessionToken);
   let familyId = "";
   let ownerUserId = "";
   let ownerSessionId = "";
@@ -102,6 +110,16 @@ describe.sequential("Phase 5C public share API", () => {
         "INSERT INTO album_media (family_id, album_id, media_id) VALUES (?,?,?)",
         [familyId, albumId, mediaId],
       );
+      await connection.query(
+        `INSERT INTO user_favorites (family_id,member_id,media_id)
+         VALUES (?,?,?)`,
+        [familyId, ownerMemberId, mediaId],
+      );
+      await connection.query(
+        `INSERT INTO family_featured
+          (family_id,media_id,featured_by_member_id) VALUES (?,?,?)`,
+        [familyId, mediaId, ownerMemberId],
+      );
       await insertReady(
         connection,
         familyId,
@@ -136,6 +154,14 @@ describe.sequential("Phase 5C public share API", () => {
       ]);
       await database.pool.query(
         `DELETE FROM derived_assets WHERE family_id = ?`,
+        [familyId],
+      );
+      await database.pool.query(
+        `DELETE FROM user_favorites WHERE family_id = ?`,
+        [familyId],
+      );
+      await database.pool.query(
+        `DELETE FROM family_featured WHERE family_id = ?`,
         [familyId],
       );
       await database.pool.query(
@@ -200,6 +226,61 @@ describe.sequential("Phase 5C public share API", () => {
       code: "NOT_FOUND",
     });
     expect(await accessCount()).toBe(1);
+  });
+
+  it("returns the identical public whitelist with a real valid session", async () => {
+    const authService = await AuthService.create(
+      new MySqlAuthRepository(database.pool),
+      {
+        verify: async () => false,
+        hash: async () => "synthetic-unused",
+        needsRehash: () => false,
+        isValidHash: (value): value is string => typeof value === "string",
+      },
+    );
+    await expect(
+      authService.authenticate(ownerSessionToken),
+    ).resolves.toMatchObject({
+      identity: { userId: ownerUserId, sessionId: ownerSessionId },
+    });
+    const app = createApp({
+      authService,
+      publicShareService: service,
+      trustedOrigins: new Set(["https://localhost:3000"]),
+    });
+    try {
+      const anonymous = await app.inject({
+        method: "GET",
+        url: `/api/v1/share/${token}`,
+      });
+      const authenticated = await app.inject({
+        method: "GET",
+        url: `/api/v1/share/${token}`,
+        headers: {
+          cookie: `__Host-family_session=${ownerSessionToken}`,
+        },
+      });
+      expect(authenticated.statusCode).toBe(anonymous.statusCode);
+      expect(authenticated.json()).toEqual(anonymous.json());
+      expect(Object.keys(anonymous.json())).toEqual([
+        "album",
+        "media",
+        "nextCursor",
+      ]);
+      expect(Object.keys(anonymous.json().media[0])).toEqual([
+        "mediaId",
+        "timelineKey",
+        "timelineBasis",
+        "displayWidth",
+        "displayHeight",
+        "thumbnail",
+      ]);
+      expect(JSON.stringify(anonymous.json())).not.toMatch(
+        /isFavorite|isFamilyFeatured|tags|note|noteRevision|comments|commentCount|capabilities|memberId|familyId/i,
+      );
+    } finally {
+      await app.close();
+    }
   });
 
   it("hides removed, missing, expired, revoked, deleted, and invalid links", async () => {

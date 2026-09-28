@@ -22,6 +22,8 @@ function setup() {
     timelineBasis: "CAPTURE_LOCAL" as const,
     displayWidth: 320,
     displayHeight: 240,
+    isFavorite: false,
+    isFamilyFeatured: true,
   };
   const albumService = {
     listTimeline: vi.fn(async () => [row]),
@@ -68,6 +70,8 @@ describe("family timeline route", () => {
         displayWidth: 320,
         displayHeight: 240,
         thumbnail: { kind: "thumbnail" },
+        isFavorite: false,
+        isFamilyFeatured: true,
       },
     ]);
     expect(body.nextCursor).toBe(encodeGalleryCursor(body.media[0]));
