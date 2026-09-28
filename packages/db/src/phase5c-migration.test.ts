@@ -65,7 +65,7 @@ function columnNames(table: Parameters<typeof getTableConfig>[0]): string[] {
 
 describe("0005 sharing migration", () => {
   it("appends one additive journal entry after the unchanged 0004 migration", () => {
-    expect(journal.entries.map((entry) => entry.tag)).toEqual([
+    expect(journal.entries.slice(0, 6).map((entry) => entry.tag)).toEqual([
       "0000_phase_01a_identity_foundation",
       "0001_phase_02_albums_permissions",
       "0002_phase_03_storage_uploads",
@@ -179,7 +179,9 @@ describe("0005 sharing migration", () => {
       Object.keys(snapshot0004.tables.album_media!.columns).sort(),
     );
     expect(columnNames(mediaItems)).toEqual(
-      Object.keys(snapshot0004.tables.media_items!.columns).sort(),
+      expect.arrayContaining(
+        Object.keys(snapshot0004.tables.media_items!.columns),
+      ),
     );
     expect(columnNames(derivedAssets)).toEqual(
       Object.keys(snapshot0004.tables.derived_assets!.columns).sort(),

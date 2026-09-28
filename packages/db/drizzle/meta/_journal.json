@@ -43,6 +43,13 @@
       "when": 1790220218434,
       "tag": "0005_phase_05c_sharing",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1790521546693,
+      "tag": "0006_phase_06_album_features",
+      "breakpoints": true
     }
   ]
 }

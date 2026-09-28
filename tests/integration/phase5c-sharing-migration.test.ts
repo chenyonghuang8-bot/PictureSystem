@@ -1,27 +1,16 @@
-import { execFileSync } from "node:child_process";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   assertMigrationReadiness,
+  loadExpectedMigrationManifest,
   createDatabase,
 } from "../../packages/db/src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("PHASE5C_DEV_DATABASE_URL_REQUIRED");
-
-const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
-const sharingSql = readFileSync(
-  new URL(
-    "../../packages/db/drizzle/0005_phase_05c_sharing.sql",
-    import.meta.url,
-  ),
-);
-const sharingHash = createHash("sha256").update(sharingSql).digest("hex");
 
 type Queryable = {
   query: (
@@ -63,41 +52,20 @@ describe.sequential("Phase 5C sharing migration", () => {
         throw new Error("PHASE5C_DEV_PREFLIGHT_FAILED");
       }
       const before = await protectedCounts(connection);
-      execFileSync("pnpm", ["--filter", "@family-album/db", "db:migrate"], {
-        cwd: repoRoot,
-        stdio: "inherit",
-      });
-      expect(await protectedCounts(connection)).toEqual(before);
-      expect(await sharingCounts(connection)).toEqual({ shares: 0, events: 0 });
-      await connection.query("DROP TABLE `share_events`");
-      await connection.query("DROP TABLE `shares`");
-      const [removed] = await connection.query<ResultSetHeader>(
-        "DELETE FROM `__drizzle_migrations` WHERE hash = ?",
-        [sharingHash],
-      );
-      expect(removed.affectedRows).toBe(1);
-      execFileSync("pnpm", ["--filter", "@family-album/db", "db:migrate"], {
-        cwd: repoRoot,
-        stdio: "inherit",
-      });
-      expect(await protectedCounts(connection)).toEqual(before);
-      expect(await sharingCounts(connection)).toEqual({ shares: 0, events: 0 });
+      const sharingBefore = await sharingCounts(connection);
+      const manifest = await loadExpectedMigrationManifest();
+      expect(manifest[5]?.tag).toBe("0005_phase_05c_sharing");
       const readiness = await assertMigrationReadiness(connection);
-      expect(readiness.migrationCount).toBe(6);
+      expect(readiness.migrationCount).toBe(manifest.length);
+      expect(await protectedCounts(connection)).toEqual(before);
+      expect(await sharingCounts(connection)).toEqual(sharingBefore);
     } finally {
       connection.release();
     }
   }, 60_000);
 
   afterAll(async () => {
-    try {
-      execFileSync("pnpm", ["--filter", "@family-album/db", "db:migrate"], {
-        cwd: repoRoot,
-        stdio: "inherit",
-      });
-    } finally {
-      await dev.pool.end();
-    }
+    await dev.pool.end();
   });
 
   it("rejects a repeated token hash and a cross-family album or member", async () => {

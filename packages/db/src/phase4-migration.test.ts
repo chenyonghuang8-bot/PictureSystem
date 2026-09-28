@@ -151,8 +151,10 @@ describe("Phase 4A versioned migration", () => {
     for (const table of tables) {
       const config = getTableConfig(table);
       const snap = snapshot.tables[config.name]!;
-      expect(Object.keys(snap.columns).sort()).toEqual(
-        config.columns.map((column) => column.name).sort(),
+      // Later additive migrations may extend media_items; 0003 must retain
+      // every historical column, index, FK and check in the current schema.
+      expect(config.columns.map((column) => column.name)).toEqual(
+        expect.arrayContaining(Object.keys(snap.columns)),
       );
       expect(Object.keys(snap.indexes).sort()).toEqual(
         config.indexes.map((item) => item.config.name).sort(),
@@ -160,8 +162,8 @@ describe("Phase 4A versioned migration", () => {
       expect(Object.keys(snap.foreignKeys).sort()).toEqual(
         config.foreignKeys.map((key) => key.getName()).sort(),
       );
-      expect(Object.keys(snap.checkConstraint).sort()).toEqual(
-        config.checks.map((item) => item.name).sort(),
+      expect(config.checks.map((item) => item.name)).toEqual(
+        expect.arrayContaining(Object.keys(snap.checkConstraint)),
       );
       for (const [name, check] of Object.entries(snap.checkConstraint)) {
         expect(migration).toContain(

@@ -47,6 +47,7 @@ const snapshot0004 = JSON.parse(
   tables: Record<
     string,
     {
+      columns: Record<string, unknown>;
       foreignKeys: Record<
         string,
         { onDelete: string; onUpdate: string; tableTo: string }
@@ -101,11 +102,16 @@ describe("0004 album_media migration", () => {
     );
   });
 
-  it("keeps Phase 2 ACL and Phase 3/4 tables at their 0003 columns", () => {
+  it("keeps 0004 existing columns unchanged while allowing later additive migrations", () => {
     for (const table of [albums, albumMembers, mediaItems, derivedAssets]) {
       const config = getTableConfig(table);
+      expect(snapshot0004.tables[config.name]!.columns).toEqual(
+        snapshot0003.tables[config.name]!.columns,
+      );
       expect(columnNames(table)).toEqual(
-        Object.keys(snapshot0003.tables[config.name]!.columns).sort(),
+        expect.arrayContaining(
+          Object.keys(snapshot0003.tables[config.name]!.columns),
+        ),
       );
     }
     expect(snapshot0003.tables.album_media).toBeUndefined();

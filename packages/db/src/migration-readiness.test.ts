@@ -213,13 +213,13 @@ describe("bootstrap migration readiness", () => {
       .find((table) => table.name === "upload_sessions")!
       .checks.find((check) => check.name === "chk_upload_sessions_created")!;
     stateCheck.expression = stateCheck.expression.replace(
-      /'created'/gu,
-      "_utf8mb4\\'created\\'",
+      /'CREATED'/gu,
+      "_utf8mb4\\'CREATED\\'",
     );
     expect(() => assertExactSchema(expected, actual)).not.toThrow();
     stateCheck.expression = stateCheck.expression.replace(
-      /created/gu,
-      "complete",
+      /CREATED/gu,
+      "COMPLETE",
     );
     expect(() => assertExactSchema(expected, actual)).toThrow(
       MigrationReadinessError,
@@ -380,8 +380,8 @@ describe("bootstrap migration readiness", () => {
         "MOD(generation,60)",
       ),
       capture(expected).expression.replace(
-        "captured_time_status='absent'",
-        "captured_time_status='offset_known'",
+        "captured_time_status='ABSENT'",
+        "captured_time_status='OFFSET_KNOWN'",
       ),
     ]) {
       const drift = structuredClone(expected);

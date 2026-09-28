@@ -62,6 +62,24 @@ const tokenHash = customType<{
   fromDriver: toBuffer,
 });
 
+const tagNameNormalized = customType<{
+  data: Buffer;
+  driverData: Buffer | Uint8Array | string;
+}>({
+  dataType: () => "varbinary(256)",
+  toDriver(value) {
+    if (
+      !Buffer.isBuffer(value) ||
+      value.byteLength < 1 ||
+      value.byteLength > 256
+    ) {
+      throw new Error("name_normalized must contain 1–256 bytes");
+    }
+    return value;
+  },
+  fromDriver: toBuffer,
+});
+
 const sha256Digest = customType<{
   data: Buffer;
   driverData: Buffer | Uint8Array | string;
@@ -683,6 +701,10 @@ export const mediaItems = mysqlTable(
       .notNull()
       .default(sql`CURRENT_TIMESTAMP(3)`)
       .$onUpdate(() => new Date()),
+    description: varchar("description", { length: 4000 }),
+    noteRevision: bigint("note_revision", { mode: "bigint", unsigned: true })
+      .notNull()
+      .default(sql`1`),
   },
   (table) => [
     uniqueIndex("uq_media_items_family_storage_object").on(
@@ -715,6 +737,11 @@ export const mediaItems = mysqlTable(
       .onDelete("restrict")
       .onUpdate("restrict"),
     check("chk_media_items_generation", sql`${table.generation} >= 1`),
+    check(
+      "chk_media_items_description",
+      sql`${table.description} IS NULL OR (CHAR_LENGTH(${table.description}) BETWEEN 1 AND 4000 AND OCTET_LENGTH(${table.description}) <= 16000)`,
+    ),
+    check("chk_media_items_note_revision", sql`${table.noteRevision} >= 1`),
     check("chk_media_items_recipe", sql`${table.recipeId} >= 1`),
     check(
       "chk_media_items_metadata_generation",
@@ -768,6 +795,202 @@ export const mediaItems = mysqlTable(
     check(
       "chk_media_items_failure",
       sql`(${table.processingState} IN ('FAILED','BLOCKED') AND ${table.lastFailureCode} IS NOT NULL) OR (${table.processingState} NOT IN ('FAILED','BLOCKED') AND (${table.processingState} = 'PARTIAL' OR ${table.lastFailureCode} IS NULL))`,
+    ),
+  ],
+);
+
+export const userFavorites = mysqlTable(
+  "user_favorites",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    memberId: foreignId("member_id").notNull(),
+    mediaId: foreignId("media_id").notNull(),
+
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (table) => [
+    uniqueIndex("uq_user_favorites_identity").on(
+      table.familyId,
+      table.memberId,
+      table.mediaId,
+    ),
+    index("idx_user_favorites_member_time").on(
+      table.familyId,
+      table.memberId,
+      table.createdAt,
+      table.id,
+    ),
+    index("idx_user_favorites_media").on(table.familyId, table.mediaId),
+    foreignKey({
+      name: "fk_user_favorites_member",
+      columns: [table.familyId, table.memberId],
+      foreignColumns: [familyMembers.familyId, familyMembers.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_user_favorites_media",
+      columns: [table.familyId, table.mediaId],
+      foreignColumns: [mediaItems.familyId, mediaItems.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+  ],
+);
+
+export const familyFeatured = mysqlTable(
+  "family_featured",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    mediaId: foreignId("media_id").notNull(),
+    featuredByMemberId: foreignId("featured_by_member_id").notNull(),
+
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (table) => [
+    uniqueIndex("uq_family_featured_identity").on(
+      table.familyId,
+      table.mediaId,
+    ),
+    index("idx_family_featured_time").on(
+      table.familyId,
+      table.createdAt,
+      table.id,
+    ),
+    index("idx_family_featured_actor").on(
+      table.familyId,
+      table.featuredByMemberId,
+    ),
+    foreignKey({
+      name: "fk_family_featured_media",
+      columns: [table.familyId, table.mediaId],
+      foreignColumns: [mediaItems.familyId, mediaItems.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_family_featured_actor",
+      columns: [table.familyId, table.featuredByMemberId],
+      foreignColumns: [familyMembers.familyId, familyMembers.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+  ],
+);
+
+export const tags = mysqlTable(
+  "tags",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+
+    name: varchar("name", { length: 64 }).notNull(),
+    nameNormalized: tagNameNormalized("name_normalized").notNull(),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (table) => [
+    uniqueIndex("uq_tags_identity").on(table.familyId, table.nameNormalized),
+    uniqueIndex("uq_tags_family_id").on(table.familyId, table.id),
+
+    foreignKey({
+      name: "fk_tags_family",
+      columns: [table.familyId],
+      foreignColumns: [families.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check(
+      "chk_tags_name",
+      sql`CHAR_LENGTH(${table.name}) BETWEEN 1 AND 64 AND OCTET_LENGTH(${table.name}) <= 256`,
+    ),
+    check(
+      "chk_tags_normalized",
+      sql`OCTET_LENGTH(${table.nameNormalized}) BETWEEN 1 AND 256`,
+    ),
+  ],
+);
+
+export const mediaTags = mysqlTable(
+  "media_tags",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    mediaId: foreignId("media_id").notNull(),
+    tagId: foreignId("tag_id").notNull(),
+
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (table) => [
+    uniqueIndex("uq_media_tags_identity").on(
+      table.familyId,
+      table.mediaId,
+      table.tagId,
+    ),
+    index("idx_media_tags_tag").on(table.familyId, table.tagId, table.mediaId),
+    foreignKey({
+      name: "fk_media_tags_media",
+      columns: [table.familyId, table.mediaId],
+      foreignColumns: [mediaItems.familyId, mediaItems.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_media_tags_tag",
+      columns: [table.familyId, table.tagId],
+      foreignColumns: [tags.familyId, tags.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+  ],
+);
+
+export const comments = mysqlTable(
+  "comments",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    mediaId: foreignId("media_id").notNull(),
+    authorMemberId: foreignId("author_member_id").notNull(),
+    body: varchar("body", { length: 2000 }).notNull(),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (table) => [
+    index("idx_comments_media_time").on(
+      table.familyId,
+      table.mediaId,
+      table.createdAt,
+      table.id,
+    ),
+    index("idx_comments_author").on(table.familyId, table.authorMemberId),
+    foreignKey({
+      name: "fk_comments_media",
+      columns: [table.familyId, table.mediaId],
+      foreignColumns: [mediaItems.familyId, mediaItems.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_comments_author",
+      columns: [table.familyId, table.authorMemberId],
+      foreignColumns: [familyMembers.familyId, familyMembers.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check(
+      "chk_comments_body",
+      sql`CHAR_LENGTH(${table.body}) BETWEEN 1 AND 2000 AND OCTET_LENGTH(${table.body}) <= 8000`,
     ),
   ],
 );

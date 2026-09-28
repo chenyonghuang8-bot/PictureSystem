@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { canonicalCheck } from "./check-expression.js";
 
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import {
@@ -24,6 +25,11 @@ import {
   storageObjects,
   uploadSessions,
   users,
+  userFavorites,
+  familyFeatured,
+  tags,
+  mediaTags,
+  comments,
 } from "./schema.js";
 
 const PROJECT_TABLES = [
@@ -42,6 +48,11 @@ const PROJECT_TABLES = [
   albumMedia,
   shares,
   shareEvents,
+  userFavorites,
+  familyFeatured,
+  tags,
+  mediaTags,
+  comments,
 ] as const;
 
 const PHASE_4_PREDECESSOR_TABLES = PROJECT_TABLES.slice(0, 9);
@@ -210,6 +221,33 @@ export function buildPhase4PredecessorSchemaSnapshot(): SchemaSnapshot {
     throw new MigrationReadinessError("MANIFEST_INVALID");
   }
   return predecessor;
+}
+
+// 0006 is additive: five tables and exactly two note columns/checks.
+// Keep one authoritative schema, deriving only the reviewed predecessor delta.
+export function buildPhase6PredecessorSchemaSnapshot(): SchemaSnapshot {
+  const snapshot = buildExpectedSchemaSnapshot();
+  const added = new Set([
+    "user_favorites",
+    "family_featured",
+    "tags",
+    "media_tags",
+    "comments",
+  ]);
+  snapshot.tables = snapshot.tables.filter((table) => !added.has(table.name));
+  const media = snapshot.tables.find((table) => table.name === "media_items");
+  if (!media) throw new MigrationReadinessError("MANIFEST_INVALID");
+  media.columns = media.columns.filter(
+    (column) => !["description", "note_revision"].includes(column.name),
+  );
+  media.checks = media.checks.filter(
+    (check) =>
+      ![
+        "chk_media_items_description",
+        "chk_media_items_note_revision",
+      ].includes(check.name),
+  );
+  return snapshot;
 }
 
 export function assertExactSchema(
@@ -539,20 +577,7 @@ function normalizeDefault(value: unknown) {
 }
 
 function normalizeCheck(value: string) {
-  let normalized = value
-    .replaceAll("`", "")
-    .replace(/\b[a-z_][a-z0-9_]*\./gi, "")
-    .replace(/_utf8mb4\\?'/gi, "'")
-    .replace(/\\'/g, "'")
-    .replace(/\bmod\s*\(\s*([a-z_][a-z0-9_]*)\s*,\s*(-?[0-9]+)\s*\)/gi, "$1%$2")
-    .replace(/\s+/g, "")
-    .replaceAll("(", "")
-    .replaceAll(")", "")
-    .toLowerCase();
-  if (normalized === "notused_atisnotnullandrevoked_atisnotnull") {
-    normalized = "used_atisnullorrevoked_atisnull";
-  }
-  return normalized;
+  return canonicalCheck(value);
 }
 
 function removeRedundantFkSupportingIndexes(
