@@ -1,10 +1,13 @@
 import type { FullConfig } from "@playwright/test";
 
-import { cleanupWebAcceptanceStorage } from "./storage-harness.js";
+import {
+  cleanupWebAcceptanceStorage,
+  type WebAcceptanceStorage,
+} from "./storage-harness.js";
 
 export default function globalTeardown(config: FullConfig) {
-  const mediaRoot = config.metadata.phase5WebAcceptanceMediaRoot;
   cleanupWebAcceptanceStorage(
-    typeof mediaRoot === "string" ? mediaRoot : undefined,
+    config.metadata.phase6d5WebAcceptanceStorage as
+      WebAcceptanceStorage | undefined,
   );
 }

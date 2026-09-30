@@ -13,7 +13,11 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: "list",
-  metadata: { phase5WebAcceptanceMediaRoot: storage.mediaRoot },
+  metadata: {
+    phase5WebAcceptanceMediaRoot: storage.mediaRoot,
+    phase6d5ApiObservationLog: storage.apiObservationLog,
+    phase6d5WebAcceptanceStorage: storage,
+  },
   globalTeardown: "./tests/e2e-web/global-teardown.ts",
   use: {
     baseURL: "https://localhost:3443",
@@ -25,7 +29,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `node --env-file="${envPath}" --import=tsx "${rootDir}/apps/api/src/index.ts"`,
+      command: `node "${rootDir}/tests/e2e-web/start-api-observed.mjs"`,
       url: "http://127.0.0.1:4400/health",
       reuseExistingServer: false,
       timeout: 60_000,
@@ -37,7 +41,9 @@ export default defineConfig({
         TRUSTED_WEB_ORIGINS: "https://localhost:3443",
         DEV_MEDIA_ROOT: storage.mediaRoot,
         DEV_STORAGE_MARKER_ID: storage.markerId,
-        LOG_LEVEL: "warn",
+        LOG_LEVEL: "info",
+        PHASE6D5_API_OBSERVATION_LOG: storage.apiObservationLog,
+        PHASE6D5_API_ENV_FILE: envPath,
       },
     },
     {
@@ -46,6 +52,12 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 90_000,
       ignoreHTTPSErrors: true,
+      env: {
+        ...process.env,
+        PHASE6D5_WEB_E2E_RUN_ROOT: storage.runRoot,
+        PHASE6D5_WEB_E2E_OWNERSHIP_NONCE: storage.ownershipNonce,
+        PHASE6D5_HTTPS_CERTIFICATE_DIRECTORY: storage.certificateDirectory,
+      },
     },
   ],
 });

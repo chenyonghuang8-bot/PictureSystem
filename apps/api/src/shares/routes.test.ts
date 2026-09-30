@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { createSessionToken, createShareToken } from "@family-album/auth";
 
 import { createApp } from "../app.js";
+import {
+  assertSensitiveCategoryAbsent,
+  assertSensitiveProjectionEqual,
+  assertSensitiveValuesEqual,
+} from "../../../../tests/helpers/security-assertions.js";
 import { PublicAuthError, type AuthService } from "../auth/service.js";
 import type { ShareService } from "./service.js";
 
@@ -75,11 +80,25 @@ describe("share management routes", () => {
       payload: { expiresAt: expiresAt.toISOString() },
     });
     expect(created.statusCode).toBe(201);
-    expect(created.json()).toEqual({
-      shareId: "15",
-      token: shareToken,
-      expiresAt: expiresAt.toISOString(),
-    });
+    const createdBody = created.json<{
+      shareId: string;
+      token: string;
+      expiresAt: string;
+    }>();
+    assertSensitiveProjectionEqual(
+      "share-create-response-metadata",
+      createdBody,
+      { shareId: "15", expiresAt: expiresAt.toISOString() },
+      ({ shareId, expiresAt: createdExpiresAt }) => ({
+        shareId,
+        expiresAt: createdExpiresAt,
+      }),
+    );
+    assertSensitiveValuesEqual(
+      "share-token-equality",
+      createdBody.token,
+      shareToken,
+    );
     expect(shareService.createShare).toHaveBeenCalledTimes(1);
 
     const listed = await app.inject({
@@ -99,7 +118,10 @@ describe("share management routes", () => {
         revokedAt: null,
       },
     ]);
-    expect(JSON.stringify(body)).not.toContain(shareToken);
+    assertSensitiveCategoryAbsent(JSON.stringify(body), {
+      category: "share-token",
+      secret: shareToken,
+    });
     expect(JSON.stringify(body)).not.toContain("token");
     expect(shareService.listShares).toHaveBeenCalledWith(expect.anything(), {
       familyId: "2",

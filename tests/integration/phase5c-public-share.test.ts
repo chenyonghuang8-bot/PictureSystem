@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { assertSensitiveCategoryAbsent } from "../helpers/security-assertions.js";
 
 import {
   createSessionToken,
@@ -210,7 +211,10 @@ describe.sequential("Phase 5C public share API", () => {
     expect(JSON.stringify(opened)).not.toMatch(
       /familyId|storage|original|gps|latitude|permission|token_hash/i,
     );
-    expect(JSON.stringify(opened)).not.toContain(token);
+    assertSensitiveCategoryAbsent(JSON.stringify(opened), {
+      category: "share-token",
+      secret: token,
+    });
     expect(await accessCount()).toBe(1);
 
     const thumbnail = await service.openDerived(token, mediaId, "thumbnail");

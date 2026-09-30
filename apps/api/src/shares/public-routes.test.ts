@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createShareToken } from "@family-album/auth";
+import { assertSensitiveCategoryAbsent } from "../../../../tests/helpers/security-assertions.js";
 
 import { createApp } from "../app.js";
 import { PublicAuthError } from "../auth/service.js";
@@ -74,10 +75,12 @@ describe("public share routes", () => {
       ],
       nextCursor: null,
     });
-    expect(JSON.stringify(response.json())).not.toContain(token);
-    expect(publicShareService.openAlbum).toHaveBeenCalledWith(token, {
-      limit: 20,
+    assertSensitiveCategoryAbsent(JSON.stringify(response.json()), {
+      category: "share-token",
+      secret: token,
     });
+    const call = vi.mocked(publicShareService.openAlbum).mock.calls[0];
+    expect(call?.[0] === token && call?.[1]?.limit === 20).toBe(true);
     await app.close();
   });
 
@@ -125,7 +128,10 @@ describe("public share routes", () => {
     expect(thumbnail.body).toBe("webp");
     expect(original.statusCode).toBe(404);
     expect(original.json().code).toBe("NOT_FOUND");
-    expect(JSON.stringify(original.json())).not.toContain(token);
+    assertSensitiveCategoryAbsent(JSON.stringify(original.json()), {
+      category: "share-token",
+      secret: token,
+    });
     await app.close();
   });
 

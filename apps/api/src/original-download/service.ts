@@ -1,3 +1,5 @@
+import type { ServerResponse } from "node:http";
+
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 import {
@@ -70,8 +72,10 @@ export class OriginalDownloadService {
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let totalTimer: ReturnType<typeof setTimeout> | undefined;
     let binaryStarted = false;
-    let completed = false;
     let bytesWritten = 0n;
+    let responseClosed = false;
+    let socketClosed = false;
+    const responseSocket = reply.raw.socket;
 
     const abort = (reason: string) => {
       if (!controller.signal.aborted) controller.abort(new Error(reason));
@@ -79,11 +83,17 @@ export class OriginalDownloadService {
     const onRequestAborted = () => abort("CLIENT_ABORTED");
     const onResponseError = () => abort("RESPONSE_ERROR");
     const onResponseClose = () => {
+      responseClosed = true;
       if (!reply.raw.writableFinished) abort("RESPONSE_CLOSED");
+    };
+    const onSocketClose = () => {
+      socketClosed = true;
+      if (!reply.raw.writableFinished) abort("SOCKET_CLOSED");
     };
     request.raw.once("aborted", onRequestAborted);
     reply.raw.once("error", onResponseError);
     reply.raw.once("close", onResponseClose);
+    responseSocket?.once("close", onSocketClose);
 
     const clearTimers = () => {
       if (verificationTimer) clearTimeout(verificationTimer);
@@ -181,7 +191,6 @@ export class OriginalDownloadService {
             throw new Error("ORIGINAL_STREAM_SIZE_MISMATCH");
           }
           await finishResponse(reply.raw, controller.signal);
-          completed = true;
         },
       );
       return {
@@ -194,7 +203,12 @@ export class OriginalDownloadService {
       abort("ORIGINAL_DOWNLOAD_FAILED");
       if (binaryStarted) {
         if (!initial) throw mapOriginalDownloadError(error);
-        if (!reply.raw.destroyed) reply.raw.destroy();
+        await destroyAndAwaitOriginalResponseSettlement(
+          reply.raw,
+          responseSocket,
+          () => responseClosed,
+          () => socketClosed,
+        );
         return {
           completed: false,
           bytesWritten: bytesWritten.toString(),
@@ -208,8 +222,7 @@ export class OriginalDownloadService {
       request.raw.off("aborted", onRequestAborted);
       reply.raw.off("error", onResponseError);
       reply.raw.off("close", onResponseClose);
-      if (!completed && binaryStarted && !reply.raw.destroyed)
-        reply.raw.destroy();
+      responseSocket?.off("close", onSocketClose);
       lease?.release();
     }
   }
@@ -221,6 +234,46 @@ export class OriginalDownloadService {
       throw mapOriginalDownloadError(error);
     }
   }
+}
+
+async function destroyAndAwaitOriginalResponseSettlement(
+  response: ServerResponse,
+  socket: ServerResponse["socket"],
+  responseCloseObserved: () => boolean,
+  socketCloseObserved: () => boolean,
+) {
+  const isSettled = () =>
+    response.writableFinished ||
+    (socket ? socketCloseObserved() : responseCloseObserved());
+  if (isSettled()) return;
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const cleanup = () => {
+      response.off("close", onResponseClose);
+      socket?.off("close", onSocketClose);
+    };
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const onResponseClose = () => {
+      if (isSettled()) settle();
+    };
+    const onSocketClose = () => settle();
+
+    response.once("close", onResponseClose);
+    socket?.once("close", onSocketClose);
+    if (isSettled()) return settle();
+    try {
+      response.destroy();
+    } catch {
+      // Destruction initiation is not settlement. Retain ownership until the
+      // captured response transport reaches a real terminal state.
+    }
+    if (isSettled()) settle();
+  });
 }
 
 function abortIfConnectionUnavailable(

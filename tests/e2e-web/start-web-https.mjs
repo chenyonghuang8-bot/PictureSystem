@@ -1,12 +1,34 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
-const certificateDirectory = mkdtempSync(
-  join(tmpdir(), "picturesystem-phase5-https-"),
-);
+const configuredCertificateDirectory =
+  process.env.PHASE6D5_HTTPS_CERTIFICATE_DIRECTORY;
+const configuredRunRoot = process.env.PHASE6D5_WEB_E2E_RUN_ROOT;
+const configuredOwnershipNonce = process.env.PHASE6D5_WEB_E2E_OWNERSHIP_NONCE;
+if (configuredCertificateDirectory) {
+  assertConfiguredCertificateOwnership({
+    certificateDirectory: configuredCertificateDirectory,
+    runRoot: configuredRunRoot,
+    ownershipNonce: configuredOwnershipNonce,
+  });
+}
+const certificateDirectory = configuredCertificateDirectory
+  ? configuredCertificateDirectory
+  : mkdtempSync(join(tmpdir(), "picturesystem-phase5-https-"));
+const standaloneCertificateDirectory = !configuredCertificateDirectory;
+if (configuredCertificateDirectory) {
+  mkdirSync(certificateDirectory, { mode: 0o700 });
+}
 const key = join(certificateDirectory, "localhost-key.pem");
 const certificate = join(certificateDirectory, "localhost-cert.pem");
 const generated = spawnSync(
@@ -32,7 +54,9 @@ const generated = spawnSync(
 );
 
 if (generated.status !== 0) {
-  rmSync(certificateDirectory, { recursive: true, force: true });
+  if (standaloneCertificateDirectory) {
+    rmSync(certificateDirectory, { recursive: true, force: true });
+  }
   throw new Error("PHASE5_WEB_E2E_CERTIFICATE_GENERATION_FAILED");
 }
 
@@ -75,7 +99,50 @@ process.on("SIGTERM", () => stop("SIGTERM"));
 process.on("SIGINT", () => stop("SIGINT"));
 
 child.once("exit", (code, signal) => {
-  rmSync(certificateDirectory, { recursive: true, force: true });
+  if (standaloneCertificateDirectory) {
+    rmSync(certificateDirectory, { recursive: true, force: true });
+  }
   if (signal) process.kill(process.pid, signal);
   else process.exit(code ?? 1);
 });
+
+function assertConfiguredCertificateOwnership(input) {
+  if (!input.runRoot || !input.ownershipNonce) {
+    throw new Error("PHASE6D5_HTTPS_OWNERSHIP_REQUIRED");
+  }
+  const temporaryParent = realpathSync(tmpdir());
+  const normalizedRoot = resolve(input.runRoot);
+  if (
+    normalizedRoot !== input.runRoot ||
+    dirname(normalizedRoot) !== temporaryParent ||
+    !basename(normalizedRoot).startsWith("picturesystem-phase5-web-e2e-") ||
+    input.certificateDirectory !== join(normalizedRoot, "https-cert")
+  ) {
+    throw new Error("PHASE6D5_HTTPS_CONFINEMENT_REFUSED");
+  }
+  const rootStat = lstatSync(normalizedRoot);
+  if (
+    !rootStat.isDirectory() ||
+    rootStat.isSymbolicLink() ||
+    realpathSync(normalizedRoot) !== normalizedRoot
+  ) {
+    throw new Error("PHASE6D5_HTTPS_ROOT_REFUSED");
+  }
+  const markerPath = join(normalizedRoot, ".picturesystem-web-e2e-owner.json");
+  const markerStat = lstatSync(markerPath);
+  if (!markerStat.isFile() || markerStat.isSymbolicLink()) {
+    throw new Error("PHASE6D5_HTTPS_OWNER_MARKER_REFUSED");
+  }
+  let marker;
+  try {
+    marker = JSON.parse(readFileSync(markerPath, "utf8"));
+  } catch {
+    throw new Error("PHASE6D5_HTTPS_OWNER_MARKER_INVALID");
+  }
+  if (
+    marker?.version !== 1 ||
+    marker?.ownershipNonce !== input.ownershipNonce
+  ) {
+    throw new Error("PHASE6D5_HTTPS_OWNER_MARKER_MISMATCH");
+  }
+}

@@ -50,6 +50,12 @@ describe("Phase 3A path contracts", () => {
     expect(() => validateDisplayFilename("bad\0name")).toThrow(
       StorageSafetyError,
     );
+    expect(() => validateDisplayFilename("bad\r\nname")).toThrow(
+      StorageSafetyError,
+    );
+    expect(() => validateDisplayFilename("bad\u0001name")).toThrow(
+      StorageSafetyError,
+    );
     expect(() => validateDisplayFilename("bad\u202ename")).toThrow(
       StorageSafetyError,
     );

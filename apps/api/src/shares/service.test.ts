@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+  assertSensitiveCategoryAbsent,
+  assertSensitiveProjectionEqual,
+} from "../../../../tests/helpers/security-assertions.js";
 
 import { createShareToken, hashShareToken } from "@family-album/auth";
 import {
@@ -67,20 +71,27 @@ describe("share service", () => {
   it("returns the raw token only from create and stores the hash", async () => {
     const { repository, service } = setup();
     const created = await service.createShare(context, "9", expiresAt);
-    expect(created.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(created).toEqual({
-      shareId: "15",
-      albumId: "9",
-      token: created.token,
-      expiresAt,
-    });
+    expect(/^[A-Za-z0-9_-]{43}$/u.test(created.token)).toBe(true);
+    assertSensitiveProjectionEqual(
+      "share-create-metadata",
+      created,
+      { shareId: "15", albumId: "9", expiresAt },
+      ({ shareId, albumId, expiresAt: createdExpiresAt }) => ({
+        shareId,
+        albumId,
+        expiresAt: createdExpiresAt,
+      }),
+    );
     const hash = (
       repository.insertShare.mock.calls as unknown as Array<
         [{ tokenHash: Buffer }]
       >
     )[0]?.[0].tokenHash;
-    expect(hash).toEqual(hashShareToken(created.token));
-    expect(hash?.toString("utf8")).not.toContain(created.token);
+    expect(hash?.equals(hashShareToken(created.token))).toBe(true);
+    assertSensitiveCategoryAbsent(hash?.toString("utf8") ?? "", {
+      category: "share-token",
+      secret: created.token,
+    });
   });
 
   it("returns a capability without the token hash", async () => {

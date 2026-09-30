@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { assertSensitiveCategoryAbsent } from "../helpers/security-assertions.js";
 
 import {
   createShareToken,
@@ -195,8 +196,14 @@ describe.sequential("Phase 5C share service", () => {
     );
     const stored = rows[0]?.tokenHash as Buffer;
     expect(stored.equals(hashShareToken(created.token))).toBe(true);
-    expect(stored.toString("utf8")).not.toContain(created.token);
-    expect(stored.toString("hex")).not.toContain(created.token);
+    assertSensitiveCategoryAbsent(stored.toString("utf8"), {
+      category: "share-token",
+      secret: created.token,
+    });
+    assertSensitiveCategoryAbsent(stored.toString("hex"), {
+      category: "share-token",
+      secret: created.token,
+    });
     await expect(
       shares.insertShare({
         actor: {
@@ -261,7 +268,10 @@ describe.sequential("Phase 5C share service", () => {
     );
     const revoked = await service.revokeShare(owner(), revokedShare.shareId);
     expect(revoked.revokedAt).toBeInstanceOf(Date);
-    expect(JSON.stringify(revoked)).not.toContain(revokedShare.token);
+    assertSensitiveCategoryAbsent(JSON.stringify(revoked), {
+      category: "share-token",
+      secret: revokedShare.token,
+    });
     await expect(
       service.verifyShareToken(revokedShare.token),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
@@ -308,7 +318,10 @@ describe.sequential("Phase 5C share service", () => {
       limit: 20,
     });
     expect(listed.map((share) => share.shareId)).toContain(managed.shareId);
-    expect(JSON.stringify(listed)).not.toContain(managed.token);
+    assertSensitiveCategoryAbsent(JSON.stringify(listed), {
+      category: "share-token",
+      secret: managed.token,
+    });
     const hidden = await service.listShares(viewer(), {
       familyId,
       limit: 20,

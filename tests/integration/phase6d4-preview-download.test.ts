@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import {
   chmodSync,
   lstatSync,
@@ -18,12 +19,21 @@ import type {
   ResultSetHeader,
   RowDataPacket,
 } from "mysql2/promise";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AlbumRepositoryError as ApiAlbumRepositoryError } from "../../packages/db/dist/index.js";
 
 import { createApp } from "../../apps/api/src/app.js";
 import type { AlbumService } from "../../apps/api/src/albums/service.js";
-import type { AuthService } from "../../apps/api/src/auth/service.js";
+import type {
+  AuthContext,
+  AuthService,
+} from "../../apps/api/src/auth/service.js";
+import { OriginalDownloadLimiter } from "../../apps/api/src/original-download/limiter.js";
+import {
+  OriginalDownloadService,
+  type OriginalDownloadReader,
+} from "../../apps/api/src/original-download/service.js";
 import { PreviewDownloadLimiter } from "../../apps/api/src/preview-download/limiter.js";
 import {
   PreviewDownloadService,
@@ -38,7 +48,11 @@ import {
 } from "../../packages/db/src/index.js";
 import { albumRaceBarrier } from "../../packages/db/src/album-race-barrier-test-helper.js";
 import type { AlbumRepositoryTestEvent } from "../../packages/db/src/album-repository-test-hooks.js";
-import { CapacityGate, StorageRoot } from "../../packages/storage/src/index.js";
+import {
+  CapacityGate,
+  OriginalReader,
+  StorageRoot,
+} from "../../packages/storage/src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("PHASE6D4_DEV_DATABASE_URL_REQUIRED");
@@ -75,6 +89,90 @@ function controlledReader(payload: Buffer) {
     ledger,
     entered: entered.promise,
     release: () => released.resolve(),
+  };
+}
+
+function countedPreviewReader(payload: Buffer, expectedEntries: number) {
+  const allEntered = deferred<void>();
+  const released = deferred<void>();
+  let entered = 0;
+  const reader: PreviewDownloadReader = {
+    async read(_identity, { signal }) {
+      entered += 1;
+      if (entered === expectedEntries) allEntered.resolve();
+      await released.promise;
+      signal.throwIfAborted();
+      return payload;
+    },
+  };
+  return {
+    reader,
+    allEntered: allEntered.promise,
+    release: () => released.resolve(),
+  };
+}
+
+function countedOriginalReader(payload: Buffer) {
+  const entered = deferred<void>();
+  const released = deferred<void>();
+  const reader: OriginalDownloadReader = {
+    async withVerifiedDownload(_identity, { signal }, callback) {
+      entered.resolve();
+      await released.promise;
+      signal.throwIfAborted();
+      let sent = false;
+      return await callback({
+        async readNext() {
+          if (sent) return { done: true } as const;
+          sent = true;
+          return { done: false, bytes: payload, final: true } as const;
+        },
+        async cancel() {},
+      });
+    },
+  };
+  return {
+    reader,
+    entered: entered.promise,
+    release: () => released.resolve(),
+  };
+}
+
+function heldSuccessfulExchange() {
+  const sendEntered = deferred<void>();
+  const sendReleased = deferred<void>();
+  const requestRaw = Object.assign(new EventEmitter(), {
+    aborted: false,
+    destroyed: false,
+  });
+  const socket = Object.assign(new EventEmitter(), { destroyed: false });
+  const response = Object.assign(new EventEmitter(), {
+    destroyed: false,
+    writable: true,
+    writableEnded: false,
+    writableFinished: false,
+    socket,
+    writeHead() {},
+    destroy() {},
+    write(_bytes: Buffer, callback: (error?: Error) => void) {
+      sendEntered.resolve();
+      void sendReleased.promise.then(() => {
+        callback();
+        response.emit("drain");
+      });
+      return false;
+    },
+    end() {
+      response.writableEnded = true;
+      response.writableFinished = true;
+      response.emit("finish");
+    },
+  });
+  return {
+    request: { raw: requestRaw } as unknown as FastifyRequest,
+    reply: { raw: response, hijack() {} } as unknown as FastifyReply,
+    sendEntered: sendEntered.promise,
+    releaseSend: () => sendReleased.resolve(),
   };
 }
 
@@ -573,6 +671,162 @@ describe.sequential("Phase 6D4 private preview download", () => {
     },
   );
 
+  it("runs actual Original and Preview services concurrently with independent settlement", async () => {
+    const originalReader = countedOriginalReader(originalBytes);
+    const previewReader = countedPreviewReader(previewBytes, 2);
+    const originalLimiter = new OriginalDownloadLimiter();
+    const previewLimiter = new PreviewDownloadLimiter();
+    const originalService = new OriginalDownloadService(
+      repository,
+      originalReader.reader,
+      originalLimiter,
+    );
+    const previewService = new PreviewDownloadService(
+      repository,
+      previewReader.reader,
+      previewLimiter,
+    );
+    const originalExchange = heldSuccessfulExchange();
+    const previewExchangeA = heldSuccessfulExchange();
+    const previewExchangeB = heldSuccessfulExchange();
+    const input = { albumId, mediaId };
+    const auth = authContext(viewer);
+    const originalPending = originalService.download(
+      auth,
+      input,
+      originalExchange.request,
+      originalExchange.reply,
+    );
+    const previewPendingA = previewService.download(
+      input,
+      previewExchangeA.request,
+      previewExchangeA.reply,
+      async () => auth,
+    );
+    const previewPendingB = previewService.download(
+      input,
+      previewExchangeB.request,
+      previewExchangeB.reply,
+      async () => auth,
+    );
+    try {
+      await Promise.all([originalReader.entered, previewReader.allEntered]);
+      expect(originalLimiter.snapshot()).toEqual({
+        active: 1,
+        activeMembers: 1,
+      });
+      expect(previewLimiter.snapshot()).toEqual({
+        active: 2,
+        activeMembers: 1,
+        memberCounts: [2],
+      });
+
+      const rejectedOriginal = heldSuccessfulExchange();
+      await expect(
+        originalService.download(
+          auth,
+          input,
+          rejectedOriginal.request,
+          rejectedOriginal.reply,
+        ),
+      ).rejects.toMatchObject({ statusCode: 429, retryAfterSeconds: 1 });
+      const rejectedPreview = heldSuccessfulExchange();
+      await expect(
+        previewService.download(
+          input,
+          rejectedPreview.request,
+          rejectedPreview.reply,
+          async () => auth,
+        ),
+      ).rejects.toMatchObject({ statusCode: 429, retryAfterSeconds: 1 });
+
+      // Both prepare transactions have committed even though storage is held.
+      await committedFamilyMutation(database.pool, familyId, async () => {});
+
+      originalReader.release();
+      previewReader.release();
+      await Promise.all([
+        originalExchange.sendEntered,
+        previewExchangeA.sendEntered,
+        previewExchangeB.sendEntered,
+      ]);
+      // Both second authorizations have committed while network sends remain held.
+      await committedFamilyMutation(database.pool, familyId, async () => {});
+
+      previewExchangeA.releaseSend();
+      previewExchangeB.releaseSend();
+      await Promise.all([previewPendingA, previewPendingB]);
+      expect(originalLimiter.snapshot()).toEqual({
+        active: 1,
+        activeMembers: 1,
+      });
+      expect(previewLimiter.snapshot()).toEqual({
+        active: 0,
+        activeMembers: 0,
+        memberCounts: [],
+      });
+
+      originalExchange.releaseSend();
+      await originalPending;
+      expect(originalLimiter.snapshot()).toEqual({
+        active: 0,
+        activeMembers: 0,
+      });
+    } finally {
+      originalReader.release();
+      previewReader.release();
+      originalExchange.releaseSend();
+      previewExchangeA.releaseSend();
+      previewExchangeB.releaseSend();
+      await Promise.allSettled([
+        originalPending,
+        previewPendingA,
+        previewPendingB,
+      ]);
+    }
+  });
+
+  it("completes concurrent mixed downloads through both real storage readers", async () => {
+    const nativeOriginalReader = OriginalReader.open({
+      mediaRoot: root.canonicalPath,
+      expectedMarkerId: root.markerId,
+    });
+    const server = createApp({
+      authService: fixedAuth(viewer),
+      albumService: {} as AlbumService,
+      originalDownloadService: new OriginalDownloadService(
+        repository,
+        nativeOriginalReader,
+      ),
+      previewDownloadService: new PreviewDownloadService(
+        repository,
+        realReader(),
+      ),
+      trustedOrigins: new Set(["https://family.test"]),
+    });
+    try {
+      const [original, preview] = await Promise.all([
+        server.inject({
+          method: "GET",
+          url: `/api/v1/albums/${albumId}/media/${mediaId}/download/original`,
+          headers: { cookie: "__Host-family_session=synthetic" },
+        }),
+        server.inject({
+          method: "GET",
+          url: `/api/v1/albums/${albumId}/media/${mediaId}/download/preview`,
+          headers: { cookie: "__Host-family_session=synthetic" },
+        }),
+      ]);
+      expect(original.statusCode).toBe(200);
+      expect(original.rawPayload).toEqual(originalBytes);
+      expect(preview.statusCode).toBe(200);
+      expect(preview.rawPayload).toEqual(previewBytes);
+    } finally {
+      await server.close();
+      nativeOriginalReader.close();
+    }
+  });
+
   function stateFirstMutations() {
     return [
       row(
@@ -920,12 +1174,16 @@ function actor(identity: Identity) {
   };
 }
 
+function authContext(identity: Identity): AuthContext {
+  return {
+    identity: { userId: identity.userId, sessionId: identity.sessionId },
+    tokenHash: identity.tokenHash,
+  } as unknown as AuthContext;
+}
+
 function fixedAuth(identity: Identity) {
   return {
-    authenticate: async () => ({
-      identity: { userId: identity.userId, sessionId: identity.sessionId },
-      tokenHash: identity.tokenHash,
-    }),
+    authenticate: async () => authContext(identity),
   } as unknown as AuthService;
 }
 
