@@ -102,9 +102,28 @@ export type AlbumMediaDetailRecord = AlbumMediaRecord & {
   };
 };
 
+export type OriginalDownloadRecord = {
+  familyId: string;
+  albumId: string;
+  actorMemberId: string;
+  mediaId: string;
+  storageObjectId: string;
+  keyVersion: number;
+  sha256Hex: string;
+  byteSize: string;
+  sourceUploadId: string;
+  originalFilename: string;
+  detectedMime: string | null;
+};
+
 export class AlbumRepositoryError extends Error {
   constructor(
-    readonly reason: "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT",
+    readonly reason:
+      | "UNAUTHENTICATED"
+      | "FORBIDDEN"
+      | "NOT_FOUND"
+      | "CONFLICT"
+      | "SERVICE_UNAVAILABLE",
   ) {
     super(reason);
     this.name = "AlbumRepositoryError";
@@ -393,6 +412,27 @@ export class MySqlAlbumRepository {
         },
       };
     });
+  }
+
+  async prepareOriginalDownload(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+  }): Promise<OriginalDownloadRecord> {
+    return this.authorizeOriginalDownload(input, "ORIGINAL_DOWNLOAD_PREPARE");
+  }
+
+  async recheckOriginalDownload(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+    expected: OriginalDownloadRecord;
+  }): Promise<OriginalDownloadRecord> {
+    return this.authorizeOriginalDownload(
+      input,
+      "ORIGINAL_DOWNLOAD_RECHECK",
+      input.expected,
+    );
   }
 
   async addAlbumMedia(input: {
@@ -901,6 +941,91 @@ export class MySqlAlbumRepository {
         familyId: scope.familyId,
         actorMemberId: scope.actorMemberId,
       };
+    });
+  }
+
+  private async authorizeOriginalDownload(
+    input: { actor: Phase1CActor; albumId: string; mediaId: string },
+    operation: "ORIGINAL_DOWNLOAD_PREPARE" | "ORIGINAL_DOWNLOAD_RECHECK",
+    expected?: OriginalDownloadRecord,
+  ): Promise<OriginalDownloadRecord> {
+    const targets = await this.locateOriginalDownloadTargets(
+      input.albumId,
+      input.mediaId,
+    );
+    if (!targets.familyId) throw new AlbumRepositoryError("NOT_FOUND");
+    const familyId = targets.familyId;
+    return runCheckedTransaction(this.pool, async (connection) => {
+      const testHook = this.testOptions?.testHook;
+      await lockFamily(connection, familyId, () =>
+        testHook?.({
+          stage: "FAMILY_LOCK_QUERY_DISPATCHED",
+          operation,
+          familyId,
+        }),
+      );
+      const actor = await lockActor(connection, familyId, input.actor);
+      const album = await lockAlbum(connection, familyId, input.albumId);
+      const grant = album
+        ? await lockGrant(connection, familyId, album.id, actor.member.id)
+        : undefined;
+      const storage = targets.storageObjectId
+        ? await lockOriginalStorage(
+            connection,
+            familyId,
+            targets.storageObjectId,
+          )
+        : undefined;
+      const media = await lockOriginalMedia(
+        connection,
+        familyId,
+        input.mediaId,
+      );
+      const placement = await lockExactPlacement(
+        connection,
+        familyId,
+        input.albumId,
+        input.mediaId,
+      );
+      const receipt = targets.sourceUploadId
+        ? await lockOriginalReceipt(
+            connection,
+            familyId,
+            targets.sourceUploadId,
+          )
+        : undefined;
+      const now = await readServerTime(connection);
+      assertActor(actor, input.actor, now);
+      assertVisible(album, actor.member, grant);
+      if (!media || !placement) throw new AlbumRepositoryError("NOT_FOUND");
+      if (media.processingState === "BLOCKED") {
+        throw new AlbumRepositoryError("NOT_FOUND");
+      }
+      if (!ORIGINAL_MEDIA_STATES.has(media.processingState)) {
+        throw new AlbumRepositoryError("NOT_FOUND");
+      }
+      const record = validatedOriginalDownloadRecord({
+        familyId,
+        albumId: input.albumId,
+        actorMemberId: actor.member.id,
+        mediaId: input.mediaId,
+        storage,
+        media,
+        receipt,
+      });
+      if (expected && !sameOriginalIdentity(expected, record)) {
+        throw new AlbumRepositoryError("SERVICE_UNAVAILABLE");
+      }
+      const connectionId = testHook
+        ? await readConnectionId(connection)
+        : undefined;
+      await testHook?.({
+        stage: "ORIGINAL_DOWNLOAD_VALIDATED_BEFORE_COMMIT",
+        operation,
+        familyId,
+        ...(connectionId === undefined ? {} : { connectionId }),
+      });
+      return record;
     });
   }
 
@@ -1442,6 +1567,229 @@ export class MySqlAlbumRepository {
       connection.release();
     }
   }
+
+  private async locateOriginalDownloadTargets(
+    albumId: string,
+    mediaId: string,
+  ): Promise<{
+    familyId: string | null;
+    storageObjectId: string | null;
+    sourceUploadId: string | null;
+  }> {
+    const connection = await acquireCheckedConnection(this.pool);
+    try {
+      const [albums] = await connection.query<RowDataPacket[]>(
+        "SELECT CAST(family_id AS CHAR) AS familyId FROM albums WHERE id = ? LIMIT 1",
+        [albumId],
+      );
+      const familyId = albums[0] ? String(albums[0].familyId) : null;
+      if (!familyId) {
+        return { familyId: null, storageObjectId: null, sourceUploadId: null };
+      }
+      const [media] = await connection.query<RowDataPacket[]>(
+        `SELECT CAST(storage_object_id AS CHAR) AS storageObjectId,
+                CAST(source_upload_id AS CHAR) AS sourceUploadId
+           FROM media_items WHERE family_id = ? AND id = ? LIMIT 1`,
+        [familyId, mediaId],
+      );
+      return {
+        familyId,
+        storageObjectId: media[0] ? String(media[0].storageObjectId) : null,
+        sourceUploadId: media[0] ? String(media[0].sourceUploadId) : null,
+      };
+    } finally {
+      connection.release();
+    }
+  }
+}
+
+const ORIGINAL_MEDIA_STATES = new Set([
+  "PENDING",
+  "PROCESSING",
+  "READY",
+  "PARTIAL",
+  "FAILED",
+]);
+
+type OriginalStorageRow = RowDataPacket & {
+  id: string;
+  familyId: string;
+  sha256: Buffer;
+  byteSize: string;
+  keyVersion: number;
+  state: "AVAILABLE" | "MISSING" | "CORRUPT";
+};
+
+type OriginalMediaRow = RowDataPacket & {
+  id: string;
+  familyId: string;
+  storageObjectId: string;
+  sourceUploadId: string;
+  generation: string;
+  metadataGeneration: string | null;
+  detectedMime: string | null;
+  processingState: string;
+};
+
+type OriginalReceiptRow = RowDataPacket & {
+  id: string;
+  familyId: string;
+  originalFilename: string;
+  declaredSize: string;
+  committedOffset: string;
+  state: string;
+  computedSha256: Buffer | null;
+  storageObjectId: string | null;
+};
+
+async function lockOriginalStorage(
+  connection: PoolConnection,
+  familyId: string,
+  storageObjectId: string,
+) {
+  const [rows] = await connection.query<OriginalStorageRow[]>(
+    `SELECT CAST(id AS CHAR) AS id, CAST(family_id AS CHAR) AS familyId,
+            sha256, CAST(byte_size AS CHAR) AS byteSize,
+            key_version AS keyVersion, state
+       FROM storage_objects
+      WHERE family_id = ? AND id = ? FOR UPDATE`,
+    [familyId, storageObjectId],
+  );
+  return rows[0];
+}
+
+async function lockOriginalMedia(
+  connection: PoolConnection,
+  familyId: string,
+  mediaId: string,
+) {
+  const [rows] = await connection.query<OriginalMediaRow[]>(
+    `SELECT CAST(id AS CHAR) AS id, CAST(family_id AS CHAR) AS familyId,
+            CAST(storage_object_id AS CHAR) AS storageObjectId,
+            CAST(source_upload_id AS CHAR) AS sourceUploadId,
+            CAST(generation AS CHAR) AS generation,
+            CAST(metadata_generation AS CHAR) AS metadataGeneration,
+            detected_mime AS detectedMime, processing_state AS processingState
+       FROM media_items
+      WHERE family_id = ? AND id = ? FOR UPDATE`,
+    [familyId, mediaId],
+  );
+  return rows[0];
+}
+
+async function lockExactPlacement(
+  connection: PoolConnection,
+  familyId: string,
+  albumId: string,
+  mediaId: string,
+) {
+  const [rows] = await connection.query<RowDataPacket[]>(
+    `SELECT id FROM album_media
+      WHERE family_id = ? AND album_id = ? AND media_id = ? FOR UPDATE`,
+    [familyId, albumId, mediaId],
+  );
+  return Boolean(rows[0]);
+}
+
+async function lockOriginalReceipt(
+  connection: PoolConnection,
+  familyId: string,
+  sourceUploadId: string,
+) {
+  const [rows] = await connection.query<OriginalReceiptRow[]>(
+    `SELECT CAST(id AS CHAR) AS id, CAST(family_id AS CHAR) AS familyId,
+            original_filename AS originalFilename,
+            CAST(declared_size AS CHAR) AS declaredSize,
+            CAST(committed_offset AS CHAR) AS committedOffset,
+            state, computed_sha256 AS computedSha256,
+            CAST(storage_object_id AS CHAR) AS storageObjectId
+       FROM upload_sessions
+      WHERE family_id = ? AND id = ? FOR UPDATE`,
+    [familyId, sourceUploadId],
+  );
+  return rows[0];
+}
+
+function validatedOriginalDownloadRecord(input: {
+  familyId: string;
+  albumId: string;
+  actorMemberId: string;
+  mediaId: string;
+  storage: OriginalStorageRow | undefined;
+  media: OriginalMediaRow;
+  receipt: OriginalReceiptRow | undefined;
+}): OriginalDownloadRecord {
+  const { storage, media, receipt } = input;
+  if (
+    !storage ||
+    storage.familyId !== input.familyId ||
+    storage.id !== media.storageObjectId ||
+    storage.state !== "AVAILABLE" ||
+    storage.keyVersion !== 1 ||
+    !/^[1-9][0-9]*$/u.test(storage.byteSize) ||
+    !Buffer.isBuffer(storage.sha256) ||
+    storage.sha256.length !== 32
+  ) {
+    throw new AlbumRepositoryError("SERVICE_UNAVAILABLE");
+  }
+  if (
+    !receipt ||
+    receipt.familyId !== input.familyId ||
+    receipt.id !== media.sourceUploadId ||
+    receipt.state !== "COMPLETE" ||
+    receipt.storageObjectId !== storage.id ||
+    receipt.committedOffset !== receipt.declaredSize ||
+    receipt.declaredSize !== storage.byteSize ||
+    !Buffer.isBuffer(receipt.computedSha256) ||
+    !receipt.computedSha256.equals(storage.sha256)
+  ) {
+    throw new AlbumRepositoryError("SERVICE_UNAVAILABLE");
+  }
+  return {
+    familyId: input.familyId,
+    albumId: input.albumId,
+    actorMemberId: input.actorMemberId,
+    mediaId: input.mediaId,
+    storageObjectId: storage.id,
+    keyVersion: storage.keyVersion,
+    sha256Hex: storage.sha256.toString("hex"),
+    byteSize: storage.byteSize,
+    sourceUploadId: receipt.id,
+    originalFilename: receipt.originalFilename,
+    detectedMime:
+      media.metadataGeneration !== null &&
+      media.metadataGeneration === media.generation
+        ? media.detectedMime
+        : null,
+  };
+}
+
+function sameOriginalIdentity(
+  left: OriginalDownloadRecord,
+  right: OriginalDownloadRecord,
+) {
+  return (
+    left.familyId === right.familyId &&
+    left.albumId === right.albumId &&
+    left.actorMemberId === right.actorMemberId &&
+    left.mediaId === right.mediaId &&
+    left.storageObjectId === right.storageObjectId &&
+    left.keyVersion === right.keyVersion &&
+    left.sha256Hex === right.sha256Hex &&
+    left.byteSize === right.byteSize &&
+    left.sourceUploadId === right.sourceUploadId
+  );
+}
+
+async function readConnectionId(connection: PoolConnection) {
+  const [rows] = await connection.query<RowDataPacket[]>(
+    "SELECT CONNECTION_ID() AS connectionId",
+  );
+  const connectionId = Number(rows[0]?.connectionId);
+  if (!Number.isSafeInteger(connectionId) || connectionId <= 0) {
+    throw new Error("MYSQL_CONNECTION_ID_INVALID");
+  }
+  return connectionId;
 }
 
 async function lockFamily(

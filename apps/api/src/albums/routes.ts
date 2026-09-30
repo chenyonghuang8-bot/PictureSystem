@@ -57,16 +57,19 @@ import {
   mediaCommentDto,
   type AlbumService,
 } from "./service.js";
+import type { OriginalDownloadService } from "../original-download/service.js";
 
 export function registerAlbumRoutes(
   app: FastifyInstance,
   options: {
     authService: AuthService;
     albumService: AlbumService;
+    originalDownloadService?: OriginalDownloadService;
     trustedOrigins: ReadonlySet<string>;
   },
 ) {
-  const { authService, albumService, trustedOrigins } = options;
+  const { authService, albumService, originalDownloadService, trustedOrigins } =
+    options;
 
   app.addHook("onSend", async (request, reply) => {
     if (request.url.startsWith("/api/v1/albums")) {
@@ -515,6 +518,44 @@ export function registerAlbumRoutes(
     }),
   );
 
+  if (originalDownloadService) {
+    app.get(
+      "/api/v1/albums/:albumId/media/:mediaId/download/original",
+      { exposeHeadRoute: false },
+      async (request, reply) =>
+        handleAlbum(request, reply, "media_original_download", async () => {
+          emptyObjectRequestSchema.parse(request.query);
+          const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+            request.params,
+          );
+          const context = await authenticate(request, authService);
+          const startedAt = Date.now();
+          const result = await originalDownloadService.download(
+            context,
+            { albumId, mediaId },
+            request,
+            reply,
+          );
+          const fields = {
+            event: "media_download",
+            requestId: request.id,
+            resultCode: result.resultCategory,
+            timestamp: new Date().toISOString(),
+            actorMemberId: result.record.actorMemberId,
+            familyId: result.record.familyId,
+            albumId,
+            mediaId,
+            kind: "ORIGINAL",
+            bytesWritten: result.bytesWritten,
+            durationMs: Date.now() - startedAt,
+          };
+          if (result.completed) request.log.info(fields, "security event");
+          else request.log.warn(fields, "security event");
+          return reply;
+        }),
+    );
+  }
+
   app.get("/api/v1/albums/:albumId/media", async (request, reply) =>
     handleAlbum(request, reply, "album_media_list", async () => {
       const { albumId } = albumParamsSchema.parse(request.params);
@@ -735,6 +776,9 @@ async function handleAlbum(
         : error instanceof ZodError
           ? new PublicAuthError(400, "INVALID_REQUEST")
           : new PublicAuthError(503, "SERVICE_UNAVAILABLE");
+    if (publicError.retryAfterSeconds !== undefined) {
+      void reply.header("retry-after", publicError.retryAfterSeconds);
+    }
     logAlbumFailure(
       request,
       event,

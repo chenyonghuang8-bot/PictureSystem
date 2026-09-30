@@ -14,6 +14,7 @@ import {
 import { resolve } from "node:path";
 import {
   CapacityGate,
+  OriginalReader,
   probeStorageCapability,
   StorageSafetyError,
   type StorageCapability,
@@ -29,6 +30,10 @@ import type { ReconciliationResult } from "./uploads/recovery.js";
 import { UploadMutex } from "./uploads/mutex.js";
 import { assessStorageStartup } from "./uploads/startup.js";
 import { DerivedReadService } from "./derived-serving/service.js";
+import {
+  OriginalDownloadService,
+  type OriginalDownloadReader,
+} from "./original-download/service.js";
 
 const env = loadApiEnv();
 const database = createDatabase(env.DATABASE_URL);
@@ -112,6 +117,26 @@ const derivedReader = {
   },
 };
 const derivedService = new DerivedReadService(derivedReads, derivedReader);
+let originalReader: OriginalReader | undefined;
+if (storageCapability.state !== "UNAVAILABLE") {
+  try {
+    originalReader = OriginalReader.open({
+      mediaRoot: storageCapability.root.canonicalPath,
+      expectedMarkerId: storageCapability.root.markerId,
+    });
+  } catch {
+    originalReader = undefined;
+  }
+}
+const unavailableOriginalReader: OriginalDownloadReader = {
+  withVerifiedDownload: async () => {
+    throw new StorageSafetyError("ORIGINAL_READER_UNAVAILABLE");
+  },
+};
+const originalDownloadService = new OriginalDownloadService(
+  albumRepository,
+  originalReader ?? unavailableOriginalReader,
+);
 const publicShareService = new PublicShareService(
   shareService,
   shareRepository,
@@ -131,6 +156,7 @@ const app = createApp({
   publicShareService,
   uploadService,
   derivedService,
+  originalDownloadService,
   publicApiOrigin: env.API_PUBLIC_ORIGIN,
   trustedOrigins: new Set(env.TRUSTED_WEB_ORIGINS),
   trustedProxies: env.TRUSTED_PROXY_CIDRS,
@@ -155,7 +181,8 @@ if (startupRecoveryReport) {
 }
 
 app.addHook("onClose", async () => {
-  if (storageCapability.state === "READ_WRITE") storageCapability.root.close();
+  originalReader?.close();
+  if (storageCapability.state !== "UNAVAILABLE") storageCapability.root.close();
   await database.pool.end();
 });
 

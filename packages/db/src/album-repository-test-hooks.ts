@@ -5,12 +5,19 @@ export type AlbumRepositoryTestOperation =
   | "TAG_REMOVE"
   | "NOTE_UPDATE"
   | "COMMENT_CREATE"
-  | "COMMENT_DELETE";
+  | "COMMENT_DELETE"
+  | "ORIGINAL_DOWNLOAD_PREPARE"
+  | "ORIGINAL_DOWNLOAD_RECHECK";
 
 export type AlbumRepositoryTestEvent = Readonly<{
-  stage: "FAMILY_LOCK_QUERY_DISPATCHED" | "MUTATION_APPLIED_BEFORE_COMMIT";
+  stage:
+    | "FAMILY_LOCK_QUERY_DISPATCHED"
+    | "MUTATION_APPLIED_BEFORE_COMMIT"
+    | "ORIGINAL_DOWNLOAD_VALIDATED_BEFORE_COMMIT";
   operation: AlbumRepositoryTestOperation;
   familyId: string;
+  /** Test-only server connection identity for lock-wait correlation. */
+  connectionId?: number;
 }>;
 
 export type AlbumRepositoryTestHook = (
