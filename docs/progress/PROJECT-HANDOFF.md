@@ -3,14 +3,69 @@
 Generated from the repository, Git history, `docs/progress/`, and the latest
 recorded targeted test evidence on 2026-09-23. Documentation alignment on
 2026-09-24 first recorded API serving at `559c61e`. This finalization records
-validation stabilization at `38b401d`. The 2026-09-23 snapshot and the earlier
+validation stabilization at `38b401d` as historical context. Current alignment
+was minimally updated for the approved Phase 6 checkpoint on 2026-09-30.
+The 2026-09-23 snapshot and the earlier
 checkpoint lists are kept below and are not deleted. This handoff deliberately
 contains no `.env` values, credentials, raw tokens, real-family data, real
 media, or database dumps.
 
-## Current alignment (2026-09-24, validation stabilization)
+## Current alignment (2026-09-30, Phase 6 final checkpoint)
 
-This section is the current status. Where an older section still describes the
+This approved documentation-only checkpoint is `Complete Phase 6 album features`.
+Its Git identity is **this commit**, avoiding a self-referential SHA update.
+
+```text
+branch: main
+Phase 6 completion checkpoint: this commit
+checkpoint subject: Complete Phase 6 album features
+pre-checkpoint HEAD / origin/main: c63c4cf446781eff0be3adb1a68477401d51a1b0
+migration journal: 0000–0006
+Phase 1: COMPLETE
+Phase 2: COMPLETE
+Phase 3: COMPLETE
+Phase 4: COMPLETE
+Phase 5: COMPLETE
+Phase 6: COMPLETE
+Phase 6A: COMPLETE
+Phase 6B: COMPLETE
+Phase 6C: COMPLETE
+Phase 6D: COMPLETE
+Phase 6E: COMPLETE
+Phase 6F: COMPLETE
+PHASE_6_FINAL_REVIEW_PASS: YES
+P0: 0
+P1: 0
+BLOCKING_P2: 0
+READY_FOR_PHASE_7: YES
+PRODUCTION_READY: NO
+PHASE_7_IMPLEMENTATION_STARTED: NO
+```
+
+Phase 6 delivers member-private favorites, family featured, tags, canonical
+note CAS, plain-text comments, private Original/Preview downloads, and Web
+Viewer integration. Validation and the single final independent review passed;
+see [Phase 6 final summary](PHASE-06-FINAL-SUMMARY.md) for current evidence,
+privacy/authorization boundaries and deferred work. Migration 0006 is frozen;
+0007 is absent.
+
+Production-deferred work remains: persistent/multi-process rate limiting,
+durable audit, production access-log/token redaction, real power-loss/SSD
+validation, production-scale Original performance, uninterruptible kernel I/O,
+UID negative fixture and cross-device fixture prerequisites. Future product
+phases remain unimplemented: Phase 7 Trash, Phase 8 Search/Map, Phase 9 Memories,
+Phase 10 Android, Phase 11 Admin and later phases. Readiness for Phase 7 does
+not authorize starting it in this checkpoint task.
+
+The Phase 4 alignment, checkpoint lists, capability tables and takeover
+instructions below are preserved historical snapshots, not current outstanding
+implementation instructions. This current alignment supersedes their old
+phase status and Git fields; section 2 has only the explicitly approved minimal
+current model-workflow alignment.
+
+## Historical alignment (2026-09-24, validation stabilization)
+
+This section preserves the status at that date. Where an older section describes the
 2026-09-23 snapshot at `789a5ef`, or the API-serving checkpoint `559c61e`, that
 older text is historical.
 
@@ -103,14 +158,17 @@ records and phase decisions are under `docs/progress/`.
 `AGENTS.md` is a primary constraint. Treat it as authoritative for routing,
 DEV/PROD separation, secrets, media privacy, database rules, and allowed work.
 
-| Participant     | Expected responsibility                                                                                                                                 |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ChatGPT         | Architecture planning, implementation prompts, review/result interpretation, and explicit user decisions.                                               |
-| Codex           | Local source implementation, targeted tests, migrations when explicitly approved, and evidence collection.                                              |
-| Cursor + Grok   | May temporarily replace Codex for implementation, review, targeted testing, and explicit Git checkpoints. They must preserve this handoff's boundaries. |
-| GPT-6 Astra Low | R3 design, storage/transaction/security decisions, P0/P1 review, and final security re-review.                                                          |
+| Participant        | Expected responsibility                                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ChatGPT            | Architecture planning, implementation prompts, review/result interpretation, and explicit user decisions.                                               |
+| Codex              | Local source implementation, targeted tests, migrations when explicitly approved, and evidence collection.                                              |
+| Cursor + Grok      | May temporarily replace Codex for implementation, review, targeted testing, and explicit Git checkpoints. They must preserve this handoff's boundaries. |
+| GPT-6.1 Sol Medium | Implementation and validation under approved guardrails.                                                                                                |
+| GPT-6.1 Sol High   | Normal independent review.                                                                                                                              |
+| GPT-6 Astra Low    | Reserved for exceptional new high-risk architecture / production-final gates.                                                                           |
 
-Use Sol Medium for approved R3 implementation only. If implementation requires a
+Use GPT-6.1 Sol Medium for implementation and GPT-6.1 Sol High for normal
+independent review. If implementation requires a
 new schema, permission, transaction/locking, or storage-security decision, stop
 and request Astra design review. Do not use automatic Bridge or browser handoff.
 
