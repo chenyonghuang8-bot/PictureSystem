@@ -105,6 +105,19 @@ export function Timeline({
           index={openIndex}
           onIndex={setOpenIndex}
           onClose={() => setOpenIndex(null)}
+          onDetail={(detail) =>
+            setItems((current) =>
+              current.map((item) =>
+                item.mediaId === detail.mediaId
+                  ? {
+                      ...item,
+                      isFavorite: detail.isFavorite,
+                      isFamilyFeatured: detail.isFamilyFeatured,
+                    }
+                  : item,
+              ),
+            )
+          }
         />
       ) : null}
     </div>

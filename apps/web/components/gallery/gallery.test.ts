@@ -11,6 +11,8 @@ import { Timeline } from "./timeline.js";
 import { PhotoGrid } from "./photo-grid.js";
 import { HomeHeader } from "./home-header.js";
 import { PreviewFrame, Viewer } from "./viewer.js";
+import { ViewerDetails, ViewerComment } from "./viewer-details.js";
+import type { GalleryMediaDetail } from "@family-album/contracts";
 
 const item = {
   mediaId: "11",
@@ -25,6 +27,88 @@ const item = {
 };
 
 describe("gallery pages", () => {
+  it("renders private detail controls, safe attachment links and capability-gated editors", () => {
+    const detail: GalleryMediaDetail = {
+      ...item,
+      orientation: 1,
+      capturedLocalAt: null,
+      cameraMake: "Camera",
+      cameraModel: null,
+      preview: { kind: "preview" },
+      isFavorite: true,
+      isFamilyFeatured: true,
+      tags: [{ id: "2", name: "<tag>" }],
+      note: "<note>",
+      noteRevision: "1",
+      commentCount: "2",
+      capabilities: {
+        canManageFeatured: true,
+        canEditTags: true,
+        canEditNote: true,
+        canComment: true,
+        canDownloadOriginal: true,
+        canDownloadPreview: true,
+      },
+    };
+    const render = (row: GalleryMediaDetail) =>
+      renderToStaticMarkup(
+        createElement(ViewerDetails, {
+          detail: row,
+          target: { albumId: "3", mediaId: "11" },
+          reload: async () => {},
+          onFailure: () => {},
+        }),
+      );
+    const html = render(detail);
+    expect(html).toContain("取消收藏");
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain("取消家庭精选");
+    expect(html).toContain("&lt;tag&gt;");
+    expect(html).toContain("&lt;note&gt;");
+    expect(html).toContain("编辑备注");
+    expect(html).toContain("添加标签");
+    expect(html).toContain(
+      'href="/api/v1/albums/3/media/11/download/original"',
+    );
+    expect(html).toContain('href="/api/v1/albums/3/media/11/download/preview"');
+    const readonly = render({
+      ...detail,
+      isFavorite: false,
+      capabilities: {
+        ...detail.capabilities,
+        canManageFeatured: false,
+        canEditTags: false,
+        canEditNote: false,
+        canDownloadPreview: false,
+      },
+    });
+    expect(readonly).toContain(">收藏</button>");
+    expect(readonly).not.toMatch(
+      /取消家庭精选|编辑备注|添加标签|移除标签|download\/preview/,
+    );
+  });
+
+  it("renders comments as escaped text and uses only returned canDelete for delete controls", () => {
+    const comment = {
+      id: "2",
+      body: '<script>alert("x")</script>',
+      createdAt: "2026-09-30T00:00:00.000Z",
+      author: { memberId: "3", displayName: "<author>" },
+      canDelete: true,
+    };
+    const render = (canDelete: boolean) =>
+      renderToStaticMarkup(
+        createElement(ViewerComment, {
+          comment: { ...comment, canDelete },
+          pending: false,
+          onDelete: () => {},
+        }),
+      );
+    expect(render(true)).toContain("&lt;script&gt;");
+    expect(render(true)).not.toContain("<script>");
+    expect(render(true)).toContain("删除评论");
+    expect(render(false)).not.toContain("删除评论");
+  });
   it("renders the three-part shell", () => {
     const html = renderToStaticMarkup(
       createElement(GalleryShell, {

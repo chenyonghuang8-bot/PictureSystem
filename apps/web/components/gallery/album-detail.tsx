@@ -106,6 +106,19 @@ export function AlbumDetail({
           index={openIndex}
           onIndex={setOpenIndex}
           onClose={() => setOpenIndex(null)}
+          onDetail={(detail) =>
+            setItems((current) =>
+              current.map((item) =>
+                item.mediaId === detail.mediaId
+                  ? {
+                      ...item,
+                      isFavorite: detail.isFavorite,
+                      isFamilyFeatured: detail.isFamilyFeatured,
+                    }
+                  : item,
+              ),
+            )
+          }
           onRemovePlacement={async (mediaId) => {
             await removeMediaFromAlbum(albumId, mediaId);
             setItems((current) =>

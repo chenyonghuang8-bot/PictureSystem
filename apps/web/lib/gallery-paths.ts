@@ -73,6 +73,24 @@ export function derivedPath(mediaId: string, kind: "thumbnail" | "preview") {
   return `/api/v1/media/${mediaId}/derived/${kind}`;
 }
 
+export function mediaFeaturePath(
+  albumId: string,
+  mediaId: string,
+  feature: "favorite" | "featured" | "tags" | "note" | "comments",
+  childId?: string,
+) {
+  if (childId !== undefined) assertGalleryId(childId);
+  return `${mediaDetailPath(albumId, mediaId)}/${feature}${childId ? `/${childId}` : ""}`;
+}
+
+export function originalDownloadPath(albumId: string, mediaId: string) {
+  return `${mediaDetailPath(albumId, mediaId)}/download/original`;
+}
+
+export function previewDownloadPath(albumId: string, mediaId: string) {
+  return `${mediaDetailPath(albumId, mediaId)}/download/preview`;
+}
+
 export function monthKey(timelineKey: string) {
   return timelineKey.slice(0, 7);
 }

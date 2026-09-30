@@ -3,8 +3,9 @@
 import {
   albumsResponseSchema,
   galleryMediaDetailSchema,
+  type GalleryMediaDetail,
 } from "@family-album/contracts";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   GalleryClientError,
@@ -22,6 +23,7 @@ import {
 } from "../../lib/gallery-paths.js";
 import { AlbumSelector } from "./album-selector.js";
 import { RemovePlacement } from "./remove-placement.js";
+import { ViewerDetails, viewerErrorMessage } from "./viewer-details.js";
 
 export type ViewerTarget = {
   mediaId: string;
@@ -99,26 +101,48 @@ export function PreviewFrame({
   );
 }
 
-export function Viewer({
-  items,
-  index,
-  familyId,
-  onIndex,
-  onClose,
-  onRemovePlacement,
-}: {
+type ViewerProps = {
   items: ViewerTarget[];
   index: number;
   familyId: string;
   onIndex: (index: number) => void;
   onClose: () => void;
   onRemovePlacement?: (mediaId: string) => Promise<void>;
-}) {
+  onDetail?: (detail: GalleryMediaDetail) => void;
+};
+
+export function Viewer(props: ViewerProps) {
+  const target = props.items[props.index];
+  if (!target) return null;
+  return (
+    <ViewerSession
+      key={`${props.familyId}:${target.albumId}:${target.mediaId}`}
+      {...props}
+    />
+  );
+}
+
+function ViewerSession({
+  items,
+  index,
+  familyId,
+  onIndex,
+  onClose,
+  onRemovePlacement,
+  onDetail,
+}: ViewerProps) {
   const item = items[index];
   const [brokenPreview, setBrokenPreview] = useState(false);
   const [fallbackBroken, setFallbackBroken] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(true);
-  const [detail, setDetail] = useState<string>("");
+  const [detail, setDetail] = useState<GalleryMediaDetail | null>(null);
+  const [detailMessage, setDetailMessage] = useState("");
+  const alive = useRef(false);
+  const detailRequest = useRef(0);
+  const detailCallback = useRef(onDetail);
+  useEffect(() => {
+    detailCallback.current = onDetail;
+  }, [onDetail]);
   const [missing, setMissing] = useState(false);
   const [albums, setAlbums] = useState<{ id: string; name: string }[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -126,40 +150,56 @@ export function Viewer({
   const [placementMessage, setPlacementMessage] = useState("");
   const [confirmingRemove, setConfirmingRemove] = useState(false);
 
-  useEffect(() => {
+  const onDetailFailure = useCallback((error: unknown) => {
+    if (!alive.current) return;
+    setDetailMessage(viewerErrorMessage(error));
+    if (
+      error instanceof GalleryClientError &&
+      (error.code === "NOT_FOUND" || error.code === "UNAUTHENTICATED")
+    ) {
+      detailRequest.current += 1;
+      setDetail(null);
+      setMissing(true);
+    }
+  }, []);
+
+  const reloadDetail = useCallback(async () => {
     if (!item) return;
-    let cancelled = false;
-    setBrokenPreview(false);
-    setFallbackBroken(false);
-    setPreviewLoading(true);
-    setDetail("");
-    setMissing(false);
-    browserGalleryGet(
-      mediaDetailPath(item.albumId, item.mediaId),
-      galleryMediaDetailSchema,
-    )
-      .then((row) => {
-        if (cancelled) return;
-        const lines = [
-          row.displayWidth && row.displayHeight
-            ? `${row.displayWidth} × ${row.displayHeight}`
-            : null,
-          row.orientation ? `方向 ${row.orientation}` : null,
-          row.capturedLocalAt,
-          [row.cameraMake, row.cameraModel].filter(Boolean).join(" ") || null,
-        ].filter((line): line is string => line !== null);
-        setDetail(lines.join("\n"));
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setMissing(
-          error instanceof GalleryClientError && error.code === "NOT_FOUND",
-        );
-      });
+    const request = ++detailRequest.current;
+    try {
+      const row = await browserGalleryGet(
+        mediaDetailPath(item.albumId, item.mediaId),
+        galleryMediaDetailSchema,
+      );
+      if (!alive.current || request !== detailRequest.current) return;
+      setDetail(row);
+      setMissing(false);
+      setDetailMessage("");
+      detailCallback.current?.(row);
+    } catch (error) {
+      if (request === detailRequest.current) onDetailFailure(error);
+      throw error;
+    }
+  }, [item?.albumId, item?.mediaId, onDetailFailure]);
+
+  useEffect(() => {
+    alive.current = true;
+    void reloadDetail().catch(() => undefined);
     return () => {
-      cancelled = true;
+      alive.current = false;
+      detailRequest.current += 1;
     };
-  }, [item?.albumId, item?.mediaId]);
+  }, [reloadDetail]);
+
+  const closeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    closeButton.current?.focus();
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected)
+        previous.focus();
+    };
+  }, []);
 
   useEffect(() => {
     if (!item) return;
@@ -204,14 +244,15 @@ export function Viewer({
     setPendingId(albumId);
     try {
       const result = await addMediaToAlbum(albumId, item.mediaId);
+      if (!alive.current) return;
       setSelectedIds((current) => new Set(current).add(albumId));
       setPlacementMessage(
         result.created ? "已加入相册。" : "这张照片已经在这个相册里。",
       );
     } catch (error) {
-      setPlacementMessage(placementErrorMessage(error));
+      if (alive.current) setPlacementMessage(placementErrorMessage(error));
     } finally {
-      setPendingId(null);
+      if (alive.current) setPendingId(null);
     }
   }
 
@@ -230,6 +271,7 @@ export function Viewer({
         type="button"
         className="gallery-viewer-close"
         aria-label="关闭照片查看器"
+        ref={closeButton}
         onClick={onClose}
       >
         <span aria-hidden="true">×</span>
@@ -254,7 +296,19 @@ export function Viewer({
           onLoaded={() => setPreviewLoading(false)}
         />
       </div>
-      <p className="gallery-viewer-meta">{detail}</p>
+      {detail ? (
+        <ViewerDetails
+          detail={detail}
+          target={item}
+          reload={reloadDetail}
+          onFailure={onDetailFailure}
+        />
+      ) : null}
+      {detailMessage ? (
+        <p className="gallery-viewer-message" role="status">
+          {detailMessage}
+        </p>
+      ) : null}
       <AlbumSelector
         albums={albums}
         selectedIds={selectedIds}
@@ -270,7 +324,8 @@ export function Viewer({
           onCancel={() => setConfirmingRemove(false)}
           onConfirm={() => {
             void onRemovePlacement(item.mediaId).catch((error: unknown) => {
-              setPlacementMessage(placementErrorMessage(error));
+              if (alive.current)
+                setPlacementMessage(placementErrorMessage(error));
             });
           }}
         />

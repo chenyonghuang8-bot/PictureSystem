@@ -189,6 +189,9 @@ describe("public share viewer", () => {
     expect(`${page}${viewer}`).not.toMatch(
       /\/derived\/original|gps|latitude|familyId|member|storage/i,
     );
+    expect(viewer).not.toMatch(
+      /收藏|精选|标签|备注|评论|下载原图|下载预览|照片详情/,
+    );
     expect(page).not.toContain("家庭成员");
   });
 

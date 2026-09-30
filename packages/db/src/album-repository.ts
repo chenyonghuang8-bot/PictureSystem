@@ -433,8 +433,10 @@ export class MySqlAlbumRepository {
           canEditTags: scope.album.effectivePermissions.canEdit,
           canEditNote: scope.album.effectivePermissions.canEdit,
           canComment: true,
-          canDownloadOriginal: false,
-          canDownloadPreview: false,
+          // Feature availability for this view-authorized detail, not a storage
+          // preflight. Each download route reauthorizes current state itself.
+          canDownloadOriginal: true,
+          canDownloadPreview: true,
         },
       };
     });

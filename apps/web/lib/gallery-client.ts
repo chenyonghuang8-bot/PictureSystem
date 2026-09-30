@@ -1,7 +1,7 @@
 import type { z } from "zod";
 
 export type GalleryErrorCode =
-  "UNAUTHENTICATED" | "NOT_FOUND" | "FORBIDDEN" | "UNAVAILABLE";
+  "UNAUTHENTICATED" | "NOT_FOUND" | "FORBIDDEN" | "CONFLICT" | "UNAVAILABLE";
 
 export class GalleryClientError extends Error {
   readonly code: GalleryErrorCode;
@@ -20,6 +20,7 @@ export async function readGalleryResponse<Schema extends z.ZodType>(
   if (response.status === 401) throw new GalleryClientError("UNAUTHENTICATED");
   if (response.status === 404) throw new GalleryClientError("NOT_FOUND");
   if (response.status === 403) throw new GalleryClientError("FORBIDDEN");
+  if (response.status === 409) throw new GalleryClientError("CONFLICT");
   if (!response.ok) throw new GalleryClientError("UNAVAILABLE");
   let body: unknown;
   try {
@@ -54,7 +55,7 @@ export async function browserGalleryGet<Schema extends z.ZodType>(
 }
 
 export async function browserGallerySend<Schema extends z.ZodType>(
-  method: "POST" | "DELETE",
+  method: "PUT" | "POST" | "DELETE",
   path: string,
   schema: Schema,
   body: unknown,
@@ -76,6 +77,11 @@ export async function browserGallerySend<Schema extends z.ZodType>(
     });
   } catch {
     throw new GalleryClientError("UNAVAILABLE");
+  }
+  if (response.status === 204) {
+    const parsed = schema.safeParse(undefined);
+    if (!parsed.success) throw new GalleryClientError("UNAVAILABLE");
+    return parsed.data;
   }
   return readGalleryResponse(response, schema);
 }

@@ -101,8 +101,8 @@ function mediaRow() {
       canEditTags: true,
       canEditNote: true,
       canComment: true,
-      canDownloadOriginal: false,
-      canDownloadPreview: false,
+      canDownloadOriginal: true,
+      canDownloadPreview: true,
     },
   };
 }

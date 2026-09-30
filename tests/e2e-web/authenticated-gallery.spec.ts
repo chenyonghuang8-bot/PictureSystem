@@ -1,5 +1,11 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { chmodSync, copyFileSync, mkdirSync, readFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve } from "node:path";
 
 import {
@@ -22,6 +28,7 @@ import {
   assertMigrationReadiness,
   createDatabase,
 } from "../../packages/db/src/index.js";
+import { buildOriginalPath } from "../../packages/storage/src/index.js";
 
 const rootDir = resolve(import.meta.dirname, "../..");
 process.loadEnvFile(resolve(rootDir, ".env"));
@@ -41,6 +48,8 @@ const mediaIds: string[] = [];
 let familyId = "";
 let memberId = "";
 let albumId = "";
+let hiddenAlbumId = "";
+const viewerUsername = `${username}_viewer`;
 
 type MediaFixture = {
   thumbnail: Buffer;
@@ -106,16 +115,36 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
       userIds.push(userId);
       const [member] = await connection.query<ResultSetHeader>(
         `INSERT INTO family_members (family_id, user_id, role)
-         VALUES (?, ?, 'MEMBER')`,
+         VALUES (?, ?, 'ADMIN')`,
         [familyId, userId],
       );
       memberId = String(member.insertId);
+      const [viewerUser] = await connection.query<ResultSetHeader>(
+        `INSERT INTO users (username,username_normalized,password_hash,display_name,password_changed_at)
+         VALUES (?,?,?,?,CURRENT_TIMESTAMP(3))`,
+        [
+          viewerUsername,
+          normalizeUsername(viewerUsername).normalizedBytes,
+          passwordHash,
+          "只读验收成员",
+        ],
+      );
+      userIds.push(String(viewerUser.insertId));
+      await connection.query(
+        `INSERT INTO family_members (family_id,user_id,role) VALUES (?,?,'MEMBER')`,
+        [familyId, String(viewerUser.insertId)],
+      );
       const [album] = await connection.query<ResultSetHeader>(
         `INSERT INTO albums (family_id, owner_member_id, name, visibility)
          VALUES (?, ?, ?, 'FAMILY')`,
         [familyId, memberId, albumName],
       );
       albumId = String(album.insertId);
+      const [hiddenAlbum] = await connection.query<ResultSetHeader>(
+        `INSERT INTO albums (family_id,owner_member_id,name,visibility) VALUES (?,?,?,'CUSTOM')`,
+        [familyId, memberId, `隐藏 ${suffix}`],
+      );
+      hiddenAlbumId = String(hiddenAlbum.insertId);
 
       for (const fixture of fixtures) {
         const mediaId = await insertMedia(connection, fixture);
@@ -126,6 +155,10 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
           [familyId, albumId, mediaId],
         );
       }
+      await connection.query(
+        `INSERT INTO album_media (family_id,album_id,media_id) VALUES (?,?,?)`,
+        [familyId, hiddenAlbumId, mediaIds[0]],
+      );
       await connection.commit();
     } catch (error) {
       await connection.rollback();
@@ -146,6 +179,17 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
         await connection.query("DELETE FROM shares WHERE family_id=?", [
           familyId,
         ]);
+        for (const table of [
+          "comments",
+          "media_tags",
+          "tags",
+          "user_favorites",
+          "family_featured",
+        ]) {
+          await connection.query(`DELETE FROM ${table} WHERE family_id=?`, [
+            familyId,
+          ]);
+        }
         await connection.query("DELETE FROM album_media WHERE family_id=?", [
           familyId,
         ]);
@@ -369,6 +413,12 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
           )
           .toBeGreaterThan(0);
         expect(publicOriginalRequested).toBe(false);
+        await expect(
+          publicPage.getByRole("link", { name: "下载原图" }),
+        ).toHaveCount(0);
+        await expect(
+          publicPage.getByRole("region", { name: "照片详情" }),
+        ).toHaveCount(0);
         expect(publicDerivedFailure).toBe(false);
         expect((await publicContext.cookies()).length).toBe(0);
       } finally {
@@ -386,6 +436,326 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
         await page.evaluate(() => document.cookie.includes("family_session")),
       ).toBe(false);
     } finally {
+      await context.close();
+    }
+  });
+
+  test("Phase 6E owner integrates mutations, CAS conflict and browser attachment downloads", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: { width: 1440, height: 1000 },
+    });
+    try {
+      await realLogin(context);
+      const page = await context.newPage();
+      await page.goto(`/albums/${albumId}`);
+      await clickUntilVisible(
+        page.locator(".gallery-cell").first(),
+        page.getByRole("dialog", { name: "照片" }),
+      );
+      const panel = page.getByRole("region", { name: "照片详情" });
+      await expect(panel).toBeVisible();
+      await panel.getByRole("button", { name: "收藏", exact: true }).click();
+      await expect(
+        panel.getByRole("button", { name: "取消收藏", exact: true }),
+      ).toHaveAttribute("aria-pressed", "true");
+      await panel
+        .getByRole("button", { name: "取消收藏", exact: true })
+        .click();
+      await expect(
+        panel.getByRole("button", { name: "收藏", exact: true }),
+      ).toBeEnabled();
+      await panel
+        .getByRole("button", { name: "设为家庭精选", exact: true })
+        .click();
+      await expect(
+        panel.getByRole("button", { name: "取消家庭精选", exact: true }),
+      ).toBeEnabled();
+      await panel
+        .getByRole("button", { name: "取消家庭精选", exact: true })
+        .click();
+      await expect(
+        panel.getByRole("button", { name: "设为家庭精选", exact: true }),
+      ).toBeEnabled();
+      await panel.getByLabel("新标签").fill("旅行");
+      await panel.getByRole("button", { name: "添加标签" }).click();
+      await expect(
+        panel.getByRole("button", { name: "移除标签 旅行" }),
+      ).toBeVisible();
+      await panel.getByRole("button", { name: "移除标签 旅行" }).click();
+      await expect(
+        panel.getByRole("button", { name: "移除标签 旅行" }),
+      ).toHaveCount(0);
+      await panel.getByRole("button", { name: "编辑备注" }).click();
+      await panel.getByLabel("照片备注").fill("初始备注");
+      await panel.getByRole("button", { name: "保存备注" }).click();
+      await expect(panel.getByText("初始备注", { exact: true })).toBeVisible();
+
+      // A real concurrent writer updates the revision after this editor opens.
+      await panel.getByRole("button", { name: "编辑备注" }).click();
+      await panel.getByLabel("照片备注").fill("过期草稿");
+      const detailPath = `/api/v1/albums/${albumId}/media/${mediaIds[0]}`;
+      const current = (await (
+        await context.request.get(detailPath)
+      ).json()) as { noteRevision: string };
+      const concurrent = await context.request.put(`${detailPath}/note`, {
+        headers: { origin: "https://localhost:3443" },
+        data: { note: "最新并发备注", expectedRevision: current.noteRevision },
+      });
+      expect(concurrent.status()).toBe(200);
+      let notePuts = 0;
+      page.on("request", (request) => {
+        if (
+          new URL(request.url()).pathname === `${detailPath}/note` &&
+          request.method() === "PUT"
+        )
+          notePuts += 1;
+      });
+      await panel.getByRole("button", { name: "保存备注" }).click();
+      await expect(panel.getByRole("status")).toContainText(
+        "备注已被其他人更新",
+      );
+      await expect(
+        panel.getByText("最新并发备注", { exact: true }),
+      ).toBeVisible();
+      await expect(panel.getByLabel("照片备注")).toHaveCount(0);
+      expect(notePuts).toBe(1);
+      const latest = (await (await context.request.get(detailPath)).json()) as {
+        note: string;
+        noteRevision: string;
+      };
+      expect(latest.note).toBe("最新并发备注");
+
+      await panel.getByRole("button", { name: "查看评论" }).click();
+      await expect(
+        panel.getByRole("button", { name: "发表评论" }),
+      ).toBeEnabled();
+      await panel
+        .getByLabel("新评论")
+        .fill("<script>synthetic-comment</script>");
+      let commentPosts = 0;
+      let releasePost!: () => void;
+      let enteredPost!: () => void;
+      const postGate = new Promise<void>((done) => {
+        releasePost = done;
+      });
+      const postEntered = new Promise<void>((done) => {
+        enteredPost = done;
+      });
+      await page.route(`**${detailPath}/comments`, async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue();
+          return;
+        }
+        commentPosts += 1;
+        enteredPost();
+        await postGate;
+        await route.continue();
+      });
+      try {
+        await panel
+          .getByLabel("新评论")
+          .evaluate((element: HTMLTextAreaElement) => {
+            element.form!.requestSubmit();
+            element.form!.requestSubmit();
+          });
+        await postEntered;
+        await expect(
+          panel.getByRole("button", { name: "发表评论" }),
+        ).toBeDisabled();
+        expect(commentPosts).toBe(1);
+      } finally {
+        releasePost();
+      }
+      await expect(
+        panel.getByText("<script>synthetic-comment</script>", { exact: true }),
+      ).toBeVisible();
+      expect(commentPosts).toBe(1);
+      await expect(panel.locator("script")).toHaveCount(0);
+      await panel.getByRole("button", { name: "删除评论 验收成员" }).click();
+      await expect(
+        panel.getByText("<script>synthetic-comment</script>", { exact: true }),
+      ).toHaveCount(0);
+      await page.unroute(`**${detailPath}/comments`);
+
+      let fetchDownload = false;
+      page.on("request", (request) => {
+        if (
+          /\/download\//u.test(request.url()) &&
+          request.resourceType() !== "document"
+        )
+          fetchDownload = true;
+      });
+      for (const [label, kind] of [
+        ["下载原图", "original"],
+        ["下载预览", "preview"],
+      ] as const) {
+        const link = panel.getByRole("link", { name: label });
+        await expect(link).toHaveAttribute(
+          "href",
+          `${detailPath}/download/${kind}`,
+        );
+        const event = page.waitForEvent("download");
+        await link.click();
+        const download = await event;
+        expect(new URL(download.url()).pathname).toBe(
+          `${detailPath}/download/${kind}`,
+        );
+        expect(await download.failure()).toBeNull();
+      }
+      expect(fetchDownload).toBe(false);
+      const retained = await context.request.post(`${detailPath}/comments`, {
+        headers: { origin: "https://localhost:3443" },
+        data: { body: "他人的评论" },
+      });
+      expect(retained.status()).toBe(201);
+      await page.getByRole("button", { name: "下一张" }).click();
+      await expect(
+        panel.getByText("最新并发备注", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        panel.getByRole("link", { name: "下载原图" }),
+      ).toHaveAttribute(
+        "href",
+        `/api/v1/albums/${albumId}/media/${mediaIds[1]}/download/original`,
+      );
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog", { name: "照片" })).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Phase 6E viewer-only actor receives view capabilities and hidden selected album stays denied", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: { width: 390, height: 844 },
+    });
+    try {
+      await realLogin(context, viewerUsername);
+      const page = await context.newPage();
+      await page.goto(`/albums/${albumId}`);
+      await clickUntilVisible(
+        page.locator(".gallery-cell").first(),
+        page.getByRole("dialog", { name: "照片" }),
+      );
+      const panel = page.getByRole("region", { name: "照片详情" });
+      await expect(panel).toBeVisible();
+      await expect(panel.getByRole("button", { name: "编辑备注" })).toHaveCount(
+        0,
+      );
+      await expect(panel.getByRole("button", { name: "添加标签" })).toHaveCount(
+        0,
+      );
+      await expect(
+        panel.getByRole("button", { name: "设为家庭精选" }),
+      ).toHaveCount(0);
+      await panel.getByRole("button", { name: "收藏", exact: true }).click();
+      await expect(
+        panel.getByRole("button", { name: "取消收藏", exact: true }),
+      ).toBeEnabled();
+      await panel.getByRole("button", { name: "查看评论" }).click();
+      await expect(
+        panel.getByRole("button", { name: "发表评论" }),
+      ).toBeEnabled();
+      await expect(
+        panel.getByText("他人的评论", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        panel.getByRole("button", { name: "删除评论 验收成员" }),
+      ).toHaveCount(0);
+      await panel.getByLabel("新评论").fill("只读成员仍可评论");
+      await panel.getByRole("button", { name: "发表评论" }).click();
+      await expect(
+        panel.getByText("只读成员仍可评论", { exact: true }),
+      ).toBeVisible();
+      await panel
+        .getByRole("button", { name: "删除评论 只读验收成员" })
+        .click();
+      await expect(
+        panel.getByText("只读成员仍可评论", { exact: true }),
+      ).toHaveCount(0);
+      await expect(panel.getByRole("link", { name: "下载原图" })).toBeVisible();
+      await expect(panel.getByRole("link", { name: "下载预览" })).toBeVisible();
+      expect(
+        await page
+          .getByRole("dialog", { name: "照片" })
+          .evaluate((element) => element.scrollWidth <= element.clientWidth),
+      ).toBe(true);
+      const denied = await context.request.get(
+        `/api/v1/albums/${hiddenAlbumId}/media/${mediaIds[0]}`,
+      );
+      expect(denied.status()).toBe(404);
+      await page.goto(`/albums/${hiddenAlbumId}`);
+      await expect(page.getByRole("region", { name: "照片详情" })).toHaveCount(
+        0,
+      );
+      await expect(page.locator(".gallery-cell")).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Phase 6E discards delayed detail from the previous Viewer target", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    let release!: () => void;
+    try {
+      await realLogin(context);
+      const page = await context.newPage();
+      let entered!: () => void;
+      let delivered!: () => void;
+      const enteredGate = new Promise<void>((done) => {
+        entered = done;
+      });
+      const deliverGate = new Promise<void>((done) => {
+        delivered = done;
+      });
+      const gate = new Promise<void>((done) => {
+        release = done;
+      });
+      await page.route(
+        `**/api/v1/albums/${albumId}/media/${mediaIds[0]}`,
+        async (route) => {
+          const response = await route.fetch();
+          entered();
+          await gate;
+          await route.fulfill({ response });
+          delivered();
+        },
+      );
+      await page.goto(`/albums/${albumId}`);
+      await clickUntilVisible(
+        page.locator(".gallery-cell").first(),
+        page.getByRole("dialog", { name: "照片" }),
+      );
+      await enteredGate;
+      await page.getByRole("button", { name: "下一张" }).click();
+      const panel = page.getByRole("region", { name: "照片详情" });
+      await expect(
+        panel.getByRole("link", { name: "下载原图" }),
+      ).toHaveAttribute(
+        "href",
+        `/api/v1/albums/${albumId}/media/${mediaIds[1]}/download/original`,
+      );
+      release();
+      await deliverGate;
+      await expect(
+        panel.getByText("最新并发备注", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        panel.getByRole("link", { name: "下载原图" }),
+      ).toHaveAttribute(
+        "href",
+        `/api/v1/albums/${albumId}/media/${mediaIds[1]}/download/original`,
+      );
+    } finally {
+      release?.();
       await context.close();
     }
   });
@@ -450,7 +820,7 @@ async function clickUntilVisible(trigger: Locator, target: Locator) {
   }).toPass({ timeout: 10_000 });
 }
 
-async function realLogin(context: BrowserContext) {
+async function realLogin(context: BrowserContext, loginUsername = username) {
   const response = await context.request.post(
     "https://localhost:3443/api/v1/auth/login",
     {
@@ -458,7 +828,7 @@ async function realLogin(context: BrowserContext) {
         origin: "https://localhost:3443",
         "content-type": "application/json",
       },
-      data: { username, password: syntheticPassword },
+      data: { username: loginUsername, password: syntheticPassword },
     },
   );
   expect(response.status()).toBe(204);
@@ -485,12 +855,13 @@ async function assertDevDatabase(connection: PoolConnection) {
 }
 
 async function insertMedia(connection: PoolConnection, fixture: MediaFixture) {
-  const objectSha = randomBytes(32);
+  const original = fixture.preview;
+  const objectSha = createHash("sha256").update(original).digest();
   const [object] = await connection.query<ResultSetHeader>(
     `INSERT INTO storage_objects
       (family_id, sha256, byte_size, key_version, state, durable_at, verified_at)
-     VALUES (?, ?, 8, 1, 'AVAILABLE', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
-    [familyId, objectSha],
+     VALUES (?, ?, ?, 1, 'AVAILABLE', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
+    [familyId, objectSha, original.length],
   );
   const objectId = String(object.insertId);
   const [upload] = await connection.query<ResultSetHeader>(
@@ -498,10 +869,18 @@ async function insertMedia(connection: PoolConnection, fixture: MediaFixture) {
       (public_id, family_id, created_by_member_id, original_filename,
        declared_size, committed_offset, state, computed_sha256,
        finalize_started_at, storage_object_id, completed_at, expires_at)
-     VALUES (?, ?, ?, 'synthetic.webp', 8, 8, 'COMPLETE', ?,
+     VALUES (?, ?, ?, 'synthetic.webp', ?, ?, 'COMPLETE', ?,
        CURRENT_TIMESTAMP(3), ?, CURRENT_TIMESTAMP(3),
        DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 1 DAY))`,
-    [randomBytes(16), familyId, memberId, objectSha, objectId],
+    [
+      randomBytes(16),
+      familyId,
+      memberId,
+      original.length,
+      original.length,
+      objectSha,
+      objectId,
+    ],
   );
   const [media] = await connection.query<ResultSetHeader>(
     `INSERT INTO media_items
@@ -552,6 +931,16 @@ async function insertMedia(connection: PoolConnection, fixture: MediaFixture) {
     previewDimensions[1]!,
   );
   writeDerivedFiles(mediaId, fixture);
+  const originalPath = resolve(
+    mediaRoot!,
+    buildOriginalPath(
+      familyId,
+      objectSha.toString("hex"),
+      String(original.length),
+    ),
+  );
+  mkdirSync(resolve(originalPath, ".."), { recursive: true, mode: 0o700 });
+  writeFileSync(originalPath, original, { flag: "wx", mode: 0o400 });
   return mediaId;
 }
 
