@@ -34,6 +34,10 @@ import {
   OriginalDownloadService,
   type OriginalDownloadReader,
 } from "./original-download/service.js";
+import {
+  PreviewDownloadService,
+  type PreviewDownloadReader,
+} from "./preview-download/service.js";
 
 const env = loadApiEnv();
 const database = createDatabase(env.DATABASE_URL);
@@ -137,6 +141,20 @@ const originalDownloadService = new OriginalDownloadService(
   albumRepository,
   originalReader ?? unavailableOriginalReader,
 );
+const previewDownloadReader: PreviewDownloadReader = {
+  async read(identity, options) {
+    const gate = sharedCapacityGate;
+    if (!gate) throw new StorageSafetyError("DERIVED_SERVE_UNAVAILABLE");
+    return gate.withLock(() => {
+      options.signal.throwIfAborted();
+      return Promise.resolve(gate.readDerivedFinal(identity));
+    });
+  },
+};
+const previewDownloadService = new PreviewDownloadService(
+  albumRepository,
+  previewDownloadReader,
+);
 const publicShareService = new PublicShareService(
   shareService,
   shareRepository,
@@ -157,6 +175,7 @@ const app = createApp({
   uploadService,
   derivedService,
   originalDownloadService,
+  previewDownloadService,
   publicApiOrigin: env.API_PUBLIC_ORIGIN,
   trustedOrigins: new Set(env.TRUSTED_WEB_ORIGINS),
   trustedProxies: env.TRUSTED_PROXY_CIDRS,

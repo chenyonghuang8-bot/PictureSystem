@@ -17,6 +17,7 @@ import type { UploadMutex } from "./uploads/mutex.js";
 import { registerDerivedRoutes } from "./derived-serving/routes.js";
 import type { DerivedReadService } from "./derived-serving/service.js";
 import type { OriginalDownloadService } from "./original-download/service.js";
+import type { PreviewDownloadService } from "./preview-download/service.js";
 
 export function createApp(options?: {
   authService: AuthService;
@@ -27,6 +28,7 @@ export function createApp(options?: {
   uploadService?: UploadService;
   derivedService?: DerivedReadService;
   originalDownloadService?: OriginalDownloadService;
+  previewDownloadService?: PreviewDownloadService;
   publicApiOrigin?: string;
   trustedOrigins: ReadonlySet<string>;
   trustedProxies?: readonly string[];
@@ -67,6 +69,9 @@ export function createApp(options?: {
         albumService: options.albumService,
         ...(options.originalDownloadService
           ? { originalDownloadService: options.originalDownloadService }
+          : {}),
+        ...(options.previewDownloadService
+          ? { previewDownloadService: options.previewDownloadService }
           : {}),
         trustedOrigins: options.trustedOrigins,
       });

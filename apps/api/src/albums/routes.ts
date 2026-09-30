@@ -58,6 +58,7 @@ import {
   type AlbumService,
 } from "./service.js";
 import type { OriginalDownloadService } from "../original-download/service.js";
+import type { PreviewDownloadService } from "../preview-download/service.js";
 
 export function registerAlbumRoutes(
   app: FastifyInstance,
@@ -65,11 +66,17 @@ export function registerAlbumRoutes(
     authService: AuthService;
     albumService: AlbumService;
     originalDownloadService?: OriginalDownloadService;
+    previewDownloadService?: PreviewDownloadService;
     trustedOrigins: ReadonlySet<string>;
   },
 ) {
-  const { authService, albumService, originalDownloadService, trustedOrigins } =
-    options;
+  const {
+    authService,
+    albumService,
+    originalDownloadService,
+    previewDownloadService,
+    trustedOrigins,
+  } = options;
 
   app.addHook("onSend", async (request, reply) => {
     if (request.url.startsWith("/api/v1/albums")) {
@@ -546,6 +553,43 @@ export function registerAlbumRoutes(
             albumId,
             mediaId,
             kind: "ORIGINAL",
+            bytesWritten: result.bytesWritten,
+            durationMs: Date.now() - startedAt,
+          };
+          if (result.completed) request.log.info(fields, "security event");
+          else request.log.warn(fields, "security event");
+          return reply;
+        }),
+    );
+  }
+
+  if (previewDownloadService) {
+    app.get(
+      "/api/v1/albums/:albumId/media/:mediaId/download/preview",
+      { exposeHeadRoute: false },
+      async (request, reply) =>
+        handleAlbum(request, reply, "media_preview_download", async () => {
+          emptyObjectRequestSchema.parse(request.query);
+          const { albumId, mediaId } = galleryMediaParamsSchema.parse(
+            request.params,
+          );
+          const startedAt = Date.now();
+          const result = await previewDownloadService.download(
+            { albumId, mediaId },
+            request,
+            reply,
+            () => authenticate(request, authService),
+          );
+          const fields = {
+            event: "media_download",
+            requestId: request.id,
+            resultCode: result.resultCategory,
+            timestamp: new Date().toISOString(),
+            actorMemberId: result.record.actorMemberId,
+            familyId: result.record.familyId,
+            albumId,
+            mediaId,
+            kind: "PREVIEW",
             bytesWritten: result.bytesWritten,
             durationMs: Date.now() - startedAt,
           };

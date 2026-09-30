@@ -116,6 +116,30 @@ export type OriginalDownloadRecord = {
   detectedMime: string | null;
 };
 
+export type PreviewDownloadRecord = {
+  familyId: string;
+  albumId: string;
+  actorMemberId: string;
+  mediaId: string;
+  storageObjectId: string;
+  sourceUploadId: string;
+  mediaGeneration: bigint;
+  mediaRecipeId: 1;
+  derivedAssetId: string;
+  derivedGeneration: bigint;
+  derivedRecipeId: 1;
+  kind: "PREVIEW";
+  byteSize: bigint;
+  sha256Hex: string;
+  outputMime: "image/webp";
+  width: number;
+  height: number;
+  producerJobId: string;
+  producerLeaseEpoch: bigint;
+  publishedAt: Date;
+  configuredPreviewRecipeId: 1;
+};
+
 export class AlbumRepositoryError extends Error {
   constructor(
     readonly reason:
@@ -182,6 +206,8 @@ export class MySqlAlbumRepository {
     private readonly pool: Pool,
     private readonly testOptions?: {
       readonly testHook?: AlbumRepositoryTestHook;
+      /** Test-only seam for proving configured recipe drift; production omits it. */
+      readonly getConfiguredPreviewRecipeId?: () => number;
     },
   ) {}
 
@@ -431,6 +457,27 @@ export class MySqlAlbumRepository {
     return this.authorizeOriginalDownload(
       input,
       "ORIGINAL_DOWNLOAD_RECHECK",
+      input.expected,
+    );
+  }
+
+  async preparePreviewDownload(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+  }): Promise<PreviewDownloadRecord> {
+    return this.authorizePreviewDownload(input, "PREVIEW_DOWNLOAD_PREPARE");
+  }
+
+  async recheckPreviewDownload(input: {
+    actor: Phase1CActor;
+    albumId: string;
+    mediaId: string;
+    expected: PreviewDownloadRecord;
+  }): Promise<PreviewDownloadRecord> {
+    return this.authorizePreviewDownload(
+      input,
+      "PREVIEW_DOWNLOAD_RECHECK",
       input.expected,
     );
   }
@@ -1021,6 +1068,83 @@ export class MySqlAlbumRepository {
         : undefined;
       await testHook?.({
         stage: "ORIGINAL_DOWNLOAD_VALIDATED_BEFORE_COMMIT",
+        operation,
+        familyId,
+        ...(connectionId === undefined ? {} : { connectionId }),
+      });
+      return record;
+    });
+  }
+
+  private async authorizePreviewDownload(
+    input: { actor: Phase1CActor; albumId: string; mediaId: string },
+    operation: "PREVIEW_DOWNLOAD_PREPARE" | "PREVIEW_DOWNLOAD_RECHECK",
+    expected?: PreviewDownloadRecord,
+  ): Promise<PreviewDownloadRecord> {
+    const targets = await this.locateOriginalDownloadTargets(
+      input.albumId,
+      input.mediaId,
+    );
+    if (!targets.familyId) throw new AlbumRepositoryError("NOT_FOUND");
+    const familyId = targets.familyId;
+    return runCheckedTransaction(this.pool, async (connection) => {
+      const testHook = this.testOptions?.testHook;
+      await lockFamily(connection, familyId, () =>
+        testHook?.({
+          stage: "FAMILY_LOCK_QUERY_DISPATCHED",
+          operation,
+          familyId,
+        }),
+      );
+      const actor = await lockActor(connection, familyId, input.actor);
+      const album = await lockAlbum(connection, familyId, input.albumId);
+      const grant = album
+        ? await lockGrant(connection, familyId, album.id, actor.member.id)
+        : undefined;
+      const storage = targets.storageObjectId
+        ? await lockOriginalStorage(
+            connection,
+            familyId,
+            targets.storageObjectId,
+          )
+        : undefined;
+      const media = await lockPreviewMedia(connection, familyId, input.mediaId);
+      const placement = await lockExactPlacement(
+        connection,
+        familyId,
+        input.albumId,
+        input.mediaId,
+      );
+      const preview = media
+        ? await lockCurrentPreview(connection, familyId, input.mediaId, media)
+        : undefined;
+      const configuredPreviewRecipeId =
+        this.testOptions?.getConfiguredPreviewRecipeId?.() ?? 1;
+      const now = await readServerTime(connection);
+      assertActor(actor, input.actor, now);
+      assertVisible(album, actor.member, grant);
+      if (!media || !placement) throw new AlbumRepositoryError("NOT_FOUND");
+      if (!ORIGINAL_MEDIA_STATES.has(media.processingState)) {
+        throw new AlbumRepositoryError("NOT_FOUND");
+      }
+      const record = validatedPreviewDownloadRecord({
+        familyId,
+        albumId: input.albumId,
+        actorMemberId: actor.member.id,
+        mediaId: input.mediaId,
+        storage,
+        media,
+        preview,
+        configuredPreviewRecipeId,
+      });
+      if (expected && !samePreviewIdentity(expected, record)) {
+        throw new AlbumRepositoryError("NOT_FOUND");
+      }
+      const connectionId = testHook
+        ? await readConnectionId(connection)
+        : undefined;
+      await testHook?.({
+        stage: "PREVIEW_DOWNLOAD_VALIDATED_BEFORE_COMMIT",
         operation,
         familyId,
         ...(connectionId === undefined ? {} : { connectionId }),
@@ -1631,6 +1755,30 @@ type OriginalMediaRow = RowDataPacket & {
   processingState: string;
 };
 
+type PreviewMediaRow = OriginalMediaRow & {
+  recipeId: number;
+};
+
+type PreviewAssetRow = RowDataPacket & {
+  id: string;
+  familyId: string;
+  mediaId: string;
+  generation: string;
+  recipeId: number;
+  kind: string;
+  state: string;
+  reservedBytes: string;
+  byteSize: string | null;
+  sha256: Buffer | null;
+  width: number | null;
+  height: number | null;
+  outputMime: string | null;
+  producerJobId: string;
+  producerLeaseEpoch: string | null;
+  publishedAt: Date | null;
+  cleanedAt: Date | null;
+};
+
 type OriginalReceiptRow = RowDataPacket & {
   id: string;
   familyId: string;
@@ -1673,6 +1821,52 @@ async function lockOriginalMedia(
        FROM media_items
       WHERE family_id = ? AND id = ? FOR UPDATE`,
     [familyId, mediaId],
+  );
+  return rows[0];
+}
+
+async function lockPreviewMedia(
+  connection: PoolConnection,
+  familyId: string,
+  mediaId: string,
+) {
+  const [rows] = await connection.query<PreviewMediaRow[]>(
+    `SELECT CAST(id AS CHAR) AS id, CAST(family_id AS CHAR) AS familyId,
+            CAST(storage_object_id AS CHAR) AS storageObjectId,
+            CAST(source_upload_id AS CHAR) AS sourceUploadId,
+            CAST(generation AS CHAR) AS generation,
+            recipe_id AS recipeId, processing_state AS processingState,
+            CAST(metadata_generation AS CHAR) AS metadataGeneration,
+            detected_mime AS detectedMime
+       FROM media_items
+      WHERE family_id = ? AND id = ? FOR UPDATE`,
+    [familyId, mediaId],
+  );
+  return rows[0];
+}
+
+async function lockCurrentPreview(
+  connection: PoolConnection,
+  familyId: string,
+  mediaId: string,
+  media: PreviewMediaRow,
+) {
+  const [rows] = await connection.query<PreviewAssetRow[]>(
+    `SELECT CAST(id AS CHAR) AS id, CAST(family_id AS CHAR) AS familyId,
+            CAST(media_id AS CHAR) AS mediaId,
+            CAST(generation AS CHAR) AS generation,
+            recipe_id AS recipeId, kind, state,
+            CAST(reserved_bytes AS CHAR) AS reservedBytes,
+            CAST(byte_size AS CHAR) AS byteSize, sha256, width, height,
+            output_mime AS outputMime,
+            CAST(producer_job_id AS CHAR) AS producerJobId,
+            CAST(producer_lease_epoch AS CHAR) AS producerLeaseEpoch,
+            published_at AS publishedAt, cleaned_at AS cleanedAt
+       FROM derived_assets
+      WHERE family_id = ? AND media_id = ? AND generation = ?
+        AND recipe_id = ? AND kind = 'PREVIEW'
+      FOR UPDATE`,
+    [familyId, mediaId, media.generation, media.recipeId],
   );
   return rows[0];
 }
@@ -1778,6 +1972,129 @@ function sameOriginalIdentity(
     left.sha256Hex === right.sha256Hex &&
     left.byteSize === right.byteSize &&
     left.sourceUploadId === right.sourceUploadId
+  );
+}
+
+const MAX_PREVIEW_BYTES = 4_194_304n;
+
+function validatedPreviewDownloadRecord(input: {
+  familyId: string;
+  albumId: string;
+  actorMemberId: string;
+  mediaId: string;
+  storage: OriginalStorageRow | undefined;
+  media: PreviewMediaRow;
+  preview: PreviewAssetRow | undefined;
+  configuredPreviewRecipeId: number;
+}): PreviewDownloadRecord {
+  const { storage, media, preview } = input;
+  if (
+    !storage ||
+    storage.familyId !== input.familyId ||
+    storage.id !== media.storageObjectId ||
+    storage.state !== "AVAILABLE" ||
+    media.familyId !== input.familyId ||
+    media.id !== input.mediaId ||
+    media.recipeId !== 1 ||
+    input.configuredPreviewRecipeId !== 1 ||
+    !/^[1-9][0-9]*$/u.test(media.generation)
+  ) {
+    throw new AlbumRepositoryError("NOT_FOUND");
+  }
+  if (
+    !preview ||
+    preview.familyId !== input.familyId ||
+    preview.mediaId !== input.mediaId ||
+    preview.generation !== media.generation ||
+    preview.recipeId !== media.recipeId ||
+    preview.kind !== "PREVIEW" ||
+    preview.state !== "READY" ||
+    preview.cleanedAt !== null
+  ) {
+    throw new AlbumRepositoryError("NOT_FOUND");
+  }
+  if (
+    !/^[1-9][0-9]*$/u.test(preview.id) ||
+    !/^[1-9][0-9]*$/u.test(preview.reservedBytes) ||
+    preview.byteSize === null ||
+    !/^[1-9][0-9]*$/u.test(preview.byteSize) ||
+    !Buffer.isBuffer(preview.sha256) ||
+    preview.sha256.length !== 32 ||
+    !Number.isInteger(preview.width) ||
+    preview.width === null ||
+    preview.width <= 0 ||
+    !Number.isInteger(preview.height) ||
+    preview.height === null ||
+    preview.height <= 0 ||
+    preview.outputMime !== "image/webp" ||
+    !/^[1-9][0-9]*$/u.test(preview.producerJobId) ||
+    preview.producerLeaseEpoch === null ||
+    !/^[1-9][0-9]*$/u.test(preview.producerLeaseEpoch) ||
+    !(preview.publishedAt instanceof Date)
+  ) {
+    throw new AlbumRepositoryError("SERVICE_UNAVAILABLE");
+  }
+  const reservedBytes = BigInt(preview.reservedBytes);
+  const byteSize = BigInt(preview.byteSize);
+  if (
+    reservedBytes > MAX_PREVIEW_BYTES ||
+    byteSize > reservedBytes ||
+    byteSize > MAX_PREVIEW_BYTES
+  ) {
+    throw new AlbumRepositoryError("SERVICE_UNAVAILABLE");
+  }
+  const generation = BigInt(media.generation);
+  return {
+    familyId: input.familyId,
+    albumId: input.albumId,
+    actorMemberId: input.actorMemberId,
+    mediaId: input.mediaId,
+    storageObjectId: storage.id,
+    sourceUploadId: media.sourceUploadId,
+    mediaGeneration: generation,
+    mediaRecipeId: 1,
+    derivedAssetId: preview.id,
+    derivedGeneration: generation,
+    derivedRecipeId: 1,
+    kind: "PREVIEW",
+    byteSize,
+    sha256Hex: preview.sha256.toString("hex"),
+    outputMime: "image/webp",
+    width: preview.width,
+    height: preview.height,
+    producerJobId: preview.producerJobId,
+    producerLeaseEpoch: BigInt(preview.producerLeaseEpoch),
+    publishedAt: preview.publishedAt,
+    configuredPreviewRecipeId: 1,
+  };
+}
+
+function samePreviewIdentity(
+  left: PreviewDownloadRecord,
+  right: PreviewDownloadRecord,
+) {
+  return (
+    left.familyId === right.familyId &&
+    left.albumId === right.albumId &&
+    left.actorMemberId === right.actorMemberId &&
+    left.mediaId === right.mediaId &&
+    left.storageObjectId === right.storageObjectId &&
+    left.sourceUploadId === right.sourceUploadId &&
+    left.mediaGeneration === right.mediaGeneration &&
+    left.mediaRecipeId === right.mediaRecipeId &&
+    left.derivedAssetId === right.derivedAssetId &&
+    left.derivedGeneration === right.derivedGeneration &&
+    left.derivedRecipeId === right.derivedRecipeId &&
+    left.kind === right.kind &&
+    left.byteSize === right.byteSize &&
+    left.sha256Hex === right.sha256Hex &&
+    left.outputMime === right.outputMime &&
+    left.width === right.width &&
+    left.height === right.height &&
+    left.producerJobId === right.producerJobId &&
+    left.producerLeaseEpoch === right.producerLeaseEpoch &&
+    left.publishedAt.getTime() === right.publishedAt.getTime() &&
+    left.configuredPreviewRecipeId === right.configuredPreviewRecipeId
   );
 }
 

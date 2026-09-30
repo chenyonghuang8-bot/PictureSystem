@@ -7,13 +7,16 @@ export type AlbumRepositoryTestOperation =
   | "COMMENT_CREATE"
   | "COMMENT_DELETE"
   | "ORIGINAL_DOWNLOAD_PREPARE"
-  | "ORIGINAL_DOWNLOAD_RECHECK";
+  | "ORIGINAL_DOWNLOAD_RECHECK"
+  | "PREVIEW_DOWNLOAD_PREPARE"
+  | "PREVIEW_DOWNLOAD_RECHECK";
 
 export type AlbumRepositoryTestEvent = Readonly<{
   stage:
     | "FAMILY_LOCK_QUERY_DISPATCHED"
     | "MUTATION_APPLIED_BEFORE_COMMIT"
-    | "ORIGINAL_DOWNLOAD_VALIDATED_BEFORE_COMMIT";
+    | "ORIGINAL_DOWNLOAD_VALIDATED_BEFORE_COMMIT"
+    | "PREVIEW_DOWNLOAD_VALIDATED_BEFORE_COMMIT";
   operation: AlbumRepositoryTestOperation;
   familyId: string;
   /** Test-only server connection identity for lock-wait correlation. */
