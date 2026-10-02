@@ -57,6 +57,7 @@ describe("share management UI", () => {
   it("renders a share entry, a one-time link, and no token hash", () => {
     const album = renderToStaticMarkup(
       createElement(AlbumDetail, {
+        userId: "7",
         albumId: "8",
         albumName: "春天",
         familyId: "4",

@@ -263,7 +263,8 @@ export class MySqlTrashRepository {
     return runCheckedTransaction(this.pool, async (connection) => {
       await lockFamily(connection, input.familyId);
       const actor = await lockActor(connection, input.familyId, input.actor);
-      assertActor(actor, input.actor, await readServerTime(connection));
+      const now = await readServerTime(connection);
+      assertActor(actor, input.actor, now);
       // EXISTS visibility and NOT EXISTS a non-deletable live placement run
       // before LIMIT and never reveal hidden placement identities or counts.
       const [rows] = await connection.query<RowDataPacket[]>(
@@ -300,7 +301,19 @@ export class MySqlTrashRepository {
         trashedAt: row.trashedAt as Date,
         purgeAfter: row.purgeAfter as Date,
         lifecycleRevision: String(row.lifecycleRevision),
-        capabilities: { canRestore: Number(row.canRestore) === 1 },
+        capabilities: {
+          canRestore:
+            Number(row.canRestore) === 1 &&
+            BigInt(String(row.lifecycleRevision)) < 18446744073709551615n,
+          permanentDeleteEligibility: permanentDeleteEligibility({
+            role: actor.member.role,
+            canRestore: Number(row.canRestore) === 1,
+            revision: String(row.lifecycleRevision),
+            purgeAfter: row.purgeAfter as Date,
+            authenticatedAt: actor.session?.authenticatedAt ?? null,
+            now,
+          }),
+        },
       }));
     });
   }
@@ -478,4 +491,28 @@ export class MySqlTrashRepository {
       purgeAfter: media.purgeAfter,
     };
   }
+}
+
+// Read-only hint, using the same transaction's server time. Mutation authority
+// remains in lockScope; neither this hint nor a family role bypasses placement ACL.
+export function permanentDeleteEligibility(input: {
+  role: string;
+  canRestore: boolean;
+  revision: string;
+  purgeAfter: Date;
+  authenticatedAt: Date | null;
+  now: Date;
+}): "NOT_ALLOWED" | "RETENTION_PENDING" | "REAUTH_REQUIRED" | "READY" {
+  if (
+    !["ADMIN", "SUPER_ADMIN"].includes(input.role) ||
+    !input.canRestore ||
+    BigInt(input.revision) >= 18446744073709551615n
+  )
+    return "NOT_ALLOWED";
+  if (input.now.getTime() < input.purgeAfter.getTime())
+    return "RETENTION_PENDING";
+  const age = input.authenticatedAt
+    ? input.now.getTime() - input.authenticatedAt.getTime()
+    : Infinity;
+  return age < 0 || age >= 15 * 60 * 1000 ? "REAUTH_REQUIRED" : "READY";
 }

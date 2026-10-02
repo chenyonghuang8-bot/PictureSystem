@@ -15,9 +15,11 @@ import { Viewer } from "./viewer.js";
 const PAGE_SIZE = 24;
 
 export function Timeline({
+  userId,
   familyId,
   initial,
 }: {
+  userId: string;
   familyId: string;
   initial: FamilyTimelinePage;
 }) {
@@ -101,10 +103,33 @@ export function Timeline({
             mediaId: item.mediaId,
             albumId: item.albumId,
           }))}
+          userId={userId}
           familyId={familyId}
           index={openIndex}
           onIndex={setOpenIndex}
           onClose={() => setOpenIndex(null)}
+          onAuthLost={() => {
+            setOpenIndex(null);
+            setItems([]);
+            setCursor(null);
+            setFailed(true);
+          }}
+          onTrashed={(mediaId) => {
+            setOpenIndex(null);
+            setItems((current) =>
+              current.filter((item) => item.mediaId !== mediaId),
+            );
+            setCursor(null);
+            void browserGalleryGet(
+              timelinePath(familyId, { limit: PAGE_SIZE }),
+              familyTimelinePageSchema,
+            )
+              .then((page) => {
+                setItems(page.media);
+                setCursor(page.nextCursor);
+              })
+              .catch(() => setFailed(true));
+          }}
           onDetail={(detail) =>
             setItems((current) =>
               current.map((item) =>

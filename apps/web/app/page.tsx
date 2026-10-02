@@ -43,7 +43,12 @@ export default async function HomePage() {
           familyName={family.familyName}
           displayName={family.displayName}
         />
-        <Timeline familyId={family.familyId} initial={page} />
+        <Timeline
+          key={`${family.userId}:${family.familyId}`}
+          userId={family.userId}
+          familyId={family.familyId}
+          initial={page}
+        />
       </GalleryShell>
     );
   } catch (error) {

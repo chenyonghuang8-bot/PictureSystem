@@ -75,7 +75,17 @@ export const trashItemSchema = lifecycleResponseSchema
   .extend({
     mediaType: z.enum(["UNKNOWN", "IMAGE", "VIDEO", "OTHER"]),
     timelineKey: z.iso.datetime(),
-    capabilities: z.object({ canRestore: z.boolean() }).strict(),
+    capabilities: z
+      .object({
+        canRestore: z.boolean(),
+        permanentDeleteEligibility: z.enum([
+          "NOT_ALLOWED",
+          "RETENTION_PENDING",
+          "REAUTH_REQUIRED",
+          "READY",
+        ]),
+      })
+      .strict(),
   })
   .strict();
 export const trashPageSchema = z

@@ -639,6 +639,84 @@ describe.sequential("Phase 7B live lifecycle authorization and fences", () => {
     expect(audit).toHaveLength(0);
   });
 
+  it("7D private detail aggregates all live placements, preserves exact revision and role boundaries", async () => {
+    const detail = () =>
+      albums.getAlbumMedia({
+        actor: actor(owner),
+        albumId,
+        mediaId: f.mediaId,
+      });
+    expect(await detail()).toMatchObject({
+      lifecycleRevision: "1",
+      capabilities: { canTrash: true },
+    });
+    const hidden = await placement(f.actorMemberId);
+    for (const role of ["MEMBER", "ADMIN", "SUPER_ADMIN"]) {
+      await c.query("UPDATE family_members SET role=? WHERE id=?", [
+        role,
+        f.memberId,
+      ]);
+      expect((await detail()).capabilities.canTrash).toBe(false);
+    }
+    await c.query(
+      "UPDATE albums SET deleted_at=CURRENT_TIMESTAMP(3) WHERE id=?",
+      [hidden],
+    );
+    await c.query(
+      "UPDATE media_items SET lifecycle_revision=9007199254740993 WHERE id=?",
+      [f.mediaId],
+    );
+    expect(await detail()).toMatchObject({
+      lifecycleRevision: "9007199254740993",
+      capabilities: { canTrash: true },
+    });
+    await c.query(
+      "UPDATE media_items SET lifecycle_revision=18446744073709551615 WHERE id=?",
+      [f.mediaId],
+    );
+    expect((await detail()).capabilities.canTrash).toBe(false);
+  });
+
+  it("7D Trash hints use current role, DB retention and session age without changing mutation authority", async () => {
+    await trash();
+    const eligibility = async () =>
+      (await service.list(owner, { familyId: f.familyId, limit: 20 })).items[0]!
+        .capabilities;
+    expect((await eligibility()).permanentDeleteEligibility).toBe(
+      "NOT_ALLOWED",
+    );
+    await c.query("UPDATE family_members SET role='ADMIN' WHERE id=?", [
+      f.memberId,
+    ]);
+    expect((await eligibility()).permanentDeleteEligibility).toBe(
+      "RETENTION_PENDING",
+    );
+    await c.query(
+      "UPDATE media_items SET trashed_at=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 31 DAY),purge_after=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 1 DAY) WHERE id=?",
+      [f.mediaId],
+    );
+    expect((await eligibility()).permanentDeleteEligibility).toBe("READY");
+    await c.query(
+      "UPDATE sessions SET authenticated_at=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 15 MINUTE) WHERE id=?",
+      [owner.identity.sessionId],
+    );
+    expect((await eligibility()).permanentDeleteEligibility).toBe(
+      "REAUTH_REQUIRED",
+    );
+    await placement(f.actorMemberId);
+    expect((await eligibility()).permanentDeleteEligibility).toBe(
+      "NOT_ALLOWED",
+    );
+    await c.query(
+      "UPDATE media_items SET lifecycle_revision=18446744073709551615 WHERE id=?",
+      [f.mediaId],
+    );
+    expect(await eligibility()).toMatchObject({
+      canRestore: false,
+      permanentDeleteEligibility: "NOT_ALLOWED",
+    });
+  });
+
   it("requires selected discovery and all live delete grants; deleted placements stay dormant", async () => {
     const hidden = await placement(f.actorMemberId);
     await expect(trash(owner, "1", randomUUID(), hidden)).rejects.toMatchObject(

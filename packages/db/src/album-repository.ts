@@ -89,11 +89,13 @@ export type MediaCommentRecord = {
 };
 
 export type AlbumMediaDetailRecord = AlbumMediaRecord & {
+  lifecycleRevision: string;
   tags: MediaTagRecord[];
   note: string | null;
   noteRevision: string;
   commentCount: string;
   capabilities: {
+    canTrash: boolean;
     canManageFeatured: boolean;
     canEditTags: boolean;
     canEditNote: boolean;
@@ -426,13 +428,34 @@ export class MySqlAlbumRepository {
         scope.familyId,
         input.mediaId,
       );
+      const [lifecycleRows] = await connection.query<RowDataPacket[]>(
+        `SELECT CAST(m.lifecycle_revision AS CHAR) lifecycleRevision,
+          NOT EXISTS (SELECT 1 FROM album_media p JOIN albums a ON a.family_id=p.family_id AND a.id=p.album_id
+            LEFT JOIN album_members g ON g.family_id=a.family_id AND g.album_id=a.id AND g.member_id=?
+            WHERE p.family_id=m.family_id AND p.media_id=m.id AND a.deleted_at IS NULL
+              AND NOT (a.owner_member_id=? OR (COALESCE(g.can_delete,0)=1 AND (a.visibility='FAMILY' OR g.can_view=1)))) canTrash
+         FROM media_items m WHERE m.family_id=? AND m.id=? AND m.trashed_at IS NULL AND m.purge_intent_id IS NULL`,
+        [
+          scope.actorMemberId,
+          scope.actorMemberId,
+          scope.familyId,
+          input.mediaId,
+        ],
+      );
+      const lifecycle = lifecycleRows[0];
+      if (!lifecycle) throw new AlbumRepositoryError("NOT_FOUND");
+      const lifecycleRevision = String(lifecycle.lifecycleRevision);
       return {
         ...row,
+        lifecycleRevision,
         tags,
         note: media.note,
         noteRevision: media.noteRevision,
         commentCount,
         capabilities: {
+          canTrash:
+            Number(lifecycle.canTrash) === 1 &&
+            BigInt(lifecycleRevision) < 18446744073709551615n,
           canManageFeatured:
             scope.actorRole === "ADMIN" || scope.actorRole === "SUPER_ADMIN",
           canEditTags: scope.album.effectivePermissions.canEdit,

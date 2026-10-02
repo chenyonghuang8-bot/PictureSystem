@@ -38,6 +38,8 @@ export default async function AlbumDetailPage({
     return (
       <GalleryShell familyName={family.familyName} active="albums">
         <AlbumDetail
+          key={`${family.userId}:${family.familyId}:${albumId}`}
+          userId={family.userId}
           albumId={albumId}
           albumName={album.name}
           familyId={family.familyId}

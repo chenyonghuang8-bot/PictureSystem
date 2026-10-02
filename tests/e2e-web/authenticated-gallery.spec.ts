@@ -246,6 +246,441 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
     }
   });
 
+  test("7D Trash reauth requires a second confirmation and keeps the asynchronous status card without media requests", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: { width: 390, height: 844 },
+    });
+    const c = await database.pool.getConnection();
+    let posts = 0,
+      ready = false,
+      reads = 0,
+      statusState = "QUEUED",
+      progress = "REQUESTED";
+    let operationId = "";
+    try {
+      await c.query(
+        "UPDATE media_items SET trashed_at=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 31 DAY),purge_after=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 1 DAY),trashed_by_member_id=? WHERE family_id=? AND id=?",
+        [memberId, familyId, mediaIds[0]],
+      );
+      await realLogin(context);
+      const page = await context.newPage();
+      const byteRequests: string[] = [];
+      page.on("request", (request) => {
+        if (
+          /derived|download\/(original|preview)/u.test(
+            new URL(request.url()).pathname,
+          )
+        )
+          byteRequests.push(request.url());
+      });
+      const item = {
+        mediaId: mediaIds[0],
+        lifecycleRevision: "1",
+        mediaType: "IMAGE",
+        timelineKey: "2026-09-18T08:00:00.000Z",
+        trashedAt: "2026-09-01T00:00:00.000Z",
+        purgeAfter: "2026-10-01T00:00:00.000Z",
+        capabilities: {
+          canRestore: true,
+          permanentDeleteEligibility: "REAUTH_REQUIRED",
+        },
+      };
+      await page.route(
+        `**/api/v1/families/${familyId}/trash**`,
+        async (route) => {
+          if (route.request().method() === "POST") {
+            posts++;
+            operationId = route.request().postDataJSON().operationId;
+            expect(route.request().postDataJSON()).not.toHaveProperty(
+              "selectedAlbumId",
+            );
+            await route.fulfill({ status: 202, json: { operationId } });
+          } else
+            await route.fulfill({
+              json: {
+                items: posts
+                  ? []
+                  : [
+                      {
+                        ...item,
+                        capabilities: {
+                          ...item.capabilities,
+                          permanentDeleteEligibility: ready
+                            ? "READY"
+                            : "REAUTH_REQUIRED",
+                        },
+                      },
+                    ],
+                nextCursor: null,
+              },
+            });
+        },
+      );
+      await page.route("**/api/v1/auth/reauth", async (route) => {
+        const response = await route.fetch();
+        expect(response.status()).toBe(204);
+        ready = true;
+        await route.fulfill({ response });
+      });
+      await page.route(
+        `**/api/v1/families/${familyId}/purge-requests/*`,
+        async (route) => {
+          reads++;
+          await route.fulfill({
+            json: {
+              operationId,
+              executionState: statusState,
+              progress,
+              completedAt:
+                statusState === "DONE" && progress === "COMPLETED"
+                  ? "2026-10-02T00:00:00.000Z"
+                  : null,
+              failureCategory: null,
+            },
+          });
+        },
+      );
+      await page.goto("/trash");
+      await page.getByRole("button", { name: "永久删除", exact: true }).click();
+      await expect(page.getByLabel("验证当前密码")).toBeVisible();
+      await page.getByLabel("验证当前密码").fill(syntheticPassword);
+      await page.getByRole("button", { name: "验证身份", exact: true }).click();
+      await expect(
+        page.getByRole("button", { name: "确认请求永久删除" }),
+      ).toBeVisible();
+      expect(posts).toBe(0);
+      await expect(page.getByLabel("验证当前密码")).toHaveCount(0);
+      await page.getByRole("button", { name: "确认请求永久删除" }).click();
+      await expect(
+        page.getByText("永久删除请求已接受，等待后台处理。"),
+      ).toBeVisible();
+      await expect(page.locator(".trash-list li")).toHaveCount(0);
+      expect(posts).toBe(1);
+      await page.getByRole("button", { name: "读取请求状态" }).click();
+      await expect(page.getByText("已请求，等待后台处理。")).toBeVisible();
+      statusState = "RUNNING";
+      progress = "FILES_REMOVED";
+      await page.getByRole("button", { name: "读取请求状态" }).click();
+      await expect(
+        page.getByText("后台处理中。", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("永久删除流程完成。", { exact: true }),
+      ).toHaveCount(0);
+      statusState = "RETRY_WAIT";
+      await page.getByRole("button", { name: "读取请求状态" }).click();
+      await expect(
+        page.getByText("后台暂缓，将按服务端规则处理。"),
+      ).toBeVisible();
+      statusState = "DONE";
+      progress = "COMPLETED";
+      await page.getByRole("button", { name: "读取请求状态" }).click();
+      await expect(
+        page.getByText("永久删除流程完成。", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "读取请求状态" }),
+      ).toBeDisabled();
+      await page.screenshot({
+        path: resolve(rootDir, "test-results/phase7d-trash-mobile.png"),
+        fullPage: true,
+      });
+      expect(reads).toBe(4);
+      expect(posts).toBe(1);
+      expect(byteRequests).toEqual([]);
+      expect(await page.locator(".trash-panel img").count()).toBe(0);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+    } finally {
+      await c.query(
+        "UPDATE media_items SET trashed_at=NULL,purge_after=NULL,trashed_by_member_id=NULL WHERE family_id=? AND id=?",
+        [familyId, mediaIds[0]],
+      );
+      c.release();
+      await context.close();
+    }
+  });
+
+  test("7D unknown permanent-delete never replays, 404 status is unresolved, positive read permits a new confirmation", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const c = await database.pool.getConnection();
+    let posts = 0,
+      listed = true;
+    try {
+      await c.query(
+        "UPDATE media_items SET trashed_at=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 31 DAY),purge_after=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 1 DAY),trashed_by_member_id=? WHERE family_id=? AND id=?",
+        [memberId, familyId, mediaIds[0]],
+      );
+      await realLogin(context);
+      const page = await context.newPage();
+      const item = {
+        mediaId: mediaIds[0],
+        lifecycleRevision: "1",
+        mediaType: "IMAGE",
+        timelineKey: "2026-09-18T08:00:00.000Z",
+        trashedAt: "2026-09-01T00:00:00.000Z",
+        purgeAfter: "2026-10-01T00:00:00.000Z",
+        capabilities: { canRestore: true, permanentDeleteEligibility: "READY" },
+      };
+      await page.route(
+        `**/api/v1/families/${familyId}/trash**`,
+        async (route) => {
+          if (route.request().method() === "POST") {
+            posts++;
+            await route.fulfill({ status: 503, json: {} });
+          } else
+            await route.fulfill({
+              json: { items: listed ? [item] : [], nextCursor: null },
+            });
+        },
+      );
+      await page.route(
+        `**/api/v1/families/${familyId}/purge-requests/*`,
+        (route) => route.fulfill({ status: 404, json: {} }),
+      );
+      await page.goto("/trash");
+      await page.getByRole("button", { name: "永久删除", exact: true }).click();
+      await page.getByRole("button", { name: "确认请求永久删除" }).click();
+      await expect(
+        page.getByRole("button", { name: "永久删除", exact: true }),
+      ).toBeDisabled();
+      await page.getByRole("button", { name: "读取请求状态" }).click();
+      await expect(
+        page.getByText("无法确认最新状态；列表缺席或状态 404 不证明操作完成。"),
+      ).toBeVisible();
+      listed = false;
+      await page.getByRole("button", { name: "刷新状态", exact: true }).click();
+      await expect(page.locator(".trash-list li")).toHaveCount(0);
+      expect(posts).toBe(1);
+      listed = true;
+      await page.getByRole("button", { name: "刷新状态", exact: true }).click();
+      await expect(
+        page.getByRole("button", { name: "永久删除", exact: true }),
+      ).toBeEnabled();
+      expect(posts).toBe(1);
+      await page.getByRole("button", { name: "恢复", exact: true }).click();
+      await expect(
+        page.getByRole("dialog", { name: "恢复媒体" }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog", { name: "恢复媒体" })).toHaveCount(
+        0,
+      );
+      expect(posts).toBe(1);
+    } finally {
+      await c.query(
+        "UPDATE media_items SET trashed_at=NULL,purge_after=NULL,trashed_by_member_id=NULL WHERE family_id=? AND id=?",
+        [familyId, mediaIds[0]],
+      );
+      c.release();
+      await context.close();
+    }
+  });
+
+  test("7D Trash paging, retention, Restore conflict/success and actor expiry remain read-coordinated", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const c = await database.pool.getConnection();
+    let posts = 0,
+      conflict = true,
+      restored = false;
+    try {
+      await c.query(
+        "UPDATE media_items SET trashed_at=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 31 DAY),purge_after=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 1 DAY),trashed_by_member_id=? WHERE family_id=? AND id=?",
+        [memberId, familyId, mediaIds[0]],
+      );
+      await realLogin(context);
+      const page = await context.newPage();
+      const first = {
+        mediaId: mediaIds[0],
+        lifecycleRevision: "1",
+        mediaType: "IMAGE",
+        timelineKey: "2026-09-18T08:00:00.000Z",
+        trashedAt: "2026-09-01T00:00:00.000Z",
+        purgeAfter: "2026-10-01T00:00:00.000Z",
+        capabilities: {
+          canRestore: true,
+          permanentDeleteEligibility: "RETENTION_PENDING",
+        },
+      };
+      const second = {
+        ...first,
+        mediaId: mediaIds[1],
+        lifecycleRevision: "9007199254740993",
+        capabilities: {
+          canRestore: true,
+          permanentDeleteEligibility: "NOT_ALLOWED",
+        },
+      };
+      await page.route(
+        `**/api/v1/families/${familyId}/trash**`,
+        async (route) => {
+          if (route.request().method() === "POST") {
+            posts++;
+            const body = route.request().postDataJSON();
+            expect(body).not.toHaveProperty("selectedAlbumId");
+            expect(body.expectedLifecycleRevision).toBe(
+              second.lifecycleRevision,
+            );
+            if (conflict) {
+              conflict = false;
+              await route.fulfill({ status: 409, json: {} });
+            } else {
+              restored = true;
+              await route.fulfill({
+                json: {
+                  mediaId: second.mediaId,
+                  lifecycleRevision: "9007199254740994",
+                  state: "ACTIVE",
+                  trashedAt: null,
+                  purgeAfter: null,
+                },
+              });
+            }
+          } else if (new URL(route.request().url()).searchParams.has("cursor"))
+            await route.fulfill({
+              json: {
+                items: restored ? [] : [first, second],
+                nextCursor: null,
+              },
+            });
+          else
+            await route.fulfill({
+              json: { items: [first], nextCursor: restored ? null : "second" },
+            });
+        },
+      );
+      await page.goto("/trash");
+      await page.getByRole("button", { name: "刷新状态", exact: true }).click();
+      await expect(
+        page.getByRole("button", {
+          name: "保留期未结束，可在所示时间之后刷新",
+        }),
+      ).toBeDisabled();
+      await page.evaluate(() => {
+        Date.now = () => 9999999999999;
+      });
+      await expect(
+        page.getByRole("button", {
+          name: "保留期未结束，可在所示时间之后刷新",
+        }),
+      ).toBeDisabled();
+      await page.getByRole("button", { name: "加载更多" }).click();
+      await expect(page.locator(".trash-list li")).toHaveCount(2);
+      await page
+        .locator(".trash-list li")
+        .nth(1)
+        .getByRole("button", { name: "恢复", exact: true })
+        .click();
+      await page.getByRole("button", { name: "确认恢复" }).click();
+      await expect(
+        page.getByText("状态已变化或保留期未结束，请刷新后重新确认。"),
+      ).toBeVisible();
+      expect(posts).toBe(1);
+      await page.getByRole("button", { name: "加载更多" }).click();
+      await page
+        .locator(".trash-list li")
+        .nth(1)
+        .getByRole("button", { name: "恢复", exact: true })
+        .click();
+      await page.getByRole("button", { name: "确认恢复" }).click();
+      await expect(page.getByText("已恢复。", { exact: true })).toBeVisible();
+      await expect(page.locator(".trash-list li")).toHaveCount(1);
+      expect(posts).toBe(2);
+      await page.route("**/api/v1/auth/me", (route) =>
+        route.fulfill({ status: 401, json: {} }),
+      );
+      await page.getByRole("button", { name: "刷新状态", exact: true }).click();
+      await expect(page.locator(".trash-list li")).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "刷新状态", exact: true }),
+      ).toBeDisabled();
+      expect(posts).toBe(2);
+    } finally {
+      await c.query(
+        "UPDATE media_items SET trashed_at=NULL,purge_after=NULL,trashed_by_member_id=NULL WHERE family_id=? AND id=?",
+        [familyId, mediaIds[0]],
+      );
+      c.release();
+      await context.unrouteAll({ behavior: "wait" });
+      await context.close();
+    }
+  });
+
+  test("7D private Viewer confirms exact selected-album Trash once and removes cached display", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+      await realLogin(context);
+      const page = await context.newPage();
+      let posts = 0;
+      let removed = false;
+      let refreshed = false;
+      await page.route(
+        `**/api/v1/families/${familyId}/media/*/trash`,
+        async (route) => {
+          posts++;
+          const payload = route.request().postDataJSON();
+          expect(payload.selectedAlbumId).toBe(albumId);
+          removed = true;
+          await route.fulfill({
+            json: {
+              mediaId: mediaIds[0],
+              lifecycleRevision: (
+                BigInt(payload.expectedLifecycleRevision) + 1n
+              ).toString(),
+              state: "TRASHED",
+              trashedAt: "2026-10-02T00:00:00.000Z",
+              purgeAfter: "2026-11-01T00:00:00.000Z",
+            },
+          });
+        },
+      );
+      await page.route(
+        `**/api/v1/families/${familyId}/timeline*`,
+        async (route) => {
+          const response = await route.fetch();
+          const body = await response.json();
+          if (removed)
+            body.media = body.media.filter(
+              (item: { mediaId: string }) => item.mediaId !== mediaIds[0],
+            );
+          await route.fulfill({ response, json: body });
+          if (removed) refreshed = true;
+        },
+      );
+      await page.goto("/");
+      await clickUntilVisible(
+        page.locator(".gallery-cell").first(),
+        page.getByRole("dialog", { name: "照片" }),
+      );
+      await page
+        .getByRole("button", { name: "移入回收站", exact: true })
+        .click();
+      await expect(
+        page.getByRole("dialog", { name: "移入回收站确认" }),
+      ).toBeVisible();
+      await page.getByRole("button", { name: "确认移入回收站" }).click();
+      await expect(page.getByRole("dialog", { name: "照片" })).toHaveCount(0);
+      await expect(page.locator(".gallery-cell")).toHaveCount(1);
+      await expect.poll(() => refreshed).toBe(true);
+      expect(posts).toBe(1);
+    } finally {
+      await context.unrouteAll({ behavior: "wait" });
+      await context.close();
+    }
+  });
+
   test("desktop UI uses real login, media, viewer, and share flows", async ({
     browser,
   }) => {

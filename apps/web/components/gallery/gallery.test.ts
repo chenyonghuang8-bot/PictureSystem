@@ -40,8 +40,10 @@ describe("gallery pages", () => {
       tags: [{ id: "2", name: "<tag>" }],
       note: "<note>",
       noteRevision: "1",
+      lifecycleRevision: "1",
       commentCount: "2",
       capabilities: {
+        canTrash: false,
         canManageFeatured: true,
         canEditTags: true,
         canEditNote: true,
@@ -76,6 +78,7 @@ describe("gallery pages", () => {
       isFavorite: false,
       capabilities: {
         ...detail.capabilities,
+        canTrash: false,
         canManageFeatured: false,
         canEditTags: false,
         canEditNote: false,
@@ -143,6 +146,7 @@ describe("gallery pages", () => {
   it("renders an empty timeline and a signed-out state", () => {
     const empty = renderToStaticMarkup(
       createElement(Timeline, {
+        userId: "7",
         familyId: "4",
         initial: { media: [], nextCursor: null },
       }),
@@ -165,6 +169,7 @@ describe("gallery pages", () => {
   it("groups a thumbnail grid by month without album counts", () => {
     const html = renderToStaticMarkup(
       createElement(Timeline, {
+        userId: "7",
         familyId: "4",
         initial: {
           media: [
@@ -233,6 +238,7 @@ describe("gallery pages", () => {
       createElement(Viewer, {
         items: [{ mediaId: "11", albumId: "3" }],
         index: 0,
+        userId: "7",
         familyId: "4",
         onIndex: () => undefined,
         onClose: () => undefined,

@@ -95,8 +95,10 @@ function mediaRow() {
     tags: [{ id: "12", name: "Trip" }],
     note: null,
     noteRevision: "1",
+    lifecycleRevision: "1",
     commentCount: "1",
     capabilities: {
+      canTrash: false,
       canManageFeatured: false,
       canEditTags: true,
       canEditNote: true,

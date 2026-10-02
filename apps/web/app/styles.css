@@ -827,6 +827,7 @@ button,
   }
 
   .gallery-nav a {
+    white-space: nowrap;
     width: auto;
     justify-content: center;
     padding: var(--fa-space-2) var(--fa-space-4);
@@ -867,4 +868,76 @@ button,
   .gallery-viewer-image {
     max-height: 58vh;
   }
+}
+
+.trash-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+.trash-list li,
+.trash-status {
+  display: flex;
+  gap: 1rem;
+  background: var(--color-surface, #fff);
+  padding: 1.25rem;
+  border-radius: 1rem;
+  margin-block: 1rem;
+  border: 1px solid #e4e9df;
+}
+.trash-status {
+  display: block;
+}
+.trash-list h2,
+.trash-status h2 {
+  font-size: 1rem;
+}
+.trash-list p {
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+  color: #686d62;
+}
+.trash-type {
+  color: #497556;
+  font-size: 2rem;
+}
+.trash-panel button,
+.trash-dialog button {
+  margin: 0.25rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid #bdcbbd;
+  border-radius: 0.65rem;
+  background: #f5f8f2;
+  color: #345f41;
+  cursor: pointer;
+}
+.trash-panel button:disabled,
+.trash-dialog button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.trash-dialog {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  margin: auto;
+  width: min(32rem, calc(100vw - 2rem));
+  border: 1px solid var(--fa-color-border);
+  padding: 1.5rem;
+  border-radius: 1rem;
+  background: #fffdf8;
+  box-shadow: 0 1rem 3rem #1c2f2333;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.trash-dialog input {
+  display: block;
+  width: 100%;
+  margin-block: 0.75rem;
+  padding: 0.6rem;
+}
+
+.trash-dialog::backdrop {
+  background: #1c2f2399;
 }

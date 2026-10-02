@@ -138,6 +138,7 @@ export const mediaCommentParamsSchema = galleryMediaParamsSchema
 
 export const privateMediaCapabilitiesSchema = z
   .object({
+    canTrash: z.boolean(),
     canManageFeatured: z.boolean(),
     canEditTags: z.boolean(),
     canEditNote: z.boolean(),
@@ -165,6 +166,7 @@ export const galleryMediaDetailSchema = galleryMediaItemSchema
     note: z.string().nullable(),
     noteRevision: unsignedBigIntStringSchema,
     commentCount: z.string().regex(/^(0|[1-9][0-9]*)$/),
+    lifecycleRevision: unsignedBigIntStringSchema,
     capabilities: privateMediaCapabilitiesSchema,
   })
   .strict();

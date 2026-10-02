@@ -9,7 +9,7 @@ export function GalleryShell({
   children,
 }: {
   familyName: string;
-  active: "photos" | "albums";
+  active: "photos" | "albums" | "trash";
   aside?: ReactNode;
   children: ReactNode;
 }) {
@@ -34,6 +34,14 @@ export function GalleryShell({
           >
             <span aria-hidden="true">▦</span>
             <span>相册</span>
+          </a>
+          <a
+            className="gallery-nav-link"
+            href="/trash"
+            aria-current={active === "trash" ? "page" : undefined}
+          >
+            <span aria-hidden="true">♧</span>
+            <span>回收站</span>
           </a>
         </div>
         <p className="gallery-nav-label">更多</p>

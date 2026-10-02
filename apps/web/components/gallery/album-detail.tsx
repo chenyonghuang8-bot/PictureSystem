@@ -22,11 +22,13 @@ const PAGE_SIZE = 24;
 export function AlbumDetail({
   albumId,
   albumName,
+  userId,
   familyId,
   initial,
 }: {
   albumId: string;
   albumName: string;
+  userId: string;
   familyId: string;
   initial: GalleryMediaPage;
 }) {
@@ -102,10 +104,33 @@ export function AlbumDetail({
       {openIndex !== null ? (
         <Viewer
           items={items.map((item) => ({ mediaId: item.mediaId, albumId }))}
+          userId={userId}
           familyId={familyId}
           index={openIndex}
           onIndex={setOpenIndex}
           onClose={() => setOpenIndex(null)}
+          onAuthLost={() => {
+            setOpenIndex(null);
+            setItems([]);
+            setCursor(null);
+            setFailed(true);
+          }}
+          onTrashed={(mediaId) => {
+            setOpenIndex(null);
+            setItems((current) =>
+              current.filter((item) => item.mediaId !== mediaId),
+            );
+            setCursor(null);
+            void browserGalleryGet(
+              albumMediaPath(albumId, { limit: PAGE_SIZE }),
+              galleryMediaPageSchema,
+            )
+              .then((page) => {
+                setItems(page.media);
+                setCursor(page.nextCursor);
+              })
+              .catch(() => setFailed(true));
+          }}
           onDetail={(detail) =>
             setItems((current) =>
               current.map((item) =>

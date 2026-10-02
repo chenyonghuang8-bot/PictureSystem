@@ -39,6 +39,7 @@ describe("server gallery family loading", () => {
     );
 
     await expect(loadFamily()).resolves.toEqual({
+      userId: "7",
       familyId: "13",
       familyName: "Synthetic Family",
       displayName: "Family Member",

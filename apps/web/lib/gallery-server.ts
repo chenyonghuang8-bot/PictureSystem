@@ -52,6 +52,7 @@ export async function loadFamily() {
   const membership = me.memberships[0];
   if (!membership) throw new GalleryClientError("NOT_FOUND");
   return {
+    userId: me.user.id,
     familyId: membership.familyId,
     familyName: membership.familyName,
     displayName: me.user.displayName ?? me.user.username,

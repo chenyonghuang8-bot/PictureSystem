@@ -570,6 +570,7 @@ export function galleryMediaDetail(row: AlbumMediaDetailRecord) {
     note: row.note,
     noteRevision: row.noteRevision,
     commentCount: row.commentCount,
+    lifecycleRevision: row.lifecycleRevision,
     capabilities: row.capabilities,
   };
 }

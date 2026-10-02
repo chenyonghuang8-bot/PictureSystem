@@ -21,6 +21,7 @@ import {
   derivedPath,
   mediaDetailPath,
 } from "../../lib/gallery-paths.js";
+import { TrashAction } from "./trash-action.js";
 import { AlbumSelector } from "./album-selector.js";
 import { RemovePlacement } from "./remove-placement.js";
 import { ViewerDetails, viewerErrorMessage } from "./viewer-details.js";
@@ -102,11 +103,14 @@ export function PreviewFrame({
 }
 
 type ViewerProps = {
+  userId: string;
   items: ViewerTarget[];
   index: number;
   familyId: string;
   onIndex: (index: number) => void;
   onClose: () => void;
+  onAuthLost?: () => void;
+  onTrashed?: (mediaId: string) => void;
   onRemovePlacement?: (mediaId: string) => Promise<void>;
   onDetail?: (detail: GalleryMediaDetail) => void;
 };
@@ -116,7 +120,7 @@ export function Viewer(props: ViewerProps) {
   if (!target) return null;
   return (
     <ViewerSession
-      key={`${props.familyId}:${target.albumId}:${target.mediaId}`}
+      key={`${props.userId}:${props.familyId}:${target.albumId}:${target.mediaId}`}
       {...props}
     />
   );
@@ -126,9 +130,12 @@ function ViewerSession({
   items,
   index,
   familyId,
+  userId,
   onIndex,
   onClose,
   onRemovePlacement,
+  onTrashed,
+  onAuthLost,
   onDetail,
 }: ViewerProps) {
   const item = items[index];
@@ -139,10 +146,15 @@ function ViewerSession({
   const [detailMessage, setDetailMessage] = useState("");
   const alive = useRef(false);
   const detailRequest = useRef(0);
+  const authLostCallback = useRef(onAuthLost);
+  useEffect(() => {
+    authLostCallback.current = onAuthLost;
+  }, [onAuthLost]);
   const detailCallback = useRef(onDetail);
   useEffect(() => {
     detailCallback.current = onDetail;
   }, [onDetail]);
+  const [lifecycleBlocked, setLifecycleBlocked] = useState(false);
   const [missing, setMissing] = useState(false);
   const [albums, setAlbums] = useState<{ id: string; name: string }[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -160,6 +172,7 @@ function ViewerSession({
       detailRequest.current += 1;
       setDetail(null);
       setMissing(true);
+      if (error.code === "UNAUTHENTICATED") authLostCallback.current?.();
     }
   }, []);
 
@@ -233,11 +246,11 @@ function ViewerSession({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !lifecycleBlocked) onClose();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, lifecycleBlocked]);
 
   async function addToAlbum(albumId: string) {
     if (!item) return;
@@ -272,6 +285,7 @@ function ViewerSession({
         className="gallery-viewer-close"
         aria-label="关闭照片查看器"
         ref={closeButton}
+        disabled={lifecycleBlocked}
         onClick={onClose}
       >
         <span aria-hidden="true">×</span>
@@ -309,38 +323,61 @@ function ViewerSession({
           {detailMessage}
         </p>
       ) : null}
-      <AlbumSelector
-        albums={albums}
-        selectedIds={selectedIds}
-        pendingId={pendingId}
-        message={placementMessage}
-        onAdd={(albumId) => void addToAlbum(albumId)}
-      />
-      {onRemovePlacement && item ? (
-        <RemovePlacement
-          confirming={confirmingRemove}
-          message={placementMessage}
-          onAsk={() => setConfirmingRemove(true)}
-          onCancel={() => setConfirmingRemove(false)}
-          onConfirm={() => {
-            void onRemovePlacement(item.mediaId).catch((error: unknown) => {
-              if (alive.current)
-                setPlacementMessage(placementErrorMessage(error));
-            });
+      {detail && onTrashed ? (
+        <TrashAction
+          userId={userId}
+          familyId={familyId}
+          target={item}
+          detail={detail}
+          onBlock={setLifecycleBlocked}
+          onUnavailable={() => {
+            onClose();
+            onAuthLost?.();
+          }}
+          onLeave={onClose}
+          onTrashed={() => {
+            setDetail(null);
+            setMissing(true);
+            onTrashed(item.mediaId);
           }}
         />
+      ) : null}
+      {!lifecycleBlocked ? (
+        <>
+          <AlbumSelector
+            albums={albums}
+            selectedIds={selectedIds}
+            pendingId={pendingId}
+            message={placementMessage}
+            onAdd={(albumId) => void addToAlbum(albumId)}
+          />
+          {onRemovePlacement && item ? (
+            <RemovePlacement
+              confirming={confirmingRemove}
+              message={placementMessage}
+              onAsk={() => setConfirmingRemove(true)}
+              onCancel={() => setConfirmingRemove(false)}
+              onConfirm={() => {
+                void onRemovePlacement(item.mediaId).catch((error: unknown) => {
+                  if (alive.current)
+                    setPlacementMessage(placementErrorMessage(error));
+                });
+              }}
+            />
+          ) : null}
+        </>
       ) : null}
       <div className="gallery-viewer-nav">
         <button
           type="button"
-          disabled={index === 0}
+          disabled={lifecycleBlocked || index === 0}
           onClick={() => onIndex(index - 1)}
         >
           上一张
         </button>
         <button
           type="button"
-          disabled={index === items.length - 1}
+          disabled={lifecycleBlocked || index === items.length - 1}
           onClick={() => onIndex(index + 1)}
         >
           下一张
