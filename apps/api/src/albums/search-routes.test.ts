@@ -30,6 +30,10 @@ const row = {
 function setup(rows = [row]) {
   const repository = {
     searchFamilyMedia: vi.fn(async () => rows),
+    listFamilySearchOptions: vi.fn(async () => [
+      { id: "1", name: "可见来源" },
+      { id: "2", name: "可见来源" },
+    ]),
   } as unknown as AlbumRepository;
   const service = new AlbumService(repository);
   const auth = {
@@ -54,7 +58,7 @@ describe("private family search", () => {
     "?fromDate=2023-02-29",
     "?albumId=1&albumId=2",
     "?favoritesOnly=true&favoritesOnly=true",
-    "?filename=private",
+    "?filename=",
     "?limit=1&limit=2",
   ])(
     "guards malformed/unauthenticated responses and no-store: %s",
@@ -183,6 +187,9 @@ describe("private family search", () => {
       familySearchScope("4", "7", { ...q, limit: 2 }),
       familySearchScope("4", "7", { ...q, favoritesOnly: true }),
       familySearchScope("4", "7", { ...q, albumId: "3" }),
+      familySearchScope("4", "7", { ...q, filename: "IMG" }),
+      familySearchScope("4", "7", { ...q, uploaderMemberId: "9" }),
+      familySearchScope("4", "7", { ...q, tagId: "2" }),
     ])
       expect(() => decodeFamilySearchCursor(c, other)).toThrow();
     for (const bad of [
@@ -197,5 +204,115 @@ describe("private family search", () => {
       Buffer.from([255]).toString("base64url"),
     ])
       expect(() => decodeFamilySearchCursor(bad, scope)).toThrow();
+  });
+});
+
+describe("confirmed batch API contracts and option privacy", () => {
+  it("passes normalized new filters without widening DTO", async () => {
+    const { app, repository } = setup();
+    try {
+      const r = await app.inject({
+        method: "GET",
+        url: "/api/v1/families/4/search?filename=%20IMG%20&uploaderMemberId=9&tagId=2",
+        headers: { cookie: `__Host-family_session=${token}` },
+      });
+      expect(r.statusCode).toBe(200);
+      expect(repository.searchFamilyMedia).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filters: {
+            filename: "IMG",
+            uploaderMemberId: "9",
+            tagId: "2",
+            favoritesOnly: false,
+          },
+        }),
+      );
+      expect(r.json().media[0]).not.toHaveProperty("filename");
+      expect(r.json().media[0]).not.toHaveProperty("uploaderMemberId");
+      const old = Buffer.from(
+        JSON.stringify({
+          version: 1,
+          timelineKey: row.timelineKey.toISOString(),
+          mediaId: row.mediaId,
+          scope: familySearchScope("4", "7", familySearchQuerySchema.parse({})),
+        }),
+      ).toString("base64url");
+      const rejected = await app.inject({
+        method: "GET",
+        url: `/api/v1/families/4/search?cursor=${old}`,
+        headers: { cookie: `__Host-family_session=${token}` },
+      });
+      expect(rejected.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+  it("paginates only id/name with scoped cursor and private errors", async () => {
+    const { app, repository, service } = setup();
+    try {
+      const req = (query: string, cookie = true) =>
+        app.inject({
+          method: "GET",
+          url: "/api/v1/families/4/search/options" + query,
+          ...(cookie
+            ? { headers: { cookie: `__Host-family_session=${token}` } }
+            : {}),
+        });
+      const r = await req("?kind=tag&limit=1");
+      expect(r.statusCode).toBe(200);
+      expect(r.headers["cache-control"]).toBe("private, no-store");
+      expect(Object.keys(r.json().options[0]).sort()).toEqual(["id", "name"]);
+      const c = r.json().nextCursor;
+      expect(c).toBeTruthy();
+      await req(`?kind=tag&limit=1&cursor=${c}`);
+      expect(repository.listFamilySearchOptions).toHaveBeenLastCalledWith(
+        expect.objectContaining({ afterId: "1", kind: "tag", limit: 2 }),
+      );
+      for (const query of [
+        `?kind=uploader&limit=1&cursor=${c}`,
+        `?kind=tag&limit=2&cursor=${c}`,
+        "?kind=tag&kind=uploader",
+        "?kind=tag&filename=private",
+        "?kind=tag&cursor=_",
+      ]) {
+        const bad = await req(query);
+        expect(bad.statusCode).toBe(400);
+        expect(bad.headers["cache-control"]).toBe("private, no-store");
+      }
+      const crossFamily = await app.inject({
+        method: "GET",
+        url: `/api/v1/families/5/search/options?kind=tag&limit=1&cursor=${c}`,
+        headers: { cookie: `__Host-family_session=${token}` },
+      });
+      expect(crossFamily.statusCode).toBe(400);
+      const crossUser = await service
+        .searchOptions(
+          {
+            ...context,
+            identity: { ...context.identity, userId: "9" },
+          } as Parameters<typeof service.searchOptions>[0],
+          "4",
+          { kind: "tag", limit: 1, cursor: c },
+        )
+        .catch((error: unknown) => error);
+      expect(crossUser).toMatchObject({ statusCode: 400 });
+      const noAuth = await req("?kind=tag", false);
+      expect(noAuth.statusCode).toBe(401);
+      expect(noAuth.headers["cache-control"]).toBe("private, no-store");
+      repository.listFamilySearchOptions = vi.fn(async () => {
+        throw new AlbumRepositoryError("NOT_FOUND");
+      });
+      const denied = await req("?kind=tag");
+      expect(denied.statusCode).toBe(404);
+      expect(denied.headers["cache-control"]).toBe("private, no-store");
+      repository.listFamilySearchOptions = vi.fn(async () => {
+        throw new Error("synthetic database failure");
+      });
+      const unavailable = await req("?kind=tag");
+      expect(unavailable.statusCode).toBe(503);
+      expect(unavailable.headers["cache-control"]).toBe("private, no-store");
+    } finally {
+      await app.close();
+    }
   });
 });

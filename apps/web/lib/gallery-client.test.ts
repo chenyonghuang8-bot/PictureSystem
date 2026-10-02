@@ -112,6 +112,35 @@ describe("gallery API client", () => {
     ).rejects.toEqual(new GalleryClientError("UNAUTHENTICATED"));
   });
 
+  it("distinguishes only the known 400 API invalid-request envelope", async () => {
+    await expect(
+      readGalleryResponse(
+        Response.json(
+          {
+            code: "INVALID_REQUEST",
+            message: "The request is invalid.",
+            requestId: "synthetic",
+          },
+          { status: 400 },
+        ),
+        familyTimelinePageSchema,
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    for (const response of [
+      new Response("Bad Request", { status: 400 }),
+      Response.json({ error: { code: "OTHER" } }, { status: 400 }),
+      Response.json({ code: "INVALID_REQUEST" }, { status: 400 }),
+    ])
+      await expect(
+        readGalleryResponse(response, familyTimelinePageSchema),
+      ).rejects.toMatchObject({ code: "UNAVAILABLE" });
+    await expect(
+      readGalleryResponse(
+        Response.json({ error: { code: "INVALID_REQUEST" } }, { status: 503 }),
+        familyTimelinePageSchema,
+      ),
+    ).rejects.toMatchObject({ code: "UNAVAILABLE" });
+  });
   it("rejects a payload that includes a location field", async () => {
     const response = Response.json({
       media: [{ ...item, gpsLatitude: "37.780000" }],

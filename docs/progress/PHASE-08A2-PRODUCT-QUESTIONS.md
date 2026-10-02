@@ -1,6 +1,6 @@
 # Phase 8A2 — 必须确认的产品语义（仅方案）
 
-2026-10-02 UTC；8A1限定复核PASS、R1整体CLOSED后的下一slice准备。依据 `project-spec/PROJECT.md` §11/§13 与 `PHASE-08A-SEARCH-DESIGN.md` §2/§6。**本文件没有批准或实施8A2，不能以推荐默认值代替用户确认。** 不涉及地图/GPS、Schema、锁序或新权限设计。
+2026-10-02 UTC；8A1限定复核PASS、R1整体CLOSED后的下一slice准备。依据 `project-spec/PROJECT.md` §11/§13 与 `PHASE-08A-SEARCH-DESIGN.md` §2/§6。**历史问题记录；18:25用户明确回复“是的”，接受整个非地点批次的推荐语义。当前已实施、待独立复核；不是地图或Phase8整体签核。** 不涉及地图/GPS、Schema、锁序或新权限设计。
 
 ## 已由spec/批准合同解决，不重复询问
 
@@ -23,8 +23,14 @@
 验收围绕canonical与重复receipt区别、hidden receipt不得授权、字面特殊字符/Unicode、history成员归属、tag同family、options可见性、组合/cursor与实际Web安全日志。仅方案，未写8A2合同/代码/测试；PERF-E1/P3日期deep命中fixture补充仍为非阻塞待办，不用它扩大本次提交。
 
 ```text
-PHASE_8A2_PRODUCT_DECISIONS: PENDING_USER_CONFIRMATION
+PHASE_8A2_PRODUCT_DECISIONS: USER_CONFIRMED_2026_10_02_1825_UTC
 RECOMMENDED_DEFAULTS: FIRST_CANONICAL_SOURCE_AND_ACCEPT_DISCLOSURE / LITERAL_CASE_ACCENT_SENSITIVE / SINGLE_TAG
-PHASE_8A2_IMPLEMENTATION: NOT_STARTED
+PHASE_8A2_IMPLEMENTATION: COMPLETE_ONE_BATCH_REVIEW_PASS_NLS_R1_CLOSED
 MAP_GPS: NOT_STARTED
 ```
+
+## 用户明确确认记录（18:25 UTC）
+
+协调方集中展示首次canonical文件名/上传成员及来源匹配披露、重复receipt不改归属、停用/离开后保留历史；literal包含、大小写/重音敏感、不做NFKC、%/_/!普通字符；首版单Tag。用户明确回答“是的”。随后授权一次完成剩余非地点搜索的API/DB/UI/contracts/tests，本轮不commit/push，完成后安排一次独立Sol High复核。上述“目前NOT_STARTED/仅方案”的正文保留原提问时语境，现行状态以本节及 `PHASE-08-NONLOCATION-SEARCH-BATCH.md` 为准。地图/GPS、多Tag、schema/锁/权限改动没有批准。
+
+当前整批非地点搜索已完成并获独立复核/NLS-R1 closure PASS，无当前blocker。用户授权本地checkpoint，记录见 `PHASE-08-NONLOCATION-CHECKPOINT.md`；地图未开始、Production NO。正文提问时的NOT_STARTED/待复核按历史保留，不再作为当前阻塞。

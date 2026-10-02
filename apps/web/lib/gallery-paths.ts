@@ -38,6 +38,9 @@ export function searchPath(
 ) {
   assertGalleryId(familyId);
   return galleryQuery(`/api/v1/families/${familyId}/search`, {
+    filename: filters.filename,
+    uploaderMemberId: filters.uploaderMemberId,
+    tagId: filters.tagId,
     fromDate: filters.fromDate,
     toDate: filters.toDate,
     albumId: filters.albumId,
@@ -53,7 +56,15 @@ export function searchFiltersFromUrl(
   if (
     Object.keys(values).some(
       (key) =>
-        !["fromDate", "toDate", "albumId", "favoritesOnly"].includes(key),
+        ![
+          "fromDate",
+          "toDate",
+          "albumId",
+          "favoritesOnly",
+          "filename",
+          "uploaderMemberId",
+          "tagId",
+        ].includes(key),
     )
   )
     throw new Error("SEARCH_FILTERS_INVALID");
@@ -63,11 +74,19 @@ export function searchFiltersFromUrl(
     ...(query.toDate ? { toDate: query.toDate } : {}),
     ...(query.albumId ? { albumId: query.albumId } : {}),
     favoritesOnly: query.favoritesOnly,
+    ...(query.filename ? { filename: query.filename } : {}),
+    ...(query.uploaderMemberId
+      ? { uploaderMemberId: query.uploaderMemberId }
+      : {}),
+    ...(query.tagId ? { tagId: query.tagId } : {}),
   };
 }
 
 export function searchFilterQuery(filters: FamilySearchFilters) {
   return galleryQuery("/", {
+    filename: filters.filename,
+    uploaderMemberId: filters.uploaderMemberId,
+    tagId: filters.tagId,
     fromDate: filters.fromDate,
     toDate: filters.toDate,
     albumId: filters.albumId,
@@ -158,4 +177,17 @@ export function groupByMonth<T extends { timelineKey: string }>(items: T[]) {
     else groups.push({ key, label: monthLabel(key), items: [item] });
   }
   return groups;
+}
+
+export function searchOptionsPath(
+  familyId: string,
+  kind: "tag" | "uploader",
+  cursor?: string,
+) {
+  assertGalleryId(familyId);
+  return galleryQuery(`/api/v1/families/${familyId}/search/options`, {
+    kind,
+    limit: 50,
+    cursor,
+  });
 }

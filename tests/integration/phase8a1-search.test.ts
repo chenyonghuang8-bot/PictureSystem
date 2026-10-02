@@ -43,6 +43,10 @@ describe.sequential("Phase 8A1 authorized search", () => {
   let newerMedia = "";
   let hiddenMedia = "";
   let deletedMedia = "";
+  let visibleTag = "",
+    hiddenTag = "",
+    unusedTag = "",
+    foreignTag = "";
 
   beforeAll(async () => {
     const connection = await database.pool.getConnection();
@@ -165,6 +169,35 @@ describe.sequential("Phase 8A1 authorized search", () => {
           deletedMedia,
         ],
       );
+      for (const [mediaId, filename, member] of [
+        [newerMedia, "IMG_Café%_!.PNG", viewerMember],
+        [olderMedia, "img_Cafe\u0301%_!.png", viewerMember],
+        [hiddenMedia, "hidden-source.png", otherMember],
+        [deletedMedia, "deleted-source.png", otherMember],
+      ]) {
+        await connection.query(
+          "UPDATE upload_sessions s JOIN media_items m ON m.family_id=s.family_id AND m.source_upload_id=s.id SET s.original_filename=?,s.created_by_member_id=? WHERE m.family_id=? AND m.id=?",
+          [filename, member, familyId, mediaId],
+        );
+      }
+      visibleTag = await insertSearchTag(connection, familyId, "生日");
+      hiddenTag = await insertSearchTag(connection, familyId, "隐藏标签");
+      unusedTag = await insertSearchTag(connection, familyId, "未使用");
+      foreignTag = await insertSearchTag(connection, otherFamilyId, "生日");
+      await connection.query(
+        "INSERT INTO media_tags(family_id,media_id,tag_id) VALUES(?,?,?),(?,?,?),(?,?,?)",
+        [
+          familyId,
+          newerMedia,
+          visibleTag,
+          familyId,
+          hiddenMedia,
+          hiddenTag,
+          familyId,
+          deletedMedia,
+          hiddenTag,
+        ],
+      );
       await connection.query(
         "UPDATE albums SET deleted_at = CURRENT_TIMESTAMP(3) WHERE id = ?",
         [deletedAlbum],
@@ -194,6 +227,12 @@ describe.sequential("Phase 8A1 authorized search", () => {
       await database.pool.query("DELETE FROM album_members WHERE family_id=?", [
         familyId,
       ]);
+      await database.pool.query("DELETE FROM media_tags WHERE family_id=?", [
+        familyId,
+      ]);
+      await database.pool.query("DELETE FROM tags WHERE family_id=?", [
+        familyId,
+      ]);
       await database.pool.query("DELETE FROM album_media WHERE family_id = ?", [
         familyId,
       ]);
@@ -220,6 +259,9 @@ describe.sequential("Phase 8A1 authorized search", () => {
         [familyId],
       );
       if (otherFamilyId) {
+        await database.pool.query("DELETE FROM tags WHERE family_id=?", [
+          otherFamilyId,
+        ]);
         await database.pool.query("DELETE FROM albums WHERE family_id=?", [
           otherFamilyId,
         ]);
@@ -588,6 +630,42 @@ describe.sequential("Phase 8A1 authorized search", () => {
     }
   });
 
+  it("revalidates waiting search options after family-locked session revocation", async () => {
+    const connection = await database.pool.getConnection();
+    await connection.beginTransaction();
+    try {
+      await connection.query("SELECT id FROM families WHERE id=? FOR UPDATE", [
+        familyId,
+      ]);
+      let complete = false;
+      const pending = albums
+        .listFamilySearchOptions({
+          actor: viewer(),
+          familyId,
+          kind: "tag",
+          limit: 50,
+        })
+        .finally(() => {
+          complete = true;
+        });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(complete).toBe(false);
+      await connection.query(
+        "UPDATE sessions SET revoked_at=CURRENT_TIMESTAMP(3),revoke_reason='LOGOUT' WHERE id=?",
+        [viewerSessionId],
+      );
+      await connection.commit();
+      await expect(pending).rejects.toBeInstanceOf(AlbumRepositoryError);
+    } finally {
+      await connection.rollback();
+      connection.release();
+      await database.pool.query(
+        "UPDATE sessions SET revoked_at=NULL,revoke_reason=NULL WHERE id=?",
+        [viewerSessionId],
+      );
+    }
+  });
+
   it("rejects another family and disabled current actor", async () => {
     await expect(
       albums.searchFamilyMedia({
@@ -668,6 +746,195 @@ describe.sequential("Phase 8A1 authorized search", () => {
     expect(query.values[7]).toBe(ids[0]);
   });
 
+  it("combines all filename/uploader/single-tag conditions with the inherited filters", async () => {
+    for (let bits = 0; bits < 8; bits++) {
+      const filters = {
+        ...(bits & 1 ? { filename: "Café%_!" } : {}),
+        ...(bits & 2 ? { uploaderMemberId: viewerMember } : {}),
+        ...(bits & 4 ? { tagId: visibleTag } : {}),
+      };
+      const ids = (await search(filters)).map((row) => row.mediaId);
+      expect(ids).toEqual(
+        bits === 0 || bits === 2 ? [newerMedia, olderMedia] : [newerMedia],
+      );
+    }
+    await database.pool.query(
+      "INSERT INTO user_favorites(family_id,member_id,media_id) VALUES(?,?,?)",
+      [familyId, viewerMember, newerMedia],
+    );
+    try {
+      expect(
+        (
+          await search({
+            filename: "Café",
+            uploaderMemberId: viewerMember,
+            tagId: visibleTag,
+            albumId: highAlbum,
+            favoritesOnly: true,
+            fromDate: new Date("2024-06-01T00:00:00.000Z"),
+            toDate: new Date("2024-06-01T23:59:59.999Z"),
+          })
+        ).map((row) => row.mediaId),
+      ).toEqual([newerMedia]);
+    } finally {
+      await database.pool.query(
+        "DELETE FROM user_favorites WHERE family_id=?",
+        [familyId],
+      );
+    }
+  });
+
+  it("matches literal %, _, !, case and accents without Unicode folding", async () => {
+    for (const filename of ["%", "_", "!"])
+      expect((await search({ filename })).map((row) => row.mediaId)).toEqual([
+        newerMedia,
+        olderMedia,
+      ]);
+    expect(
+      (await search({ filename: "IMG_Café%_!.PNG" })).map((row) => row.mediaId),
+    ).toEqual([newerMedia]);
+    expect(await search({ filename: "img_Café" })).toEqual([]);
+    expect(
+      (await search({ filename: "Cafe\u0301" })).map((row) => row.mediaId),
+    ).toEqual([olderMedia]);
+    expect(await search({ filename: "Cafe%" })).toEqual([]);
+    expect(await search({ filename: "' OR 1=1 --" })).toEqual([]);
+  });
+
+  it("never searches duplicate receipts or treats their source/hidden placement as access", async () => {
+    const [duplicate] = await database.pool.query<ResultSetHeader>(
+      `INSERT INTO upload_sessions(public_id,family_id,created_by_member_id,original_filename,declared_size,committed_offset,state,computed_sha256,finalize_started_at,storage_object_id,completed_at,expires_at)
+      SELECT ?,s.family_id,?,'DUPLICATE_PRIVATE.JPG',s.declared_size,s.committed_offset,'COMPLETE',s.computed_sha256,CURRENT_TIMESTAMP(3),s.storage_object_id,CURRENT_TIMESTAMP(3),DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 1 DAY)
+      FROM upload_sessions s JOIN media_items m ON m.family_id=s.family_id AND m.source_upload_id=s.id WHERE m.family_id=? AND m.id=?`,
+      [randomBytes(16), otherMember, familyId, newerMedia],
+    );
+    try {
+      expect(await search({ filename: "DUPLICATE_PRIVATE" })).toEqual([]);
+      expect(await search({ uploaderMemberId: otherMember })).toEqual([]);
+      expect(await search({ filename: "hidden-source" })).toEqual([]);
+      expect(await search({ tagId: hiddenTag })).toEqual([]);
+      expect(await search({ tagId: foreignTag })).toEqual([]);
+      expect(
+        await search({ uploaderMemberId: "18446744073709551615" }),
+      ).toEqual([]);
+    } finally {
+      await database.pool.query(
+        "DELETE FROM upload_sessions WHERE family_id=? AND id=?",
+        [familyId, String(duplicate.insertId)],
+      );
+    }
+  });
+
+  it("keeps historical disabled source members searchable without expanding options beyond visible media", async () => {
+    await database.pool.query(
+      "UPDATE upload_sessions s JOIN media_items m ON m.family_id=s.family_id AND m.source_upload_id=s.id SET s.created_by_member_id=? WHERE m.family_id=? AND m.id=?",
+      [otherMember, familyId, olderMedia],
+    );
+    await database.pool.query(
+      "UPDATE users SET disabled_at=CURRENT_TIMESTAMP(3) WHERE id=?",
+      [otherUserId],
+    );
+    try {
+      expect(
+        (await search({ uploaderMemberId: otherMember })).map(
+          (row) => row.mediaId,
+        ),
+      ).toEqual([olderMedia]);
+      const options = await albums.listFamilySearchOptions({
+        actor: viewer(),
+        familyId,
+        kind: "uploader",
+        limit: 51,
+      });
+      expect(options.map((row) => row.id)).toEqual([viewerMember, otherMember]);
+      expect(options[0]!.name).toBe(options[1]!.name); // same display names stay separate by member ID.
+      for (const option of options)
+        expect(Object.keys(option).sort()).toEqual(["id", "name"]);
+      await database.pool.query(
+        "DELETE FROM album_media WHERE family_id=? AND media_id=?",
+        [familyId, olderMedia],
+      );
+      expect(
+        (
+          await albums.listFamilySearchOptions({
+            actor: viewer(),
+            familyId,
+            kind: "uploader",
+            limit: 51,
+          })
+        ).map((row) => row.id),
+      ).toEqual([viewerMember]);
+      expect(await search({ uploaderMemberId: otherMember })).toEqual([]);
+    } finally {
+      await database.pool.query(
+        "UPDATE users SET disabled_at=NULL WHERE id=?",
+        [otherUserId],
+      );
+      await database.pool.query(
+        "UPDATE upload_sessions s JOIN media_items m ON m.family_id=s.family_id AND m.source_upload_id=s.id SET s.created_by_member_id=? WHERE m.family_id=? AND m.id=?",
+        [viewerMember, familyId, olderMedia],
+      );
+      await database.pool.query(
+        "INSERT IGNORE INTO album_media(family_id,album_id,media_id) VALUES(?,?,?)",
+        [familyId, lowAlbum, olderMedia],
+      );
+    }
+  });
+
+  it("paginates tag options from the unfiltered visible set; excludes hidden/deleted/unused/foreign", async () => {
+    const c = await database.pool.getConnection();
+    try {
+      for (let n = 0; n < 51; n++) {
+        const tag = await insertSearchTag(c, familyId, `可见-${n}`);
+        await c.query(
+          "INSERT INTO media_tags(family_id,media_id,tag_id) VALUES(?,?,?)",
+          [familyId, newerMedia, tag],
+        );
+      }
+    } finally {
+      c.release();
+    }
+    const first = await albums.listFamilySearchOptions({
+      actor: viewer(),
+      familyId,
+      kind: "tag",
+      limit: 50,
+    });
+    expect(first).toHaveLength(50);
+    const rest = await albums.listFamilySearchOptions({
+      actor: viewer(),
+      familyId,
+      kind: "tag",
+      limit: 50,
+      afterId: first.at(-1)!.id,
+    });
+    expect(rest).toHaveLength(2);
+    const all = first.concat(rest);
+    expect(new Set(all.map((row) => row.id)).size).toBe(52);
+    for (const forbidden of [hiddenTag, unusedTag, foreignTag])
+      expect(all.map((row) => row.id)).not.toContain(forbidden);
+    await database.pool.query(
+      "UPDATE media_items SET trashed_at=CURRENT_TIMESTAMP(3),trashed_by_member_id=?,purge_after=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 30 DAY) WHERE family_id=? AND id=?",
+      [viewerMember, familyId, newerMedia],
+    );
+    try {
+      expect(await search({ filename: "Café", tagId: visibleTag })).toEqual([]);
+      expect(
+        await albums.listFamilySearchOptions({
+          actor: viewer(),
+          familyId,
+          kind: "tag",
+          limit: 51,
+        }),
+      ).toEqual([]);
+    } finally {
+      await database.pool.query(
+        "UPDATE media_items SET trashed_at=NULL,trashed_by_member_id=NULL,purge_after=NULL WHERE family_id=? AND id=?",
+        [familyId, newerMedia],
+      );
+    }
+  });
+
   it("records bounded 10k-media/5-member EXPLAIN and search latency without new indexes", async () => {
     const c = await database.pool.getConnection();
     try {
@@ -725,6 +992,10 @@ describe.sequential("Phase 8A1 authorized search", () => {
         [familyId, String(maxMediaRows[0]!.id)],
       );
       expect(Number(count[0]!.n)).toBe(10000);
+      await c.query(
+        "INSERT INTO media_tags(family_id,media_id,tag_id) SELECT family_id,id,? FROM media_items WHERE family_id=? AND id>? AND MOD(id,20)=0",
+        [visibleTag, familyId, String(maxMediaRows[0]!.id)],
+      );
       const baselineStart = performance.now();
       const baseline = await albums.listFamilyTimeline({
         actor: viewer(),
@@ -789,14 +1060,65 @@ describe.sequential("Phase 8A1 authorized search", () => {
           });
         }
       }
+      for (let bits = 1; bits < 8; bits++) {
+        const filters = {
+          ...(bits & 1 ? { filename: "synthetic-perf.png" } : {}),
+          ...(bits & 2 ? { uploaderMemberId: viewerMember } : {}),
+          ...(bits & 4 ? { tagId: visibleTag } : {}),
+          fromDate: new Date("2020-01-01T00:00:00.000Z"),
+          toDate: new Date("2024-01-01T23:59:59.999Z"),
+        };
+        for (const depth of ["first", "deep"]) {
+          const cursor =
+            depth === "deep"
+              ? {
+                  timelineKey: new Date("2021-06-01T00:00:00.000Z"),
+                  mediaId: "18446744073709551615",
+                }
+              : undefined;
+          const query = buildFamilySearchQuery(
+            familyId,
+            viewerMember,
+            25,
+            cursor,
+            filters,
+          );
+          const [plan] = await c.query<RowDataPacket[]>(
+            "EXPLAIN " + query.sql,
+            query.values,
+          );
+          const [actualPlan] = await c.query<RowDataPacket[]>(
+            "EXPLAIN ANALYZE " + query.sql,
+            query.values,
+          );
+          const start = performance.now(),
+            rows = await search(filters, cursor, 25);
+          const elapsedMs = performance.now() - start;
+          expect(rows.length).toBeGreaterThan(0);
+          expect(rows.length).toBeLessThanOrEqual(25);
+          expect(elapsedMs).toBeLessThan(10000);
+          cases.push({
+            combination: bits + 8,
+            depth,
+            sql: query.sql,
+            parameterKinds: query.values.map((v) =>
+              v instanceof Date ? "UTC-encoded-date" : typeof v,
+            ),
+            plan,
+            actualPlan,
+            returned: rows.length,
+            elapsedMs,
+          });
+        }
+      }
       // Narrow date first pages contain actual matches; combined deep pages may legitimately be empty.
       expect(
         cases.find((row) => row.combination === 1 && row.depth === "first")!
           .returned,
       ).toBeGreaterThan(0);
-      mkdirSync(".cache/phase8a1", { recursive: true });
+      mkdirSync(".cache/phase8-search-batch", { recursive: true });
       writeFileSync(
-        ".cache/phase8a1/explain-results.json",
+        ".cache/phase8-search-batch/explain-results.json",
         JSON.stringify(
           {
             syntheticMedia: 10000,
@@ -922,4 +1244,16 @@ async function insertMedia(
     ],
   );
   return String(media.insertId);
+}
+
+async function insertSearchTag(
+  connection: { query: Query },
+  familyId: string,
+  name: string,
+) {
+  const [tag] = await connection.query(
+    "INSERT INTO tags(family_id,name,name_normalized) VALUES(?,?,?)",
+    [familyId, name, Buffer.from(name)],
+  );
+  return String(tag.insertId);
 }

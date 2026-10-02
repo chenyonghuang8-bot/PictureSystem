@@ -63,6 +63,7 @@ function setup() {
     })),
     listAlbumMedia: vi.fn(async () => []),
     listFamilyTimeline: vi.fn(async () => []),
+    listFamilySearchOptions: vi.fn(),
     searchFamilyMedia: vi.fn(async () => []),
     getAlbumMedia: vi.fn(async () => {
       throw new Error("not used");

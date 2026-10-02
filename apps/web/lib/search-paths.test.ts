@@ -36,3 +36,16 @@ describe("search URL identity", () => {
     expect(() => searchFiltersFromUrl(input)).toThrow();
   });
 });
+
+it("round trips all confirmed filters and canonical trimmed filename", () => {
+  const filters = searchFiltersFromUrl({
+    filename: "  Café%_!  ",
+    uploaderMemberId: "9007199254740993",
+    tagId: "7",
+  });
+  const url = searchFilterQuery(filters);
+  expect(url).toContain("filename=Caf%C3%A9%25_%21");
+  expect(
+    searchFiltersFromUrl(Object.fromEntries(new URLSearchParams(url.slice(2)))),
+  ).toEqual(filters);
+});

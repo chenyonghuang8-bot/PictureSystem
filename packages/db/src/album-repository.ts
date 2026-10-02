@@ -65,6 +65,9 @@ export type FamilyTimelineRecord = {
 };
 
 export type FamilySearchFilters = {
+  filename?: string;
+  uploaderMemberId?: string;
+  tagId?: string;
   fromDate?: Date;
   toDate?: Date;
   albumId?: string;
@@ -381,6 +384,36 @@ export class MySqlAlbumRepository {
         input.limit,
         input.cursor,
       );
+    });
+  }
+
+  async listFamilySearchOptions(input: {
+    actor: Phase1CActor;
+    familyId: string;
+    kind: "tag" | "uploader";
+    limit: number;
+    afterId?: string;
+  }): Promise<{ id: string; name: string }[]> {
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, input.familyId);
+      const locked = await lockActor(connection, input.familyId, input.actor);
+      const now = await readServerTime(connection);
+      assertActor(locked, input.actor, now);
+      const query = buildFamilySearchOptionsQuery(
+        input.familyId,
+        locked.member.id,
+        input.kind,
+        input.limit,
+        input.afterId,
+      );
+      const [rows] = await connection.query<RowDataPacket[]>(
+        query.sql,
+        query.values,
+      );
+      return rows.map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+      }));
     });
   }
 
@@ -3204,6 +3237,29 @@ export function buildFamilySearchQuery(
     filterValues.push(filters.albumId);
   }
   if (filters.favoritesOnly) conditions.push("favorite.id IS NOT NULL");
+  if (filters.filename) {
+    conditions.push(
+      "source.original_filename COLLATE utf8mb4_0900_bin LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_0900_bin ESCAPE '!'",
+    );
+    filterValues.push(
+      "%" +
+        filters.filename
+          .replaceAll("!", "!!")
+          .replaceAll("%", "!%")
+          .replaceAll("_", "!_") +
+        "%",
+    );
+  }
+  if (filters.uploaderMemberId) {
+    conditions.push("source.created_by_member_id = ?");
+    filterValues.push(filters.uploaderMemberId);
+  }
+  if (filters.tagId) {
+    conditions.push(
+      "EXISTS (SELECT 1 FROM media_tags mt JOIN tags t ON t.family_id=mt.family_id AND t.id=mt.tag_id WHERE mt.family_id=m.family_id AND mt.media_id=m.id AND t.id=?)",
+    );
+    filterValues.push(filters.tagId);
+  }
   return {
     sql: `SELECT CAST(m.id AS CHAR) AS mediaId,
             CAST(MIN(a.id) AS CHAR) AS albumId,
@@ -3214,6 +3270,7 @@ export function buildFamilySearchQuery(
             MAX(CASE WHEN favorite.id IS NULL THEN 0 ELSE 1 END) AS isFavorite,
             MAX(CASE WHEN featured.id IS NULL THEN 0 ELSE 1 END) AS isFamilyFeatured
        FROM media_items m
+       JOIN upload_sessions source ON source.family_id=m.family_id AND source.id=m.source_upload_id
        JOIN album_media placement
          ON placement.family_id = m.family_id
         AND placement.media_id = m.id
@@ -3257,5 +3314,32 @@ export function buildFamilySearchQuery(
       ...filterValues,
       limit,
     ],
+  };
+}
+
+// Reuse the exact unfiltered search visibility FROM/WHERE; no media LIMIT precedes options.
+export function buildFamilySearchOptionsQuery(
+  familyId: string,
+  memberId: string,
+  kind: "tag" | "uploader",
+  limit: number,
+  afterId?: string,
+) {
+  const base = buildFamilySearchQuery(familyId, memberId, 1, undefined, {});
+  const visible = base.sql.slice(
+    base.sql.indexOf("FROM media_items m"),
+    base.sql.indexOf("GROUP BY m.id"),
+  );
+  const joins =
+    kind === "tag"
+      ? "JOIN media_tags option_link ON option_link.family_id=m.family_id AND option_link.media_id=m.id JOIN tags candidate ON candidate.family_id=option_link.family_id AND candidate.id=option_link.tag_id "
+      : "JOIN family_members candidate ON candidate.family_id=source.family_id AND candidate.id=source.created_by_member_id JOIN users option_user ON option_user.id=candidate.user_id ";
+  const name =
+    kind === "tag"
+      ? "candidate.name"
+      : "COALESCE(NULLIF(option_user.display_name,''),'家庭成员')";
+  return {
+    sql: `SELECT CAST(candidate.id AS CHAR) AS id, ${name} AS name ${visible.replace("WHERE m.family_id", joins + "WHERE m.family_id")} AND candidate.id > ? GROUP BY candidate.id, ${name} ORDER BY candidate.id ASC LIMIT ?`,
+    values: [...base.values.slice(0, -1), afterId ?? "0", limit],
   };
 }

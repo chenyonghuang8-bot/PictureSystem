@@ -1,7 +1,13 @@
 import type { z } from "zod";
+import { authErrorResponseSchema } from "@family-album/contracts";
 
 export type GalleryErrorCode =
-  "UNAUTHENTICATED" | "NOT_FOUND" | "FORBIDDEN" | "CONFLICT" | "UNAVAILABLE";
+  | "UNAUTHENTICATED"
+  | "NOT_FOUND"
+  | "FORBIDDEN"
+  | "CONFLICT"
+  | "INVALID_REQUEST"
+  | "UNAVAILABLE";
 
 export class GalleryClientError extends Error {
   readonly code: GalleryErrorCode;
@@ -21,6 +27,19 @@ export async function readGalleryResponse<Schema extends z.ZodType>(
   if (response.status === 404) throw new GalleryClientError("NOT_FOUND");
   if (response.status === 403) throw new GalleryClientError("FORBIDDEN");
   if (response.status === 409) throw new GalleryClientError("CONFLICT");
+  if (response.status === 400) {
+    // Only the API's known invalid-request envelope permits cursor recovery.
+    // A generic/proxy 400 must retain the normal unavailable behavior.
+    let errorBody: unknown;
+    try {
+      errorBody = await response.json();
+    } catch {
+      /* Untrusted failure body. */
+    }
+    const parsedError = authErrorResponseSchema.safeParse(errorBody);
+    if (parsedError.success && parsedError.data.code === "INVALID_REQUEST")
+      throw new GalleryClientError("INVALID_REQUEST");
+  }
   if (!response.ok) throw new GalleryClientError("UNAVAILABLE");
   let body: unknown;
   try {

@@ -145,3 +145,9 @@ Sol可执行8A1，最终交接真实diff、测试/skip数、EXPLAIN证据、剩�
 立即停止并保存进度：需要改变权限/transaction/locking/schema/Auth不变量；需要现有root维护、真实媒体、生产或外发数据；额度耗尽或可验证额度重置；最迟 **2026-10-02 20:00 UTC（北京时间10月3日04:00；用户已延长并覆盖原18:00限制）**。不reset、不额外付费，不把时刻传闻当已重置；读不到额度就明确未知。协调方记录的基线weekly used68%、resetsAt1791340206仅用于检测，不声称本轮独立读取了余额。
 
 范围外：地图/GPS/geocoder/国家城市、AI、所有重复upload receipt搜索、公开分享搜索、媒体写入/purge、root升级、生产验证、提交/推送认证修复、Phase9。完整Phase8所有slice完成后才运行milestone gate并做最终限定复核；此文不标记Production Ready。
+
+## 产品确认补充（实施方记录，非新增Astra审查）
+
+2026-10-02 18:25 UTC，用户对集中呈现的首次canonical来源/披露/历史归属、literal大小写和重音敏感、单Tag整组推荐明确回复“是的”。因此按§6既有受限合同实施非地点搜索完整批次，无schema/permission/locking/Auth变更。选项采用strict kind/limit/cursor；numeric afterId封装在绑定kind/family/user/limit的canonical cursor中，不另外接收裸afterId，落实本节的分页scope要求。该运输形式需独立复核；这不是由实施方追加安全设计批准或代签closure。旧media cursor升级version2并拒绝version1。实施/真实证据见 `PHASE-08-NONLOCATION-SEARCH-BATCH.md`；独立复核待执行。
+
+当前实现已通过限定独立复核及 `PHASE-08-NLS-R1-CLOSURE.md` 的CLOSED/PASS；用户授权本地checkpoint、不push。此前“独立复核待执行”为历史记录，最新状态见 `PHASE-08-NONLOCATION-CHECKPOINT.md`。地图/GPS仍未批准实施。

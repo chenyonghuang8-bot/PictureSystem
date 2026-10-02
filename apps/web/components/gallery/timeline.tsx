@@ -86,6 +86,20 @@ export function Timeline({
     } catch (error) {
       if (!alive.current || controller.signal.aborted) return;
       if (
+        filters &&
+        onRefresh &&
+        error instanceof GalleryClientError &&
+        error.code === "INVALID_REQUEST"
+      ) {
+        // Search pagination only: discard the rejected page and restart once.
+        // The parent's first-page error handling does not automatically retry.
+        setItems([]);
+        setCursor(null);
+        setOpenIndex(null);
+        onRefresh();
+        return;
+      }
+      if (
         error instanceof GalleryClientError &&
         error.code === "UNAUTHENTICATED"
       ) {

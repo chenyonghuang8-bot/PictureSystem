@@ -681,7 +681,7 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
     }
   });
 
-  test("8A1 real HTTPS search applies date/album/favorite, keysets, Viewer refresh and URL history", async ({
+  test("nonlocation real HTTPS search applies all filters, options, keysets, Viewer refresh and URL history", async ({
     browser,
   }) => {
     const context = await browser.newContext({
@@ -693,7 +693,7 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
       const runRoot = process.env.PHASE6D5_WEB_E2E_RUN_ROOT;
       if (!runRoot) throw new Error("OWNED_HTTPS_RUN_ROOT_REQUIRED");
       writeFileSync(
-        resolve(rootDir, ".cache/phase8a1/https-run.json"),
+        resolve(rootDir, ".cache/phase8-nls-r1/https-run.json"),
         JSON.stringify({
           runRoot,
           startedAt: new Date().toISOString(),
@@ -719,7 +719,7 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
       expect(bad.headers()["cache-control"]).toBe("private, no-store");
       const privateMarker = "synthetic_private_search_marker_8a1";
       const privateQuery = await context.request.get(
-        `${endpoint}?filename=${privateMarker}`,
+        `${endpoint}?filename=${privateMarker}&unexpected=1`,
       );
       expect(privateQuery.status()).toBe(400);
       const logPath = process.env.PHASE6D5_API_OBSERVATION_LOG;
@@ -771,6 +771,193 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
       await page.reload();
       await expect(page.getByLabel("仅我的收藏")).toBeChecked();
       await expect(page.locator(".gallery-cell")).toHaveCount(0);
+      // Only this run's synthetic source receipt is changed; original bytes stay immutable.
+      const connection = await database.pool.getConnection();
+      let searchTagId: string;
+      try {
+        await connection.query(
+          `UPDATE upload_sessions source JOIN media_items m
+           ON m.family_id=source.family_id AND m.source_upload_id=source.id
+           SET source.original_filename=? WHERE m.family_id=? AND m.id=?`,
+          ["IMG_Café%_!.webp", familyId, mediaIds[0]],
+        );
+        const [tag] = await connection.query<ResultSetHeader>(
+          "INSERT INTO tags (family_id,name,name_normalized) VALUES (?,?,?)",
+          [familyId, `搜索标签 ${suffix}`, Buffer.from(`搜索标签 ${suffix}`)],
+        );
+        searchTagId = String(tag.insertId);
+        await connection.query(
+          "INSERT INTO media_tags (family_id,media_id,tag_id) VALUES (?,?,?)",
+          [familyId, mediaIds[0], searchTagId],
+        );
+      } finally {
+        connection.release();
+      }
+      for (const kind of ["tag", "uploader"]) {
+        const optionResponse = await context.request.get(
+          `${endpoint}/options?kind=${kind}&limit=1`,
+        );
+        expect(optionResponse.status()).toBe(200);
+        expect(optionResponse.headers()["cache-control"]).toBe(
+          "private, no-store",
+        );
+        const optionPage = await optionResponse.json();
+        expect(optionPage.options).toEqual([
+          {
+            id: kind === "tag" ? searchTagId : memberId,
+            name: kind === "tag" ? `搜索标签 ${suffix}` : "验收成员",
+          },
+        ]);
+        expect(optionPage.nextCursor).toBeNull();
+      }
+      const refavorite = await context.request.put(
+        `/api/v1/albums/${albumId}/media/${mediaIds[0]}/favorite`,
+        {
+          headers: {
+            origin: "https://localhost:3443",
+            "content-type": "application/json",
+          },
+          data: {},
+        },
+      );
+      expect(refavorite.status()).toBe(200);
+      const allFilters = new URLSearchParams({
+        filename: "Café%_!",
+        favoritesOnly: "true",
+        uploaderMemberId: memberId,
+        tagId: searchTagId,
+        albumId,
+        fromDate: "2026-09-01",
+        toDate: "2026-09-30",
+      });
+      const batchResponse = await context.request.get(
+        `${endpoint}?${allFilters}`,
+      );
+      expect(batchResponse.status()).toBe(200);
+      expect(
+        (await batchResponse.json()).media.map(
+          (row: { mediaId: string }) => row.mediaId,
+        ),
+      ).toEqual([mediaIds[0]]);
+      for (const filename of ["café%_!", "Cafe%_!", "%not-a-wildcard_"]) {
+        const miss = await context.request.get(
+          `${endpoint}?filename=${encodeURIComponent(filename)}`,
+        );
+        expect((await miss.json()).media).toEqual([]);
+      }
+      await page.goto(`/?${allFilters}`);
+      await expect(page.getByLabel("首次上传文件名")).toHaveValue("Café%_!");
+      await expect(page.getByLabel("首次上传成员")).toHaveValue(memberId);
+      await expect(page.getByLabel("标签", { exact: true })).toHaveValue(
+        searchTagId,
+      );
+      await expect(page.locator(".gallery-cell")).toHaveCount(1);
+      await page.getByRole("button", { name: "查找照片", exact: true }).click();
+      await expect(page.locator(".gallery-cell")).toHaveCount(1);
+      await page.reload();
+      await expect(page.getByLabel("首次上传文件名")).toHaveValue("Café%_!");
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+      // Inject only an old cursor into a successful synthetic fixture response;
+      // pagination's 400 and recovery's 200 both come from the real HTTPS API.
+      const rejectedCursor = Buffer.from(
+        JSON.stringify({
+          version: 1,
+          timelineKey: firstPage.media[0].timelineKey,
+          mediaId: mediaIds[0],
+          scope: createHash("sha256")
+            .update(
+              JSON.stringify([
+                "family-search-v1",
+                familyId,
+                userIds[0],
+                "2026-09-01",
+                "2026-09-30",
+                albumId,
+                true,
+                24,
+              ]),
+            )
+            .digest("hex"),
+        }),
+      ).toString("base64url");
+      const cursorRequests: string[] = [];
+      let injected = false;
+      let rejectedStatus = 0;
+      let releaseRejected: (() => void) | undefined;
+      const releaseGate = new Promise<void>((resolve) => {
+        releaseRejected = resolve;
+      });
+      await page.route(
+        `**/api/v1/families/${familyId}/search?**`,
+        async (route) => {
+          const url = new URL(route.request().url());
+          cursorRequests.push(url.search);
+          const upstream = await route.fetch();
+          if (url.searchParams.get("cursor") === rejectedCursor) {
+            rejectedStatus = upstream.status();
+            expect((await upstream.json()).code).toBe("INVALID_REQUEST");
+            await releaseGate;
+            await route.fulfill({ response: upstream });
+            return;
+          }
+          if (!injected) {
+            injected = true;
+            const dto = await upstream.json();
+            await route.fulfill({
+              response: upstream,
+              json: { ...dto, nextCursor: rejectedCursor },
+            });
+          } else await route.fulfill({ response: upstream });
+        },
+      );
+      await page.getByRole("button", { name: "查找照片", exact: true }).click();
+      await page.getByRole("button", { name: "加载更多", exact: true }).click();
+      await expect.poll(() => rejectedStatus).toBe(400);
+      await page.locator(".gallery-cell").click();
+      await expect(page.locator(".gallery-viewer")).toHaveCount(1);
+      releaseRejected!();
+      await expect(page.locator(".gallery-viewer")).toHaveCount(0);
+      await expect(page.locator(".gallery-cell")).toHaveCount(1);
+      await expect.poll(() => cursorRequests.length).toBe(3);
+      expect(cursorRequests[2]).toBe(cursorRequests[0]);
+      expect(cursorRequests[2]).not.toContain("cursor=");
+      expect(
+        cursorRequests.filter((query) =>
+          new URLSearchParams(query).has("cursor"),
+        ),
+      ).toHaveLength(1);
+      await expect(
+        page.getByRole("button", { name: "加载更多", exact: true }),
+      ).toHaveCount(0);
+      await expect(page.getByLabel("首次上传文件名")).toHaveValue("Café%_!");
+      const batchApiLog = readFileSync(logPath, "utf8");
+      for (const sensitive of [
+        "filename=",
+        "uploaderMemberId=",
+        "tagId=",
+        "kind=",
+        "Café%_!",
+        "Caf%C3%A9",
+        privateMarker,
+        firstPage.nextCursor,
+        rejectedCursor,
+      ])
+        expect(batchApiLog.includes(sensitive)).toBe(false);
+      const unfavorite = await context.request.delete(
+        `/api/v1/albums/${albumId}/media/${mediaIds[0]}/favorite`,
+        {
+          data: {},
+          headers: {
+            origin: "https://localhost:3443",
+            "content-type": "application/json",
+          },
+        },
+      );
+      expect(unfavorite.status()).toBe(200);
       // R1: inspect unmodified output from the actual Next child process,
       // after SSR URL refresh and search-proxy pagination/invalid-query traffic.
       const webLogPath = resolve(runRoot, "web-observation.log");
@@ -785,13 +972,18 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
         "albumId=",
         "favoritesOnly=",
         "cursor=",
+        "filename=",
+        "uploaderMemberId=",
+        "tagId=",
+        "kind=",
         privateMarker,
         firstPage.nextCursor,
+        rejectedCursor,
       ]) {
         expect(webLog.includes(sensitive)).toBe(false);
       }
       writeFileSync(
-        resolve(rootDir, ".cache/phase8a1-r1-e1/web-log-regression.json"),
+        resolve(rootDir, ".cache/phase8-nls-r1/web-log-regression.json"),
         JSON.stringify({
           checkedAt: new Date().toISOString(),
           source: "actual-next-stdout-stderr",
@@ -807,7 +999,7 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
       );
       copyFileSync(
         webLogPath,
-        resolve(rootDir, ".cache/phase8a1-r1-e1/web-observation.log"),
+        resolve(rootDir, ".cache/phase8-nls-r1/web-observation.log"),
       );
       const viewer = await browser.newContext({ ignoreHTTPSErrors: true });
       try {
@@ -830,6 +1022,13 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
       const signedOut = await context.request.get(endpoint);
       expect(signedOut.status()).toBe(401);
       expect(signedOut.headers()["cache-control"]).toBe("private, no-store");
+      const signedOutOptions = await context.request.get(
+        `${endpoint}/options?kind=tag`,
+      );
+      expect(signedOutOptions.status()).toBe(401);
+      expect(signedOutOptions.headers()["cache-control"]).toBe(
+        "private, no-store",
+      );
     } finally {
       await context.close();
     }

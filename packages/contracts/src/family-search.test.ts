@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   familySearchQuerySchema,
   familySearchCursorSchema,
+  familySearchOptionsQuerySchema,
   galleryMediaQuerySchema,
 } from "./gallery.js";
 
@@ -48,8 +49,8 @@ describe("strict family search contract", () => {
     { cursor: "a".repeat(1025) },
     { familyId: "4" },
     { memberId: "7" },
-    { filename: "private" },
-    { tagId: "1" },
+    { filename: "" },
+    { tagIds: ["1"] },
     { gpsLatitude: "1" },
   ])("rejects malformed or out-of-scope input: %j", (input) =>
     expect(familySearchQuerySchema.safeParse(input).success).toBe(false),
@@ -65,14 +66,14 @@ describe("strict family search contract", () => {
   });
   it("requires canonical valid cursor timeline and a scoped version", () => {
     const row = {
-      version: 1,
+      version: 2,
       timelineKey: "2024-02-29T23:59:59.999Z",
       mediaId: "9007199254740993",
       scope: "a".repeat(64),
     };
     expect(familySearchCursorSchema.safeParse(row).success).toBe(true);
     for (const override of [
-      { version: 2 },
+      { version: 1 },
       { timelineKey: "2023-02-29T00:00:00.000Z" },
       { timelineKey: "2024-02-29T00:00:00Z" },
       { scope: "A".repeat(64) },
@@ -81,5 +82,54 @@ describe("strict family search contract", () => {
       expect(
         familySearchCursorSchema.safeParse({ ...row, ...override }).success,
       ).toBe(false);
+  });
+});
+
+describe("confirmed non-location filename/member/tag contract", () => {
+  it("normalizes only outer whitespace and retains case, accents and Unicode", () => {
+    const q = familySearchQuerySchema.parse({
+      filename: "  IMG_Café%_!.PNG  ",
+      uploaderMemberId: "18446744073709551615",
+      tagId: "1",
+    });
+    expect(q.filename).toBe("IMG_Café%_!.PNG");
+    expect(q.uploaderMemberId).toBe("18446744073709551615");
+    expect(
+      familySearchQuerySchema.parse({ filename: "😀".repeat(255) }).filename,
+    ).toBe("😀".repeat(255));
+  });
+  it.each([
+    " ",
+    "a\0b",
+    "a\nb",
+    "\ud800",
+    "\udc00",
+    "a".repeat(256),
+    "😀".repeat(256),
+  ])("rejects unsafe or over-budget filename %j", (filename) => {
+    expect(familySearchQuerySchema.safeParse({ filename }).success).toBe(false);
+  });
+  it.each([
+    { filename: ["a", "b"] },
+    { uploaderMemberId: "0" },
+    { uploaderMemberId: ["1", "2"] },
+    { tagId: ["1", "2"] },
+    { tagId: "1,2" },
+  ])("rejects array/multi filters %j", (q) =>
+    expect(familySearchQuerySchema.safeParse(q).success).toBe(false),
+  );
+  it("bounds options and rejects free-form/foreign filters", () => {
+    expect(familySearchOptionsQuerySchema.parse({ kind: "uploader" })).toEqual({
+      kind: "uploader",
+      limit: 50,
+    });
+    for (const q of [
+      { kind: "member" },
+      { kind: "tag", limit: "51" },
+      { kind: "tag", filename: "x" },
+      { kind: ["tag", "uploader"] },
+      { kind: "tag", afterId: "1" },
+    ])
+      expect(familySearchOptionsQuerySchema.safeParse(q).success).toBe(false);
   });
 });

@@ -3,6 +3,7 @@
 import {
   albumsResponseSchema,
   familyTimelinePageSchema,
+  familySearchOptionsPageSchema,
   type FamilySearchFilters,
   type FamilyTimelinePage,
 } from "@family-album/contracts";
@@ -12,6 +13,7 @@ import {
   searchFilterQuery,
   searchFiltersFromUrl,
   searchPath,
+  searchOptionsPath,
 } from "../../lib/gallery-paths.js";
 import {
   browserGalleryGet,
@@ -264,6 +266,15 @@ function SearchControls({
             ? { albumId: String(values.get("albumId")) }
             : {}),
           ...(values.get("favoritesOnly") ? { favoritesOnly: "true" } : {}),
+          ...(String(values.get("filename") ?? "").trim()
+            ? { filename: String(values.get("filename")).trim() }
+            : {}),
+          ...(values.get("uploaderMemberId")
+            ? { uploaderMemberId: String(values.get("uploaderMemberId")) }
+            : {}),
+          ...(values.get("tagId")
+            ? { tagId: String(values.get("tagId")) }
+            : {}),
         }),
       );
       setInvalid(false);
@@ -321,6 +332,32 @@ function SearchControls({
               ))}
             </select>
           </label>
+          <label>
+            首次上传文件名
+            <input
+              name="filename"
+              type="search"
+              defaultValue={filters.filename ?? ""}
+              disabled={disabled}
+              placeholder="包含文字，区分大小写/重音"
+            />
+          </label>
+          <SearchOptionControl
+            familyId={familyId}
+            kind="uploader"
+            {...(filters.uploaderMemberId
+              ? { selectedId: filters.uploaderMemberId }
+              : {})}
+            disabled={disabled}
+            onAuthLost={onAuthLost}
+          />
+          <SearchOptionControl
+            familyId={familyId}
+            kind="tag"
+            {...(filters.tagId ? { selectedId: filters.tagId } : {})}
+            disabled={disabled}
+            onAuthLost={onAuthLost}
+          />
           <label className="gallery-search-favorite">
             <input
               type="checkbox"
@@ -346,8 +383,9 @@ function SearchControls({
             清除筛选
           </button>
         </div>
-        {invalid ? <p role="alert">请检查日期范围和筛选条件。</p> : null}
+        {invalid ? <p role="alert">请检查筛选条件。</p> : null}
       </form>
+      <small>文件名和成员按首次上传来源检索；重复上传不改变归属。</small>
       {pending ? <small role="status">正在加载相册选项…</small> : null}
       {failed ? (
         <button
@@ -367,5 +405,119 @@ function SearchControls({
         </button>
       ) : null}
     </section>
+  );
+}
+
+function SearchOptionControl({
+  familyId,
+  kind,
+  selectedId,
+  disabled,
+  onAuthLost,
+}: {
+  familyId: string;
+  kind: "tag" | "uploader";
+  selectedId?: string;
+  disabled: boolean;
+  onAuthLost: () => void;
+}) {
+  const [options, setOptions] = useState<{ id: string; name: string }[]>([]);
+  const [cursor, setCursor] = useState<string | null | undefined>(undefined);
+  const [selected, setSelected] = useState(selectedId ?? "");
+  const [pending, setPending] = useState(false),
+    [failed, setFailed] = useState(false);
+  const alive = useRef(true),
+    loading = useRef(false),
+    request = useRef<AbortController | null>(null);
+  const label = kind === "tag" ? "标签" : "首次上传成员";
+  async function load(nextCursor?: string) {
+    if (disabled || loading.current) return;
+    loading.current = true;
+    setPending(true);
+    setFailed(false);
+    const abort = new AbortController();
+    request.current = abort;
+    try {
+      const result = await browserGalleryGet(
+        searchOptionsPath(familyId, kind, nextCursor),
+        familySearchOptionsPageSchema,
+        abort.signal,
+      );
+      if (!alive.current || abort.signal.aborted) return;
+      setOptions((previous) => {
+        const seen = new Set(previous.map((row) => row.id));
+        return previous.concat(
+          result.options.filter((row) => !seen.has(row.id)),
+        );
+      });
+      setCursor(result.nextCursor);
+    } catch (error) {
+      if (!alive.current || abort.signal.aborted) return;
+      if (
+        error instanceof GalleryClientError &&
+        error.code === "UNAUTHENTICATED"
+      )
+        onAuthLost();
+      else setFailed(true);
+    } finally {
+      if (alive.current && !abort.signal.aborted) {
+        loading.current = false;
+        setPending(false);
+      }
+    }
+  }
+  useEffect(() => {
+    alive.current = true;
+    void load();
+    return () => {
+      alive.current = false;
+      loading.current = false;
+      request.current?.abort();
+    };
+  }, []);
+  useEffect(() => {
+    if (disabled) {
+      request.current?.abort();
+      setOptions([]);
+      setPending(false);
+    }
+  }, [disabled]);
+  return (
+    <div>
+      <label>
+        {label}
+        <select
+          name={kind === "tag" ? "tagId" : "uploaderMemberId"}
+          aria-label={label}
+          value={selected}
+          disabled={disabled}
+          onChange={(event) => setSelected(event.target.value)}
+        >
+          <option value="">
+            全部可见{kind === "tag" ? "标签" : "来源成员"}
+          </option>
+          {selectedId && !options.some((row) => row.id === selectedId) ? (
+            <option value={selectedId}>当前筛选{label}</option>
+          ) : null}
+          {options.map((row) => (
+            <option key={row.id} value={row.id}>
+              {row.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {pending ? <small role="status">正在加载{label}选项…</small> : null}
+      {failed || cursor ? (
+        <button
+          type="button"
+          className="gallery-text-button"
+          disabled={pending || disabled}
+          onClick={() => void load(cursor ?? undefined)}
+        >
+          {failed ? "重试" : "加载更多"}
+          {label}选项
+        </button>
+      ) : null}
+    </div>
   );
 }

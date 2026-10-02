@@ -21,11 +21,29 @@ export const familySearchDateSchema = z
     );
   });
 
+export const familySearchFilenameSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(
+    z
+      .string()
+      .min(1)
+      .refine(
+        (value) =>
+          [...value].length <= 255 &&
+          new TextEncoder().encode(value).length <= 1024 &&
+          !/[\p{Cc}\p{Cs}]/u.test(value),
+      ),
+  );
+
 export const familySearchQuerySchema = z
   .object({
     fromDate: familySearchDateSchema.optional(),
     toDate: familySearchDateSchema.optional(),
     albumId: unsignedBigIntStringSchema.optional(),
+    filename: familySearchFilenameSchema.optional(),
+    uploaderMemberId: unsignedBigIntStringSchema.optional(),
+    tagId: unsignedBigIntStringSchema.optional(),
     favoritesOnly: z
       .literal("true")
       .optional()
@@ -51,7 +69,7 @@ export const familySearchQuerySchema = z
 
 export const familySearchCursorSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
     timelineKey: z
       .string()
       .regex(
@@ -69,7 +87,56 @@ export const familySearchCursorSchema = z
 export type FamilySearchQuery = z.output<typeof familySearchQuerySchema>;
 export type FamilySearchFilters = Pick<
   FamilySearchQuery,
-  "fromDate" | "toDate" | "albumId" | "favoritesOnly"
+  | "fromDate"
+  | "toDate"
+  | "albumId"
+  | "favoritesOnly"
+  | "filename"
+  | "uploaderMemberId"
+  | "tagId"
+>;
+
+export const familySearchOptionsQuerySchema = z
+  .object({
+    kind: z.enum(["tag", "uploader"]),
+    limit: z
+      .string()
+      .regex(/^[1-9][0-9]?$/)
+      .transform(Number)
+      .pipe(z.number().int().min(1).max(50))
+      .default(50),
+    cursor: z
+      .string()
+      .min(1)
+      .max(1024)
+      .regex(/^[A-Za-z0-9_-]+$/)
+      .optional(),
+  })
+  .strict();
+export const familySearchOptionsCursorSchema = z
+  .object({
+    version: z.literal(1),
+    afterId: unsignedBigIntStringSchema,
+    scope: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export const familySearchOptionsPageSchema = z
+  .object({
+    options: z
+      .array(
+        z
+          .object({
+            id: unsignedBigIntStringSchema,
+            name: z.string().min(1).max(128),
+          })
+          .strict(),
+      )
+      .max(50),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+export type FamilySearchOptionsQuery = z.output<
+  typeof familySearchOptionsQuerySchema
 >;
 
 export const galleryMediaParamsSchema = z

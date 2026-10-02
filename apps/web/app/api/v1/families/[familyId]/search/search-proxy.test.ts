@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GET } from "./route.js";
+import { GET as GETOptions } from "./options/route.js";
 
 let server: Server;
 let originalOrigin: string | undefined;
@@ -45,6 +46,25 @@ afterAll(async () => {
     );
 });
 describe("exact search forwarding boundary", () => {
+  it("forwards options to the fixed upstream path with raw strict query and both credentials", async () => {
+    const query = "?kind=tag&limit=1&limit=2&cursor=synthetic_options_cursor";
+    const response = await GETOptions(
+      new Request(`http://web.local/api/v1/families/4/search/options${query}`, {
+        headers: {
+          cookie: "synthetic-cookie",
+          authorization: "Bearer synthetic-bearer",
+        },
+      }),
+      { params: Promise.resolve({ familyId: "4" }) },
+    );
+    expect(response.status).toBe(400);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(seen.at(-1)).toEqual({
+      url: `/api/v1/families/4/search/options${query}`,
+      cookie: "synthetic-cookie",
+      authorization: "Bearer synthetic-bearer",
+    });
+  });
   it.each([
     {
       headers: {

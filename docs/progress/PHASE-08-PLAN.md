@@ -1,6 +1,6 @@
 # Phase 8 — Search & Map：有界实施计划
 
-2026-10-02 UTC。基线 HEAD `03f6491b8a66d03633dfd42b5ca6026cf8d8e8dd`。用户在确认 Phase7 功能完成后授权继续。**状态：8A1 IMPLEMENTED_SCOPED_REVIEW_PASS；Astra 已在 `PHASE-08A-SEARCH-DESIGN.md` 批准时间＋单相册＋我的收藏纵切。** 实施/验收详情见 `PHASE-08A1-IMPLEMENTATION.md`；8A2、GPS/地理编码尚未获可执行批准，不将本计划当这些范围的 R3 guardrails。 协调方按下面入口安排审批和实施。非 Astra 使用用户指定 Sol Medium / Fast；实际模型 ID unknown。禁止 Bridge。
+2026-10-02 UTC。基线 HEAD `03f6491b8a66d03633dfd42b5ca6026cf8d8e8dd`。用户在确认 Phase7 功能完成后授权继续。**状态：8A1 IMPLEMENTED_SCOPED_REVIEW_PASS；Astra 已在 `PHASE-08A-SEARCH-DESIGN.md` 批准时间＋单相册＋我的收藏纵切。** 实施/验收详情见 `PHASE-08A1-IMPLEMENTATION.md`；用户18:25集中回复“是的”，已接受首次来源披露与历史归属、literal大小写/重音敏感、单Tag范围；剩余非地点搜索已作为一个功能批次实施，独立复核发现的NLS-R1/P2已修复并获独立CLOSED/PASS，当前批次无blocker，用户授权限定本地checkpoint、不push。GPS/地理编码未批准。当前详情见 `PHASE-08-NONLOCATION-SEARCH-BATCH.md`。 协调方按下面入口安排审批和实施。非 Astra 使用用户指定 Sol Medium / Fast；实际模型 ID unknown。禁止 Bridge。
 
 ## 1. 权威范围与实际基线
 
@@ -24,7 +24,7 @@
 | Web               | 现有 gallery grid/viewer/session/BFF；搜索/地图为后续功能，暖白/绿色/三栏视觉规范                                                                                                          | 真实搜索入口、filters/results和map UI未实现；按 `project-spec/ui/web-preview.png` 对齐，实施UI时读取参考图及局部规范 |
 | 外部地图          | 架构指定 MapLibre；当前 package/config无maplibre、tile/geocode字段                                                                                                                         | 不在本轮装包、选号收费服务或增基础设施；进入地图实施前核验官方 API/许可/可用性，不锁定未经查证版本                   |
 
-没有发现 Phase8 专项已批准 design/guardrails。Phase5A 的历史 DESIGN ONLY 文档不能当新的搜索/GPS签核；Phase5/6 final summaries 和当前实现证明旧 gallery/feature边界已交付，仅供继承。
+本段盘点创建时尚无Phase8专项guardrails；当前已有 `PHASE-08A-SEARCH-DESIGN.md` 的8A1批准及8A2受限扩展建议，8A1正式closure。来源披露已获18:25明确确认，地图仍未获授权；Phase5/6仅继承既有边界。
 
 ## 3. 旧 root 是否阻塞：分清实际交付环境
 
@@ -34,28 +34,38 @@
 
 **旧部署的正常图片访问仍被维护兼容条件阻挡。** 本轮没有运行探针读取旧root来证明其具体状态；不能宣称旧V1已可运行、不能weakening/adopt/重写marker。若验收要求换成“现有部署实际可用”，必须先由用户另行授权并经Astra批准root维护slice；它不是默认Phase8代码依赖，也不将它偷偷并入搜索计划。Production Ready持续NO。
 
-## 4. 最小完整拆分与一次性审查边界
+## 4. 剩余工作按完整功能批次推进
 
-| Slice                                         | 最小交付                                                                                                                               | 前置与停止边界                                                                                                                                                       |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **8A0 — Search合同/查询guardrails**（下一步） | 在既有可见集合下定义全套非地点filter/组合/选项/cursor；明确首次provenance及时间；形成一份可评审合同+SQL计划+测试矩阵                   | 先解决本节关键语义，再由GPT-6 Astra Low一次限定批准；本计划不是批准。该slice只设计不改代码/schema                                                                    |
-| **8A1 — 时间/相册/个人收藏纵切**              | 同一个统一入口可提交filters、返回server-filtered keyset结果、清除/恢复filters、分页及viewer打开；已有DTO不新增GPS/文件名或成员隐私字段 | 8A0审批后Sol Fast实现。三个已有数据维度、不migration；完整API→DB→Web，不交付只有按钮的假筛选                                                                         |
-| **8A2 — 文件名/上传成员/Tag补齐**             | 同一入口追加其余非地点条件与组合；SQL参数化/有界字符串，visible-only选项；不增加新搜索基础服务                                         | 沿用8A0统一guardrails；无更改可见边界或schema时targeted验证+一次限定review，不重复基础审计                                                                           |
-| **8B — GPS位置搜索与地图纵切**                | server-authorized location/bounds结果、有界MapLibre markers/clusters、点击地区回到同一filter结果；无GPS明确状态                        | 坐标权限/精度、响应上限与tile网络隐私先集中Astra批准；tile可配置，地图没有原图URL/bytes。不复用public分享DTO扩大披露                                                 |
-| **8C — 国家/城市与Phase8收尾**                | 批准来源的country/city grouping，和同一visible搜索集合对应的地区照片；fallback与重新生成机制明确                                       | 地理数据来源及任何schema/worker策略先批准；需要migration才按Drizzle/versioned review实施，不预设0008。全部ROADMAP范围完成后跑一次milestone full gate和最终限定review |
+用户已同意减少拆轮次、重复设计和零碎确认。该同意只确认工作方式，**不是原三项产品推荐值的无条件批准，尤其不是来源披露授权**。不另建分层子阶段、不为每个filter单独设计/实施/审查。
 
-8A1/8A2可同一已批准合同内依次实施，避免每个filter各写一套ACL或多轮安全设计。8B/8C在产品选择具备时可合并一次GPS/位置数据审查，但不能为减少审查轮次跳过GPS权限或schema/外发边界。非阻塞优化不扩大slice。
+| 批次                                          | 交付与状态                                                                                          | 边界                                                                                                                                                      |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 已完成基线（原8A0/8A1）                       | 既有设计、时间/单相册/个人收藏、日志修复与正式限定closure；本地checkpoint已保存                     | 不重复基础审计，不重新设计Auth/ACL                                                                                                                        |
+| **剩余非地点搜索完整功能批次（沿用8A2代号）** | **文件名＋首次上传成员＋Tag** 一次完成，同一入口、组合、选项、分页/cursor、API→DB→Web与完整定向验收 | 只集中收口下面真正未决产品语义；随后沿用已定义受限边界。当前已整体实施并通过定向验证、待独立复核，不按三个filter拆提交/确认轮次；不凭计划扩大权限或schema |
+| 后续地图/地区功能（原8B/8C规划）              | 位置搜索、地图与国家/城市范围沿原ROADMAP，当前不开展                                                | GPS权限/来源/外发及可能schema仍须既有审批；本轮不研究或合并到非地点搜索                                                                                   |
 
-## 5. 需要重要选择/批准的点（不是已有决定）
+一次批次包含strict合同/受限查询、既有统一UI、可见集合候选、定向功能/数据库/实际Web安全日志验收及一次限定复核。只有实际新权限/事务/schema问题才返回设计，不因普通字段追加重复开启Astra设计。完整Phase8交付后才运行milestone full gate。
 
-协调方在8A0开始前集中收口前两项；后两项不阻挡8A1/8A2，但阻挡地图完整验收。
+## 5. 有界核对：既有规则、技术承接与未决取舍
 
-1. **filename/member provenance**：推荐以现有 canonical `source_upload_id` 的首次上传receipt为V1语义，匹配Phase6 provenance；若要求“所有重复上传文件名/上传者都可搜”，是不同产品语义与关联披露问题，需要评审receipt可见性，而非简单扩JOIN。
-2. **时间、组合与选项**：推荐继续照片timeline时间（保留timelineBasis），明确日期边界、空/无效条件、filters间AND、Tag多选any/all以及更换filters后cursor重置；是否增加“上传时间”独立条件由产品决定。过滤选项不得默认列出隐藏关联实体。这里只列候选，不批准参数名/SQL或更改cursor协议。
-3. **GPS权限/精度**：需要明确viewable照片坐标给谁、精度如何、无GPS/无效坐标处理、只读map是否允许公开分享；推荐首版仅认证私有family scope，不扩public分享，但须Astra批准。EXIF original immutable，不通过重写原图解决隐私。
-4. **国家/城市来源与第三方边界**：选择本地数据或经明确授权的服务；确定是否向geocoder发送精确坐标、持久缓存/更新/许可、tile供应商与请求网络隐私。未选择前不外发坐标、不新增location表或收费服务。地图供应商不得获得原始照片是既定要求，不能仅凭“不发图片”就宣称无位置外泄。
+本次只读取PROJECT §11/§13、ROADMAP Phase8、相关schema概念/真实字段、Phase6来源映射与现有8A设计/PRODUCT-QUESTIONS，不是全仓审计。`PHASE-08A2-PRODUCT-QUESTIONS.md` 保留此前三项建议作为输入，**本节将必要决策整合为两项，不另发多轮问题**。
 
-若8A0只是落实已存在SQL可见性，仍须限定审查新的搜索查询/aggregate/facets；没有要求重做Session或全仓审计。新权限/GPS/schema/locking是R3-DESIGN，必须Astra Low；Sol只实施明确已批准guardrails。
+| 分类                           | 核对结果与依据                                                                                                                                                                                                                                          | 是否再问用户                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 已明确产品范围                 | PROJECT §11统一入口/V1文件名、上传成员、Tag；§13手动Tag；ROADMAP Phase8同批包含这些filters。人物/语义/自然语言为V2                                                                                                                                      | 不问是否需要这些功能或是否改为AI标签                                                                                |
+| 已定义继承边界                 | 8A设计 §3–6：同family当前可见active media、不同条件AND、strict输入、hidden/missing/cross-family统一空页、private/no-store、安全日志、有界keyset和scope、visible-only options无counts                                                                    | 不重新让用户选择ACL、参数编码、分页算法或索引                                                                       |
+| 可从真实兼容实现确定的技术来源 | Phase6设计字段映射：`media_items.source_upload_id → upload_sessions.original_filename / created_by_member_id`；canonical首次provenance不随重复上传改变。真实schema存在该关系，概念schema中的storage_objects.original_filename不是另一个实际可用数据来源 | 不问JOIN哪张表，不新建文件名/上传者列。**字段可用不等于按来源搜索的披露已授权**                                     |
+| 可继承的技术落实               | canonical JOIN含family约束；Tag沿现有media_tags/tags、按ID EXISTS；LIKE特殊字符转义/参数绑定、输入预算、cursor scope版本更新、候选仅来自可见集合                                                                                                        | 用户不选SQL/索引/转义或是否隐藏敏感日志；真要schema/权限改变才另报设计缺口                                          |
+| 未要求的可选扩展               | 多Tag、多个相册OR、独立上传时间、全文/模糊、动态counts均非本批必要需求。8A设计推荐首版单Tag                                                                                                                                                             | 不增加any/all独立确认轮次。单Tag是保守批次范围建议，**不是用户已确认的事实**；若用户明确要求多选，再一次确定any/all |
+
+以下保留集中确认时的问题，用户已在18:25回复“是的”接受整组推荐及单Tag；不再是未决项：
+
+1. **是否接受首次上传来源匹配及其披露**。推荐按创建canonical媒体的首次文件名/上传成员检索；重复上传不改归属，成员停用/离开后保留历史归属。可看照片的人可通过filter/成员候选推断其首次来源，这一点须明确接受（8A设计§2/§6已列待确认）。例如爸爸先上传A.jpg、妈妈后来重复上传B.jpg，推荐只匹配A.jpg/爸爸。若想匹配任一次/最近一次上传，是不同产品语义与receipt可见性，不能简单扩JOIN；不接受披露则暂不开放对应filter。
+2. **文件名比较是否区分大小写/重音**。spec未规定，当前也没有已上线文件名filter可继承。推荐保留8A设计的字面包含、区分大小写与重音、不做NFKC折叠；%/_/!作普通字符，`IMG`不自动命中`img`、`e`不自动等于`é`。这是可感知产品行为，**不是由数据库默认collation决定的技术细节，在提问时尚未获用户确认，现已接受推荐**。若选择忽略，先明确具体比较规则，仍不扩大为模糊/全文。
+
+批次范围建议附带“首版单Tag”，无须额外问未要求的多选逻辑；统一scope接受记录即可。推荐语义已由用户明确接受，按既有8A设计§6受限扩展实施完整批次；没有追加Astra设计，没有改变schema/权限/锁，没有提交或push。
+
+地图/GPS权限、精度、地址来源/供应商/坐标外发仍按原设计入口处理，是后续功能范围；不把这些问题塞进当前非地点搜索确认。
 
 ## 6. 已执行的8A0设计入口（历史计划）
 
@@ -93,10 +103,10 @@ Phase7 发布由用户另开的独立任务完成。协调方确认远端 main �
 
 ```text
 NEXT_PHASE: PHASE_8_SEARCH_AND_MAP
-PHASE_8_IMPLEMENTATION_STARTED: YES_8A1_ONLY
-PLAN_STATUS: 8A1_IMPLEMENTED_SCOPED_REVIEW_PASS
+PHASE_8_IMPLEMENTATION_STARTED: YES_NONLOCATION_SEARCH_BATCH
+PLAN_STATUS: NONLOCATION_SEARCH_COMPLETE_REVIEW_PASS_NLS_R1_CLOSED
 FIRST_EXECUTABLE_SLICE: 8A1_APPROVED_SEARCH_VERTICAL_SLICE
-EXISTING_PHASE_8_APPROVED_GUARDRAILS: PHASE_08A_SEARCH_DESIGN_8A1_ONLY
+EXISTING_PHASE_8_APPROVED_GUARDRAILS: PHASE_08A_SEARCH_DESIGN_PLUS_CONFIRMED_SECTION_6
 V1_ROOT_MAINTENANCE_REQUIRED_FOR_ISOLATED_DEV_SEARCH: NO
 V1_ROOT_MAINTENANCE_COMPLETE: NO
 SCHEMA_MIGRATION_APPROVED: NO
@@ -108,4 +118,6 @@ PRODUCTION_READY: NO
 
 ## 9. 8A1 checkpoint后入口
 
-`PHASE-08A1-R1-E1-CLOSURE.md` 正式PASS，R1整体CLOSED；限定提交收尾见 `PHASE-08A1-CHECKPOINT.md`。原审查结论按历史保留，当前blocker=0。PERF-E1/P3非阻塞待办保持，不重新展开1万数据性能验收。下一步仅报告 `PHASE-08A2-PRODUCT-QUESTIONS.md` 的3项集中确认；未经确认不接受新filter、不实现来源披露或地图。用户最新硬停止为20:00UTC（北京时间10月3日04:00），覆盖原18:00。
+`PHASE-08A1-R1-E1-CLOSURE.md` 正式PASS，R1整体CLOSED；限定提交收尾见 `PHASE-08A1-CHECKPOINT.md`。原审查结论按历史保留，当前blocker=0。PERF-E1/P3非阻塞待办保持，不重新展开1万数据性能验收。下一步按本文件§4–5将剩余非地点搜索合为一个功能批次，两项集中语义及单Tag已在18:25获得用户明确“是的”确认；原 `PHASE-08A2-PRODUCT-QUESTIONS.md` 追加确认记录。当前非地点功能批次实施/验收交接见 `PHASE-08-NONLOCATION-SEARCH-BATCH.md`，已通过独立复核与NLS-R1 closure，不进入地图。用户最新硬停止为20:00UTC（北京时间10月3日04:00），覆盖原18:00。
+
+当前收尾入口：`PHASE-08-NONLOCATION-CHECKPOINT.md`。原独立复核NEEDS_FIX报告保持，最新独立closure CLOSED/PASS。用户授权限定本地commit、不push；非地点批次完成，地图未开始，不扩功能/新设计。

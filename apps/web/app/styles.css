@@ -968,6 +968,7 @@ button,
   gap: 6px;
   font-size: 13px;
 }
+.gallery-search-fields input[type="search"],
 .gallery-search-fields input[type="date"],
 .gallery-search-fields select {
   min-height: 38px;
@@ -994,6 +995,7 @@ button,
   .gallery-search-fields label {
     flex: 1 1 135px;
   }
+  .gallery-search-fields input[type="search"],
   .gallery-search-fields input[type="date"],
   .gallery-search-fields select {
     min-width: 0;
