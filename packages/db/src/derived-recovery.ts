@@ -310,6 +310,12 @@ export async function reconcileDerivedPublishRecovery(input: {
     temp: DerivedRecoveryTempFact,
     row: DerivedRecoveryRow,
   ) => Promise<void>;
+  /** Internal storage adapter: acquire L-S for the database-resolved Original K. */
+  acquireLifecycle?: (identity: {
+    familyId: string;
+    sha256Hex: string;
+    byteSize: string;
+  }) => Promise<{ close(): void }>;
   commitForTest?: (connection: PoolConnection) => Promise<void>;
 }): Promise<DerivedRecoveryAction[]> {
   if (input.capability === "UNAVAILABLE" || !input.inventoryComplete) {
@@ -379,7 +385,8 @@ export async function reconcileDerivedPublishRecovery(input: {
     if (
       !cleanupCandidate ||
       asset === null ||
-      input.cleanupExact === undefined
+      input.cleanupExact === undefined ||
+      input.acquireLifecycle === undefined
     ) {
       actions.push({
         code: preliminary,
@@ -394,90 +401,139 @@ export async function reconcileDerivedPublishRecovery(input: {
       });
       continue;
     }
-    try {
-      await input.cleanupExact(temp, asset);
-    } catch {
+    const lookupLifecycle = async () => {
+      const [rows] = await input.pool.query<RowDataPacket[]>(
+        `SELECT CAST(m.lifecycle_revision AS CHAR) revision, LOWER(HEX(s.sha256)) sha256Hex,
+           CAST(s.byte_size AS CHAR) byteSize
+         FROM media_items m JOIN storage_objects s ON s.family_id=m.family_id AND s.id=m.storage_object_id
+         WHERE m.family_id=? AND m.id=? AND m.generation=? AND m.recipe_id=?
+           AND m.trashed_at IS NULL AND m.purge_intent_id IS NULL AND s.state='AVAILABLE'`,
+        [
+          asset.familyId,
+          asset.mediaId,
+          asset.generation.toString(),
+          asset.recipeId,
+        ],
+      );
+      return rows.length === 1 ? rows[0] : null;
+    };
+    const before = await lookupLifecycle();
+    if (!before) {
       actions.push({
         code: "RECOVERY_REQUIRED",
         familyId: asset.familyId,
         mediaId: asset.mediaId,
-        generation: asset.generation,
-        kind: asset.kind,
       });
       continue;
     }
-    const deadline = performance.now() + 2_000;
-    const released = await runCapacityTransaction(
-      input.pool,
-      deadline,
-      async (transaction) => {
-        const [result] = await transaction.query<ResultSetHeader>(
-          `UPDATE derived_assets
+    // No SQL transaction or row lock spans this OS-lock acquisition.
+    const lifecycle = await input.acquireLifecycle({
+      familyId: asset.familyId,
+      sha256Hex: String(before.sha256Hex),
+      byteSize: String(before.byteSize),
+    });
+    try {
+      const current = await lookupLifecycle();
+      if (
+        !current ||
+        current.revision !== before.revision ||
+        current.sha256Hex !== before.sha256Hex ||
+        current.byteSize !== before.byteSize
+      ) {
+        actions.push({
+          code: "RECOVERY_REQUIRED",
+          familyId: asset.familyId,
+          mediaId: asset.mediaId,
+        });
+        continue;
+      }
+      try {
+        await input.cleanupExact(temp, asset);
+      } catch {
+        actions.push({
+          code: "RECOVERY_REQUIRED",
+          familyId: asset.familyId,
+          mediaId: asset.mediaId,
+          generation: asset.generation,
+          kind: asset.kind,
+        });
+        continue;
+      }
+      const deadline = performance.now() + 2_000;
+      const released = await runCapacityTransaction(
+        input.pool,
+        deadline,
+        async (transaction) => {
+          const [result] = await transaction.query<ResultSetHeader>(
+            `UPDATE derived_assets
            SET cleaned_at = UTC_TIMESTAMP(3)
            WHERE id=? AND family_id=? AND media_id=? AND generation=?
              AND recipe_id=1 AND kind=? AND state='RESERVED'
              AND cleaned_at IS NULL AND producer_job_id=?
              AND producer_lease_epoch=? AND byte_size IS NULL
              AND sha256 IS NULL`,
-          [
-            asset.id,
-            asset.familyId,
-            asset.mediaId,
-            asset.generation.toString(),
-            asset.kind,
-            asset.producerJobId,
-            asset.producerLeaseEpoch?.toString() ?? "",
-          ],
-        );
-        if (result.affectedRows !== 1) {
-          throw new Error("DERIVED_RECOVERY_ACCOUNTING");
-        }
-      },
-      input.commitForTest === undefined
-        ? {}
-        : { commitForTest: input.commitForTest },
-    );
-    if (released.transaction === "COMMITTED") {
+            [
+              asset.id,
+              asset.familyId,
+              asset.mediaId,
+              asset.generation.toString(),
+              asset.kind,
+              asset.producerJobId,
+              asset.producerLeaseEpoch?.toString() ?? "",
+            ],
+          );
+          if (result.affectedRows !== 1) {
+            throw new Error("DERIVED_RECOVERY_ACCOUNTING");
+          }
+        },
+        input.commitForTest === undefined
+          ? {}
+          : { commitForTest: input.commitForTest },
+      );
+      if (released.transaction === "COMMITTED") {
+        actions.push({
+          code: "TEMP_ONLY_RELEASED",
+          familyId: asset.familyId,
+          mediaId: asset.mediaId,
+          generation: asset.generation,
+          kind: asset.kind,
+        });
+        continue;
+      }
+      if (released.transaction !== "UNKNOWN") {
+        actions.push({
+          code: "ACCOUNTING_RETAINED",
+          familyId: asset.familyId,
+          mediaId: asset.mediaId,
+          generation: asset.generation,
+          kind: asset.kind,
+        });
+        continue;
+      }
+      const readback = await readCapacityOutcome(
+        input.pool,
+        deadline,
+        (transaction) =>
+          readOne(transaction, `${ASSET_SQL} WHERE id=?`, [asset.id]),
+      );
+      const committed =
+        readback !== null &&
+        readback !== "UNKNOWN" &&
+        readback.cleanedAt !== null;
       actions.push({
-        code: "TEMP_ONLY_RELEASED",
+        code: committed
+          ? "TEMP_ONLY_RELEASED"
+          : readback === null
+            ? "COMMIT_UNKNOWN"
+            : "ACCOUNTING_RETAINED",
         familyId: asset.familyId,
         mediaId: asset.mediaId,
         generation: asset.generation,
         kind: asset.kind,
       });
-      continue;
+    } finally {
+      lifecycle.close();
     }
-    if (released.transaction !== "UNKNOWN") {
-      actions.push({
-        code: "ACCOUNTING_RETAINED",
-        familyId: asset.familyId,
-        mediaId: asset.mediaId,
-        generation: asset.generation,
-        kind: asset.kind,
-      });
-      continue;
-    }
-    const readback = await readCapacityOutcome(
-      input.pool,
-      deadline,
-      (transaction) =>
-        readOne(transaction, `${ASSET_SQL} WHERE id=?`, [asset.id]),
-    );
-    const committed =
-      readback !== null &&
-      readback !== "UNKNOWN" &&
-      readback.cleanedAt !== null;
-    actions.push({
-      code: committed
-        ? "TEMP_ONLY_RELEASED"
-        : readback === null
-          ? "COMMIT_UNKNOWN"
-          : "ACCOUNTING_RETAINED",
-      familyId: asset.familyId,
-      mediaId: asset.mediaId,
-      generation: asset.generation,
-      kind: asset.kind,
-    });
   }
   for (const final of input.finals) {
     if (consumedFinals.has(final)) continue;

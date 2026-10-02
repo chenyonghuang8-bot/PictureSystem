@@ -1,3 +1,4 @@
+import { isActiveMedia } from "./media-lifecycle.js";
 import type { Phase4FailureCode } from "@family-album/contracts";
 import type {
   Pool,
@@ -65,6 +66,7 @@ type AssetRow = RowDataPacket & {
 };
 
 type FenceContext = {
+  lifecycleRevision: string;
   recipeId: number;
   mediaGeneration: string;
   jobType: string;
@@ -85,6 +87,7 @@ function canonical(value: string) {
 
 function leaseHolds(context: FenceContext, fence: LeaseFence) {
   return (
+    context.lifecycleRevision === fence.lifecycleRevision.toString() &&
     context.jobType === "IMAGE_DERIVATIVES" &&
     context.jobState === "RUNNING" &&
     context.mediaGeneration === fence.generation.toString() &&
@@ -122,7 +125,8 @@ async function lockFence(
   const storage = storageRows[0];
   if (!storage || !Buffer.isBuffer(storage.sha256)) return null;
   const [mediaRows] = await connection.query<RowDataPacket[]>(
-    `SELECT CAST(generation AS CHAR) AS generation, recipe_id AS recipeId
+    `SELECT CAST(generation AS CHAR) AS generation, recipe_id AS recipeId,
+       CAST(lifecycle_revision AS CHAR) lifecycleRevision,trashed_at trashedAt,CAST(purge_intent_id AS CHAR) purgeIntentId
      FROM media_items WHERE id=? AND family_id=? FOR UPDATE`,
     [fence.mediaId, fence.familyId],
   );
@@ -137,8 +141,18 @@ async function lockFence(
     [fence.jobId, fence.familyId, fence.mediaId, fence.generation.toString()],
   );
   const job = jobRows[0];
-  if (!media || !job) return null;
+  if (
+    !media ||
+    !job ||
+    !isActiveMedia({
+      trashedAt: media.trashedAt,
+      purgeIntentId: media.purgeIntentId,
+    }) ||
+    String(media.lifecycleRevision) !== fence.lifecycleRevision.toString()
+  )
+    return null;
   return {
+    lifecycleRevision: String(media.lifecycleRevision),
     recipeId: Number(media.recipeId),
     mediaGeneration: String(media.generation),
     jobType: String(job.jobType),

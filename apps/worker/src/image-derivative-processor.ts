@@ -1,3 +1,7 @@
+import {
+  ContentCoordination,
+  type ReadGuard,
+} from "../../../packages/storage/src/phase7-coordination.js";
 import type { Phase4FailureCode } from "@family-album/contracts";
 import type {
   BackgroundJobRecord,
@@ -81,7 +85,9 @@ export class ImageDerivativeProcessor {
     job: BackgroundJobRecord,
     workerId: WorkerIdentity,
   ): Promise<DerivativeRunResult> {
+    if (job.lifecycleRevision === undefined) return { outcome: "STALE" };
     const fence: LeaseFence = {
+      lifecycleRevision: job.lifecycleRevision,
       familyId: job.familyId,
       mediaId: job.mediaId,
       jobId: job.id,
@@ -106,6 +112,37 @@ export class ImageDerivativeProcessor {
     const described = await this.assets.describe(fence);
     if (described === "UNKNOWN") return { outcome: "COMMIT_UNKNOWN" };
     if (described === null) return { outcome: "STALE" };
+    let candidate: UnverifiedRenderedCandidate | null = null;
+    let renderFailure: unknown;
+    if (
+      described.assets.find((asset) => asset.kind === kind)?.state !==
+      "PUBLISHING"
+    ) {
+      try {
+        candidate = await this.render({
+          familyId: fence.familyId,
+          sha256Hex: described.sha256Hex,
+          byteSize: described.byteSize,
+          kind,
+        });
+      } catch (error) {
+        renderFailure = error;
+      }
+    }
+    return this.withWriteOccupancy(fence, described, async (read) => {
+      if (renderFailure !== undefined)
+        return this.fail(fence, classifyDerivativeFailure(renderFailure));
+      return this.produceLocked(fence, kind, described, candidate, read);
+    });
+  }
+
+  private async produceLocked(
+    fence: LeaseFence,
+    kind: "THUMBNAIL" | "PREVIEW",
+    described: DerivedFenceView,
+    candidate: UnverifiedRenderedCandidate | null,
+    read: ReadGuard,
+  ): Promise<DerivativeRunResult | "PUBLISHED"> {
     const existing = described.assets.find((asset) => asset.kind === kind);
     if (existing?.state === "PUBLISHING") {
       if (existing.sha256Hex === null || existing.byteSize === null) {
@@ -176,13 +213,7 @@ export class ImageDerivativeProcessor {
     if (!reservationId) return { outcome: "COMMIT_UNKNOWN" };
     let sealed: { consume: (store: DerivedStore) => void } | null = null;
     try {
-      const candidate = await this.render({
-        familyId: fence.familyId,
-        sha256Hex: described.sha256Hex,
-        byteSize: described.byteSize,
-        kind,
-      });
-      if (candidate.kind !== kind || candidate.recipe !== 1) {
+      if (!candidate || candidate.kind !== kind || candidate.recipe !== 1) {
         return await this.fail(fence, "DERIVED_INTEGRITY");
       }
       const writer = await createOwnedDerivedTemp(
@@ -197,6 +228,7 @@ export class ImageDerivativeProcessor {
       const verified = output.verify(this.storage.store, {
         epoch: fence.leaseEpoch,
         kind,
+        readGuard: read,
       });
       const identity = output.identity();
       if (
@@ -252,6 +284,14 @@ export class ImageDerivativeProcessor {
     const described = await this.assets.describe(fence);
     if (described === "UNKNOWN") return { outcome: "COMMIT_UNKNOWN" };
     if (described === null) return { outcome: "STALE" };
+    return this.withWriteOccupancy(fence, described, () =>
+      this.finishReadyLocked(fence, described),
+    );
+  }
+  private async finishReadyLocked(
+    fence: LeaseFence,
+    described: DerivedFenceView,
+  ): Promise<DerivativeRunResult> {
     const evidence: ReadyFinalEvidence[] = [];
     for (const kind of KINDS) {
       const asset = described.assets.find((item) => item.kind === kind);
@@ -281,6 +321,32 @@ export class ImageDerivativeProcessor {
       return { outcome: "READY" };
     }
     return { outcome: "STALE" };
+  }
+
+  private async withWriteOccupancy<T>(
+    fence: LeaseFence,
+    before: DerivedFenceView,
+    operation: (read: ReadGuard) => Promise<T>,
+  ): Promise<T | DerivativeRunResult> {
+    const content = new ContentCoordination(this.storage.capability.root, {
+      familyId: fence.familyId,
+      sha256Hex: before.sha256Hex,
+      byteSize: before.byteSize,
+    });
+    const life = await content.acquireLifecycle("S", 30_000);
+    try {
+      const read = await content.acquireRead(life, "S", 30_000);
+      try {
+        const current = await this.assets.describe(fence);
+        if (current === "UNKNOWN") return { outcome: "COMMIT_UNKNOWN" };
+        if (!sameSource(current, before)) return { outcome: "STALE" };
+        return await operation(read);
+      } finally {
+        read.close();
+      }
+    } finally {
+      life.close();
+    }
   }
 
   private async observeFinal(

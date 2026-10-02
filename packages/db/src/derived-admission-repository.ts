@@ -1,3 +1,4 @@
+import { isActiveMedia } from "./media-lifecycle.js";
 import { performance } from "node:perf_hooks";
 
 import type {
@@ -29,6 +30,7 @@ const SCRATCH_RESERVE = 64n * 1_024n ** 2n;
 const MIN_FREE_RESERVE = 10n * 1_024n ** 3n;
 
 export type DerivedReservationIdentity = {
+  lifecycleRevision: bigint;
   familyId: string;
   mediaId: string;
   generation: bigint;
@@ -116,6 +118,8 @@ function assertIdentity(input: DerivedReservationIdentity) {
     !id.test(input.jobId) ||
     input.generation < 1n ||
     input.leaseEpoch < 1n ||
+    typeof input.lifecycleRevision !== "bigint" ||
+    input.lifecycleRevision < 1n ||
     input.recipeId !== 1 ||
     (input.kind !== "THUMBNAIL" && input.kind !== "PREVIEW") ||
     !Buffer.isBuffer(input.workerId) ||
@@ -210,17 +214,26 @@ export class MySqlDerivedAdmissionRepository {
     const connection = await acquireCheckedConnection(this.pool);
     try {
       const [rows] = await connection.query<RowDataPacket[]>(
-        `SELECT state, CAST(generation AS CHAR) AS generation,
-           recipe_id AS recipeId, CAST(lease_epoch AS CHAR) AS leaseEpoch,
-           worker_id AS workerId, locked_until AS lockedUntil
-         FROM background_jobs
-         WHERE id=? AND family_id=? AND media_id=? AND job_type='IMAGE_DERIVATIVES'`,
+        `SELECT j.state, CAST(j.generation AS CHAR) AS generation,
+           j.recipe_id AS recipeId, CAST(j.lease_epoch AS CHAR) AS leaseEpoch,
+           j.worker_id AS workerId, j.locked_until AS lockedUntil,
+           CAST(m.lifecycle_revision AS CHAR) lifecycleRevision,m.trashed_at trashedAt,CAST(m.purge_intent_id AS CHAR) purgeIntentId,
+           CAST(m.generation AS CHAR) mediaGeneration,m.recipe_id mediaRecipeId
+         FROM background_jobs j JOIN media_items m ON m.family_id=j.family_id AND m.id=j.media_id
+         WHERE j.id=? AND j.family_id=? AND j.media_id=? AND j.job_type='IMAGE_DERIVATIVES'`,
         [input.jobId, input.familyId, input.mediaId],
       );
       const job = rows[0];
       const now = await readServerTime(connection);
       return (
         !!job &&
+        isActiveMedia({
+          trashedAt: job.trashedAt,
+          purgeIntentId: job.purgeIntentId,
+        }) &&
+        String(job.lifecycleRevision) === input.lifecycleRevision.toString() &&
+        String(job.mediaGeneration) === input.generation.toString() &&
+        Number(job.mediaRecipeId) === input.recipeId &&
         job.state === "RUNNING" &&
         BigInt(String(job.generation)) === input.generation &&
         Number(job.recipeId) === input.recipeId &&
@@ -272,12 +285,19 @@ export class MySqlDerivedAdmissionRepository {
         if (!families[0]) throw new AdmissionRejected("IDENTITY");
         const [media] = await connection.query<RowDataPacket[]>(
           `SELECT CAST(id AS CHAR) AS id,
-             CAST(generation AS CHAR) AS generation, recipe_id AS recipeId
+             CAST(generation AS CHAR) AS generation, recipe_id AS recipeId,
+             CAST(lifecycle_revision AS CHAR) lifecycleRevision,trashed_at trashedAt,CAST(purge_intent_id AS CHAR) purgeIntentId
            FROM media_items WHERE id=? AND family_id=? FOR UPDATE`,
           [input.mediaId, input.familyId],
         );
         if (
           !media[0] ||
+          !isActiveMedia({
+            trashedAt: media[0].trashedAt,
+            purgeIntentId: media[0].purgeIntentId,
+          }) ||
+          String(media[0].lifecycleRevision) !==
+            input.lifecycleRevision.toString() ||
           BigInt(String(media[0].generation)) !== input.generation ||
           Number(media[0].recipeId) !== input.recipeId
         ) {

@@ -1,3 +1,7 @@
+import {
+  ContentCoordination,
+  type LifecycleGuard,
+} from "../../../../packages/storage/src/phase7-coordination.js";
 import { randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import type { Readable } from "node:stream";
@@ -211,7 +215,8 @@ export class UploadService {
       await this.verifyCompletedUpload(upload);
       return upload;
     }
-    if (upload.state === "FINALIZING") return upload;
+    if (upload.state === "FINALIZING" || upload.state === "RETIRED")
+      return upload;
     if (upload.state === "EXPIRED") {
       if (this.#capabilityState === "READ_WRITE")
         await this.cleanupExpired(publicId);
@@ -420,7 +425,13 @@ export class UploadService {
     });
     this.#hashTails.set(hashKey, current);
     if (previous) await previous;
+    let lifecycle: LifecycleGuard | undefined;
     try {
+      lifecycle = await new ContentCoordination(root, {
+        familyId: initial.familyId,
+        sha256Hex: hash.toString("hex"),
+        byteSize: initial.declaredSize.toString(),
+      }).acquireLifecycle("S", 30_000);
       const intent = await this.database(() =>
         this.repository.beginFinalize({
           actor: actor(context),
@@ -550,6 +561,7 @@ export class UploadService {
       }
       throw error;
     } finally {
+      lifecycle?.close();
       releaseHash();
       const remaining = (this.#hashWaiters.get(hashKey) ?? 1) - 1;
       if (remaining === 0) this.#hashWaiters.delete(hashKey);
@@ -680,24 +692,33 @@ export class UploadService {
     ) {
       throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
     }
+    const read = await new ContentCoordination(this.requireReadable(), {
+      familyId: upload.familyId,
+      sha256Hex: upload.computedSha256.toString("hex"),
+      byteSize: upload.declaredSize.toString(),
+    }).acquireReadOnly(30_000);
     try {
-      this.requireReadable().verifyOriginal(
-        upload.familyId,
-        upload.computedSha256.toString("hex"),
-        upload.declaredSize.toString(),
-      );
-    } catch (error) {
-      if (isNotFound(error) || isCorruptOriginal(error)) {
-        await this.database(() =>
-          this.repository.markStorageIntegrityIssue({
-            familyId: upload.familyId,
-            sha256: upload.computedSha256!,
-            byteSize: upload.declaredSize,
-            state: isNotFound(error) ? "MISSING" : "CORRUPT",
-          }),
+      try {
+        this.requireReadable().verifyOriginal(
+          upload.familyId,
+          upload.computedSha256.toString("hex"),
+          upload.declaredSize.toString(),
         );
+      } catch (error) {
+        if (isNotFound(error) || isCorruptOriginal(error)) {
+          await this.database(() =>
+            this.repository.markStorageIntegrityIssue({
+              familyId: upload.familyId,
+              sha256: upload.computedSha256!,
+              byteSize: upload.declaredSize,
+              state: isNotFound(error) ? "MISSING" : "CORRUPT",
+            }),
+          );
+        }
+        throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
       }
-      throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
+    } finally {
+      read.close();
     }
   }
 

@@ -190,6 +190,7 @@ describe.sequential("Phase 4C MySQL job claim and epoch fencing", () => {
       jobId: job.id,
       generation: job.generation,
       workerId: job.workerId,
+      lifecycleRevision: 1n,
       leaseEpoch: job.leaseEpoch,
     };
   }

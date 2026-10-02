@@ -232,6 +232,88 @@ describe.sequential("Phase 5C public share API", () => {
     expect(await accessCount()).toBe(1);
   });
 
+  it("hides Trash from public pages and derived, restores only valid shares, and keeps revoked shares denied", async () => {
+    const setTrash = () =>
+      database.pool.query(
+        `UPDATE media_items SET trashed_at=CURRENT_TIMESTAMP(3),trashed_by_member_id=?,
+      purge_after=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 30 DAY),lifecycle_revision=lifecycle_revision+1 WHERE id=?`,
+        [ownerMemberId, mediaId],
+      );
+    const restore = () =>
+      database.pool.query(
+        `UPDATE media_items SET trashed_at=NULL,trashed_by_member_id=NULL,purge_after=NULL,
+      lifecycle_revision=lifecycle_revision+1 WHERE id=?`,
+        [mediaId],
+      );
+    try {
+      await setTrash();
+      expect((await service.openAlbum(token, { limit: 20 })).media).toEqual([]);
+      await expect(
+        service.openDerived(token, mediaId, "thumbnail"),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(
+        service.openDerived(token, mediaId, "preview"),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      await restore();
+      expect(
+        (await service.openAlbum(token, { limit: 20 })).media.map(
+          (item) => item.mediaId,
+        ),
+      ).toEqual([mediaId]);
+      expect(
+        (await service.openDerived(token, mediaId, "preview")).bytes.length,
+      ).toBeGreaterThan(0);
+      const revoked = await management.createShare(
+        {
+          identity: { userId: ownerUserId, sessionId: ownerSessionId },
+          tokenHash: ownerHash,
+        },
+        albumId,
+        new Date(Date.now() + 86400000),
+      );
+      await setTrash();
+      await database.pool.query(
+        "UPDATE shares SET revoked_at=CURRENT_TIMESTAMP(3),revoked_by_member_id=? WHERE id=?",
+        [ownerMemberId, revoked.shareId],
+      );
+      await restore();
+      await expect(
+        service.openAlbum(revoked.token, { limit: 20 }),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(
+        service.openDerived(revoked.token, mediaId, "preview"),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(
+        service.openDerived(token, mediaId, "original"),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      const expired = await management.createShare(
+        {
+          identity: { userId: ownerUserId, sessionId: ownerSessionId },
+          tokenHash: ownerHash,
+        },
+        albumId,
+        new Date(Date.now() + 86400000),
+      );
+      await setTrash();
+      await database.pool.query(
+        "UPDATE shares SET created_at=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 2 SECOND),expires_at=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 1 SECOND) WHERE id=?",
+        [expired.shareId],
+      );
+      await restore();
+      await expect(
+        service.openAlbum(expired.token, { limit: 20 }),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(
+        service.openDerived(expired.token, mediaId, "preview"),
+      ).rejects.toMatchObject({ statusCode: 404 });
+    } finally {
+      await database.pool.query(
+        "UPDATE media_items SET trashed_at=NULL,trashed_by_member_id=NULL,purge_after=NULL WHERE id=?",
+        [mediaId],
+      );
+    }
+  });
+
   it("returns the identical public whitelist with a real valid session", async () => {
     const authService = await AuthService.create(
       new MySqlAuthRepository(database.pool),

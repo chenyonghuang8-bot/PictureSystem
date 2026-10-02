@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <sys/resource.h>
 #include <unistd.h>
+#include "registered_consumer_protocol.h"
 
 #ifndef PS_RENDERER_MODULE_PATH
 #error PS_RENDERER_MODULE_PATH must be set to the fixed package-owned module
@@ -37,6 +38,7 @@ static int exact_fd(int fd, int mode, int regular) {
 }
 
 int main(int argc, char **argv) {
+  if (p7_is_socket(3) && p7_bootstrap_receive(3)!=0) return 64;
 #ifndef PS_STARTUP_DIAGNOSTIC
   if (argc != 1 || argv == NULL || argv[0] == NULL ||
       !exact_fd(0, O_RDONLY, 0) || !exact_fd(1, O_WRONLY, 0) ||

@@ -5,6 +5,7 @@ const livePermits = new WeakSet<DerivedTempAdmissionPermit>();
 const UINT64_MAX = 18446744073709551615n;
 
 export type DerivedTempPermitIdentity = {
+  lifecycleRevision: bigint;
   familyId: string;
   mediaId: string;
   generation: bigint;
@@ -44,6 +45,7 @@ export function assertCanonicalTempIdentity(
     canonicalDecimal(identity.familyId) === null ||
     canonicalDecimal(identity.mediaId) === null ||
     canonicalBigint(identity.generation) === null ||
+    canonicalBigint(identity.lifecycleRevision) === null ||
     identity.recipeId !== 1 ||
     (identity.kind !== "THUMBNAIL" && identity.kind !== "PREVIEW") ||
     canonicalDecimal(identity.jobId) === null ||

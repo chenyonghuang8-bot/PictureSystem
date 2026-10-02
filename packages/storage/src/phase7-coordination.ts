@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
-import { isAbsolute, normalize, resolve } from "node:path";
+import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import type { StorageRoot } from "./index.js";
 
 const require = createRequire(import.meta.url);
@@ -26,9 +26,18 @@ type NativeCoordination = {
   ): void;
   settleHandoff(handle: NativeHandle): void;
   closeHandoff(handle: NativeHandle): void;
+  createRegisteredLaunch(read: NativeHandle): {
+    handle: object;
+    childFd: number;
+  };
 };
 function native(): NativeCoordination {
-  return require("../build/storage_native.node") as NativeCoordination;
+  // This internal adapter can be bundled into API/worker output. Resolve the
+  // fixed storage package location rather than the calling bundle's directory.
+  const entry = require.resolve("@family-album/storage");
+  return require(
+    join(dirname(entry), "../build/storage_native.node"),
+  ) as NativeCoordination;
 }
 
 const hex64 = /^[0-9a-f]{64}$/u;
@@ -200,8 +209,22 @@ export class ReadGuard {
     this.#handoffs++;
     return new RegisteredHandoff(this, handle);
   }
+  /** Storage orchestrator only: no business caller receives the descriptors. */
+  createRegisteredLaunch() {
+    if (!this.#handle || this.mode !== "S")
+      throw new Error("HANDOFF_SHARED_READ_REQUIRED");
+    const launch = native().createRegisteredLaunch(this.#handle);
+    this.#handoffs++;
+    return launch;
+  }
   detachHandoff() {
     this.#handoffs--;
+  }
+  /** Internal native verifier adapter; the capability remains guard-owned. */
+  withNativeOccupancy<T>(operation: (handle: object) => T): T {
+    if (!this.#handle || this.mode !== "S")
+      throw new Error("HANDOFF_SHARED_READ_REQUIRED");
+    return operation(this.#handle);
   }
   close() {
     if (!this.#handle || this.#handoffs !== 0)

@@ -206,8 +206,10 @@ describe.sequential("Phase 4D2 metadata persistence fencing", () => {
     const id = String(inserted.insertId);
     return {
       id,
+      lifecycleRevision: 1n,
       leaseEpoch: 1n,
       fence: {
+        lifecycleRevision: 1n,
         familyId,
         mediaId,
         jobId: id,
@@ -249,6 +251,7 @@ describe.sequential("Phase 4D2 metadata persistence fencing", () => {
       jobId: input.jobId,
       generation: input.generation,
       workerId,
+      lifecycleRevision: 1n,
       leaseEpoch: input.expectedEpoch + 1n,
     } satisfies LeaseFence;
   }
@@ -263,6 +266,39 @@ describe.sequential("Phase 4D2 metadata persistence fencing", () => {
       [jobId],
     );
   }
+
+  it("fences real metadata persistence across Trash-Restore ABA without changing generation", async () => {
+    const fixture = await createClaimed("phase7b-metadata-aba");
+    await database.pool.query(
+      `UPDATE media_items SET trashed_at=CURRENT_TIMESTAMP(3),trashed_by_member_id=?,
+      purge_after=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 30 DAY),lifecycle_revision=lifecycle_revision+1 WHERE id=?`,
+      [memberId, fixture.item.id],
+    );
+    expect((await jobs.heartbeat(fixture.fence)).affectedRows).toBe(0);
+    await database.pool.query(
+      `UPDATE media_items SET trashed_at=NULL,trashed_by_member_id=NULL,purge_after=NULL,
+      lifecycle_revision=lifecycle_revision+1 WHERE id=?`,
+      [fixture.item.id],
+    );
+    expect(
+      (
+        await metadata.persistResult(
+          fixture.fence,
+          fixture.preparation,
+          imageResult(),
+        )
+      ).affectedRows,
+    ).toBe(0);
+    const [rows] = await database.pool.query<RowDataPacket[]>(
+      "SELECT CAST(generation AS CHAR) generation,CAST(lifecycle_revision AS CHAR) revision,metadata_generation metadata FROM media_items WHERE id=?",
+      [fixture.item.id],
+    );
+    expect(rows[0]).toMatchObject({
+      generation: "1",
+      revision: "3",
+      metadata: null,
+    });
+  });
 
   it("preserves canonical note fields through real metadata persistence", async () => {
     const fixture = await createClaimed("phase6c-note-preservation");

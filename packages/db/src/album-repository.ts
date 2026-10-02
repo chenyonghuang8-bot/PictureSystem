@@ -24,6 +24,7 @@ import {
   runCheckedTransaction,
 } from "./connection.js";
 import type { Phase1CActor } from "./phase1c-repository.js";
+import { activeMediaSql } from "./media-lifecycle.js";
 import type {
   AlbumRepositoryTestHook,
   AlbumRepositoryTestOperation,
@@ -103,6 +104,7 @@ export type AlbumMediaDetailRecord = AlbumMediaRecord & {
 };
 
 export type OriginalDownloadRecord = {
+  lifecycleRevision: string;
   familyId: string;
   albumId: string;
   actorMemberId: string;
@@ -117,6 +119,9 @@ export type OriginalDownloadRecord = {
 };
 
 export type PreviewDownloadRecord = {
+  lifecycleRevision: string;
+  originalSha256Hex: string;
+  originalByteSize: string;
   familyId: string;
   albumId: string;
   actorMemberId: string;
@@ -1062,6 +1067,8 @@ export class MySqlAlbumRepository {
         media,
         receipt,
       });
+      if (expected && expected.lifecycleRevision !== record.lifecycleRevision)
+        throw new AlbumRepositoryError("NOT_FOUND");
       if (expected && !sameOriginalIdentity(expected, record)) {
         throw new AlbumRepositoryError("SERVICE_UNAVAILABLE");
       }
@@ -1173,6 +1180,12 @@ export class MySqlAlbumRepository {
       assertActor(actor, input.actor, now);
       if (!album) throw new AlbumRepositoryError("NOT_FOUND");
       const visible = assertVisible(album, actor.member, grant);
+      const [active] = await connection.query<RowDataPacket[]>(
+        `SELECT id FROM media_items WHERE family_id=? AND id=? AND ${activeMediaSql("media_items")} FOR UPDATE`,
+        [familyId, input.mediaId],
+      );
+      assertActor(actor, input.actor, await readServerTime(connection));
+      if (!active[0]) throw new AlbumRepositoryError("NOT_FOUND");
       if (!allow(albumPermissionContext(album, actor.member, grant))) {
         throw new AlbumRepositoryError("FORBIDDEN");
       }
@@ -1747,6 +1760,7 @@ type OriginalStorageRow = RowDataPacket & {
 };
 
 type OriginalMediaRow = RowDataPacket & {
+  lifecycleRevision: string;
   id: string;
   familyId: string;
   storageObjectId: string;
@@ -1818,10 +1832,11 @@ async function lockOriginalMedia(
             CAST(storage_object_id AS CHAR) AS storageObjectId,
             CAST(source_upload_id AS CHAR) AS sourceUploadId,
             CAST(generation AS CHAR) AS generation,
+            CAST(lifecycle_revision AS CHAR) AS lifecycleRevision,
             CAST(metadata_generation AS CHAR) AS metadataGeneration,
             detected_mime AS detectedMime, processing_state AS processingState
        FROM media_items
-      WHERE family_id = ? AND id = ? FOR UPDATE`,
+      WHERE family_id = ? AND id = ? AND ${activeMediaSql("media_items")} FOR UPDATE`,
     [familyId, mediaId],
   );
   return rows[0];
@@ -1837,11 +1852,12 @@ async function lockPreviewMedia(
             CAST(storage_object_id AS CHAR) AS storageObjectId,
             CAST(source_upload_id AS CHAR) AS sourceUploadId,
             CAST(generation AS CHAR) AS generation,
+            CAST(lifecycle_revision AS CHAR) AS lifecycleRevision,
             recipe_id AS recipeId, processing_state AS processingState,
             CAST(metadata_generation AS CHAR) AS metadataGeneration,
             detected_mime AS detectedMime
        FROM media_items
-      WHERE family_id = ? AND id = ? FOR UPDATE`,
+      WHERE family_id = ? AND id = ? AND ${activeMediaSql("media_items")} FOR UPDATE`,
     [familyId, mediaId],
   );
   return rows[0];
@@ -1950,6 +1966,7 @@ function validatedOriginalDownloadRecord(input: {
     keyVersion: storage.keyVersion,
     sha256Hex: storage.sha256.toString("hex"),
     byteSize: storage.byteSize,
+    lifecycleRevision: media.lifecycleRevision,
     sourceUploadId: receipt.id,
     originalFilename: receipt.originalFilename,
     detectedMime:
@@ -1965,6 +1982,7 @@ function sameOriginalIdentity(
   right: OriginalDownloadRecord,
 ) {
   return (
+    left.lifecycleRevision === right.lifecycleRevision &&
     left.familyId === right.familyId &&
     left.albumId === right.albumId &&
     left.actorMemberId === right.actorMemberId &&
@@ -2053,6 +2071,9 @@ function validatedPreviewDownloadRecord(input: {
     mediaId: input.mediaId,
     storageObjectId: storage.id,
     sourceUploadId: media.sourceUploadId,
+    lifecycleRevision: media.lifecycleRevision,
+    originalSha256Hex: storage.sha256.toString("hex"),
+    originalByteSize: storage.byteSize,
     mediaGeneration: generation,
     mediaRecipeId: 1,
     derivedAssetId: preview.id,
@@ -2076,6 +2097,7 @@ function samePreviewIdentity(
   right: PreviewDownloadRecord,
 ) {
   return (
+    left.lifecycleRevision === right.lifecycleRevision &&
     left.familyId === right.familyId &&
     left.albumId === right.albumId &&
     left.actorMemberId === right.actorMemberId &&
@@ -2111,7 +2133,7 @@ async function readConnectionId(connection: PoolConnection) {
   return connectionId;
 }
 
-async function lockFamily(
+export async function lockFamily(
   connection: PoolConnection,
   familyId: string,
   onDispatched?: () => void | Promise<void>,
@@ -2130,7 +2152,7 @@ async function lockFamily(
   if (!rows[0]) throw new AlbumRepositoryError("NOT_FOUND");
 }
 
-async function lockActor(
+export async function lockActor(
   connection: PoolConnection,
   familyId: string,
   actor: Phase1CActor,
@@ -2353,7 +2375,11 @@ async function lockGrantsByIds(
   return grants;
 }
 
-function assertActor(state: LockedActor, actor: Phase1CActor, now: Date) {
+export function assertActor(
+  state: LockedActor,
+  actor: Phase1CActor,
+  now: Date,
+) {
   const { member, user, session } = state;
   if (
     !user ||
@@ -2436,7 +2462,7 @@ async function lockGrant(
   return rows[0];
 }
 
-async function lockIds(
+export async function lockIds(
   connection: PoolConnection,
   table: "albums" | "album_members",
   ids: readonly string[],
@@ -2500,7 +2526,7 @@ async function readFamilyTimeline(
        LEFT JOIN family_featured featured
          ON featured.family_id = m.family_id
         AND featured.media_id = m.id
-      WHERE m.family_id = ?
+      WHERE m.family_id = ? AND ${activeMediaSql("m")}
         AND (a.owner_member_id = ? OR a.visibility = 'FAMILY'
              OR grant_row.can_view = 1)
         AND (
@@ -2566,7 +2592,7 @@ async function readAlbumMedia(
        LEFT JOIN family_featured featured
          ON featured.family_id = m.family_id
         AND featured.media_id = m.id
-      WHERE am.family_id = ? AND am.album_id = ?
+      WHERE am.family_id = ? AND am.album_id = ? AND ${activeMediaSql("m")}
         AND (? IS NULL OR am.media_id = ?)
         AND (
           ? = 0
@@ -2611,7 +2637,7 @@ async function lockMediaPlacement(
 ) {
   const [media] = await connection.query<RowDataPacket[]>(
     `SELECT id FROM media_items
-      WHERE family_id = ? AND id = ? FOR UPDATE`,
+      WHERE family_id = ? AND id = ? AND ${activeMediaSql("media_items")} FOR UPDATE`,
     [familyId, mediaId],
   );
   if (!media[0]) return false;
@@ -2723,6 +2749,7 @@ async function lockVisibleTag(
        FROM tags t
        JOIN media_tags mt
          ON mt.family_id = t.family_id AND mt.tag_id = t.id
+       JOIN media_items m ON m.family_id=mt.family_id AND m.id=mt.media_id AND ${activeMediaSql("m")}
        JOIN album_media placement
          ON placement.family_id = mt.family_id
         AND placement.media_id = mt.media_id
@@ -2938,7 +2965,7 @@ async function insertPlacement(
   mediaId: string,
 ) {
   const media = await connection.query<RowDataPacket[]>(
-    `SELECT id FROM media_items WHERE id = ? AND family_id = ? FOR UPDATE`,
+    `SELECT id FROM media_items WHERE id = ? AND family_id = ? AND ${activeMediaSql("media_items")} FOR UPDATE`,
     [mediaId, familyId],
   );
   if (!media[0][0]) throw new AlbumRepositoryError("NOT_FOUND");

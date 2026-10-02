@@ -14,6 +14,7 @@ import { join } from "node:path";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { ContentCoordination } from "../../packages/storage/src/phase7-coordination.js";
 import { ImageDerivativeProcessor } from "../../apps/worker/src/image-derivative-processor.js";
 import { assertMigrationReadiness } from "../../packages/db/src/migration-readiness.js";
 import {
@@ -310,6 +311,68 @@ describe.sequential("Phase 4D3c worker integration", () => {
     );
   }
 
+  it("holds L only in the real producer write phase and rejects publication when Trash wins after render", async () => {
+    const first = await mediaFixture();
+    const fence = new MySqlDerivedAssetFence(database.pool),
+      mark = fence.markPublishing.bind(fence);
+    let protectedWrites = 0;
+    fence.markPublishing = async (...args) => {
+      const described = await fence.describe(args[0]);
+      if (!described || described === "UNKNOWN") throw Error("FIXTURE_FENCE");
+      const content = new ContentCoordination(storageRoot, {
+        familyId,
+        sha256Hex: described.sha256Hex,
+        byteSize: described.byteSize,
+      });
+      await expect(content.acquireLifecycle("X", 0)).rejects.toThrow(
+        "COORD_ACQUIRE_TIMEOUT",
+      );
+      protectedWrites++;
+      return mark(...args);
+    };
+    const firstWorker = MySqlJobRepository.createWorkerIdentity(),
+      claimed = await jobs.claimNext(firstWorker, {
+        jobType: "IMAGE_DERIVATIVES",
+      });
+    expect(claimed?.id).toBe(first.jobId);
+    expect(
+      (await processor(realRender, fence).runClaimed(claimed!, firstWorker))
+        .outcome,
+    ).toBe("READY");
+    expect(protectedWrites).toBe(2);
+    const second = await mediaFixture(),
+      secondWorker = MySqlJobRepository.createWorkerIdentity();
+    const secondClaim = await jobs.claimNext(secondWorker, {
+      jobType: "IMAGE_DERIVATIVES",
+    });
+    expect(secondClaim?.id).toBe(second.jobId);
+    const stale = await processor(async (input) => {
+      const candidate = await realRender(input);
+      const content = new ContentCoordination(storageRoot, {
+        familyId,
+        sha256Hex: input.sha256Hex,
+        byteSize: input.byteSize,
+      });
+      const life = await content.acquireLifecycle("X", 0);
+      try {
+        await database.pool.query(
+          `UPDATE media_items SET trashed_at=CURRENT_TIMESTAMP(3),trashed_by_member_id=?,
+        purge_after=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 30 DAY),lifecycle_revision=lifecycle_revision+1 WHERE id=?`,
+          [memberId, second.mediaId],
+        );
+      } finally {
+        life.close();
+      }
+      return candidate;
+    }).runClaimed(secondClaim!, secondWorker);
+    expect(stale.outcome).toBe("STALE");
+    const [residue] = await database.pool.query<RowDataPacket[]>(
+      "SELECT id FROM derived_assets WHERE family_id=? AND media_id=?",
+      [familyId, second.mediaId],
+    );
+    expect(residue).toHaveLength(0);
+  });
+
   it("claims only image jobs, heartbeats, and completes both kinds", async () => {
     const probeMedia = await mediaFixture(syntheticPng(8, 4, 41));
     await database.pool.query("DELETE FROM background_jobs WHERE id=?", [
@@ -587,6 +650,43 @@ describe.sequential("Phase 4D3c worker integration", () => {
       assetState: "PUBLISHING",
     });
   }, 60_000);
+
+  it("rejects the real READY transaction with both valid finals after lifecycle ABA", async () => {
+    const fixture = await mediaFixture(),
+      fenced = new MySqlDerivedAssetFence(database.pool);
+    const commit = fenced.commitSucceeded.bind(fenced);
+    fenced.commitSucceeded = async (fence, evidence, options) => {
+      expect(evidence.map((item) => item.kind).sort()).toEqual([
+        "PREVIEW",
+        "THUMBNAIL",
+      ]);
+      await database.pool.query(
+        `UPDATE media_items SET trashed_at=CURRENT_TIMESTAMP(3),trashed_by_member_id=?,
+        purge_after=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 30 DAY),lifecycle_revision=lifecycle_revision+1 WHERE id=?`,
+        [memberId, fixture.mediaId],
+      );
+      await database.pool.query(
+        `UPDATE media_items SET trashed_at=NULL,trashed_by_member_id=NULL,purge_after=NULL,
+        lifecycle_revision=lifecycle_revision+1 WHERE id=?`,
+        [fixture.mediaId],
+      );
+      return commit(fence, evidence, options);
+    };
+    const identity = MySqlJobRepository.createWorkerIdentity(),
+      claim = await jobs.claimNext(identity, { jobType: "IMAGE_DERIVATIVES" });
+    expect(claim?.id).toBe(fixture.jobId);
+    expect(claim?.lifecycleRevision).toBe(1n);
+    expect(
+      (await processor(realRender, fenced).runClaimed(claim!, identity))
+        .outcome,
+    ).toBe("STALE");
+    const [rows] = await database.pool.query<RowDataPacket[]>(
+      "SELECT CAST(generation AS CHAR) generation,CAST(lifecycle_revision AS CHAR) revision,processing_state state FROM media_items WHERE id=?",
+      [fixture.mediaId],
+    );
+    expect(rows[0]).toMatchObject({ generation: "1", revision: "3" });
+    expect(rows[0]?.state).not.toBe("READY");
+  });
 
   it("does not let a stale worker mark READY after publish", async () => {
     const { jobId, mediaId } = await mediaFixture();

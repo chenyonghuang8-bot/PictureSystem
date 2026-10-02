@@ -1,3 +1,4 @@
+import type { ReadGuard } from "./phase7-coordination.js";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { performance } from "node:perf_hooks";
@@ -94,6 +95,7 @@ type DerivedNative = {
     sealed: NativeSealed,
     store: NativeStore,
     scenario: string,
+    readOccupancy?: object,
   ): {
     width: number;
     height: number;
@@ -475,7 +477,11 @@ export class SealedDerivedOutput {
    */
   verify(
     store: DerivedStore,
-    binding: { epoch: bigint; kind: "THUMBNAIL" | "PREVIEW" },
+    binding: {
+      epoch: bigint;
+      kind: "THUMBNAIL" | "PREVIEW";
+      readGuard?: ReadGuard;
+    },
     scenario: DerivedVerifyScenario = "run",
   ): DerivedVerifyResult {
     this.#assertLive();
@@ -489,7 +495,7 @@ export class SealedDerivedOutput {
     if (store !== this.#store) {
       throw new StorageSafetyError("DERIVED_STORE_MISMATCH");
     }
-    return store.verifySealed(this, scenario);
+    return store.verifySealed(this, scenario, binding.readGuard);
   }
 
   runVerify(
@@ -497,6 +503,7 @@ export class SealedDerivedOutput {
     native: DerivedNative,
     handle: NativeStore,
     scenario: DerivedVerifyScenario,
+    readGuard?: ReadGuard,
   ): DerivedVerifyResult {
     if (
       !liveSealed.has(this) ||
@@ -507,7 +514,16 @@ export class SealedDerivedOutput {
       throw new StorageSafetyError("DERIVED_STORE_MISMATCH");
     }
     try {
-      const raw = native.verifySealedOutput(this.#handle, handle, scenario);
+      const raw = readGuard
+        ? readGuard.withNativeOccupancy((occupancy) =>
+            native.verifySealedOutput(
+              this.#handle,
+              handle,
+              scenario,
+              occupancy,
+            ),
+          )
+        : native.verifySealedOutput(this.#handle, handle, scenario);
       if (
         raw.staticImage !== true ||
         raw.sha256Hex !== this.#identity.sha256Hex ||
@@ -679,8 +695,18 @@ export class DerivedStore {
     output.finish(this, this.#native, this.#handle);
   }
 
-  verifySealed(output: SealedDerivedOutput, scenario: DerivedVerifyScenario) {
-    return output.runVerify(this, this.#native, this.#handle, scenario);
+  verifySealed(
+    output: SealedDerivedOutput,
+    scenario: DerivedVerifyScenario,
+    readGuard?: ReadGuard,
+  ) {
+    return output.runVerify(
+      this,
+      this.#native,
+      this.#handle,
+      scenario,
+      readGuard,
+    );
   }
 
   publishSealed(output: SealedDerivedOutput) {

@@ -4,14 +4,19 @@ import {
   realpathSync,
   rmSync,
   readdirSync,
+  openSync,
+  closeSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { createServer } from "node:net";
+import { createInterface } from "node:readline";
+import type { Duplex } from "node:stream";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { StorageRoot } from "./index.js";
 import { ContentCoordination } from "./phase7-coordination.js";
@@ -19,6 +24,321 @@ import { ContentCoordination } from "./phase7-coordination.js";
 const sha = "b".repeat(64);
 const addon = join(import.meta.dirname, "../build/storage_native.node");
 const require = createRequire(import.meta.url);
+
+const coordinatorScript = `
+const {spawn}=require('node:child_process');
+const {createInterface}=require('node:readline');
+const n=require(${JSON.stringify(join(import.meta.dirname, "../build/storage_native_test.node"))});
+const build=${JSON.stringify(join(import.meta.dirname, "../build"))};
+const profile=${JSON.stringify(join(import.meta.dirname, "../native/original-probe.sb"))};
+const [root,marker,sha,size,holdSettlement]=process.argv.slice(1);
+const r=n.openCoordination(root,marker,'1',sha,size,'R');
+if(!n.tryAcquireCoordination(r,'S'))throw Error('R');
+let held=true;
+const launch=n.createRegisteredLaunch(r);
+const reader=n.openOriginalReader(root,marker).handle;
+const original=n.openVerifiedOriginal(reader,'1',sha,size);
+const sup=spawn(build+'/original_probe_supervisor_phase7_test',
+ [profile,build+'/original_probe_child_phase7_test','/','/','phase7-hold','30000'],
+ {stdio:['ignore','pipe','pipe',launch.childFd,'pipe','ignore',6],env:{PATH:'/usr/bin:/bin',LANG:'C',...(holdSettlement==='yes'?{PS_P7_HOLD_SETTLEMENT:'1'}:{})}});
+const send=(event,extra={})=>process.stdout.write(JSON.stringify({event,...extra})+'\\n');
+let trace='';sup.stderr.on('data',b=>trace+=String(b));
+sup.stdio[4].on('data',b=>{if(String(b)==='REAPED\\n')send('REAPED');});
+sup.once('close',(code,signal)=>send('SUP_CLOSED',{code,signal,reaps:trace.split('WAITPID_REAPED').length-1}));
+try {n.transferRegisteredOriginal(launch.handle,original);throw Error('PREARM_TRANSFER');}
+catch(error){if(error.message==='PREARM_TRANSFER')throw error;send('PREARM_DENIED');}
+n.registerLaunchSupervisor(launch.handle,sup.pid);
+const arm=()=>{
+ if(n.pollRegisteredLaunch(launch.handle))send('ARMED',n.phase7TestLaunchSnapshot(launch.handle));
+ else setImmediate(arm);
+};arm();
+createInterface({input:process.stdin}).on('line',line=>{
+ if(line==='DELIVER'){n.transferRegisteredOriginal(launch.handle,original);send('DELIVERED');}
+ if(line==='DUPLICATE'){try{n.transferRegisteredOriginal(launch.handle,original);throw Error('DUPLICATE_TRANSFER');}catch(error){if(error.message==='DUPLICATE_TRANSFER')throw error;send('DUPLICATE_DENIED');}}
+ if(line==='WITHHOLD'){n.phase7TestTransferNoRelease(launch.handle,original);send('WITHHELD');}
+ if(line==='RELEASE_SOURCE'){n.phase7TestSourceReleased(launch.handle);send('RELEASED');}
+ if(line==='DROP_R'){n.releaseCoordination(r);n.closeCoordination(r);held=false;send('R_DROPPED');}
+ if(line==='KILL_SUP'){sup.kill('SIGKILL');}
+ if(line==='SETTLE'){sup.stdio[4].write('S');}
+ if(line==='VERIFY'){n.verifyRegisteredSettlement(launch.handle);send('SETTLED');}
+ if(line==='EXIT'){
+  n.closeOriginalHandle(original);n.closeOriginalReader(reader);n.closeRegisteredLaunch(launch.handle);
+  if(held){n.releaseCoordination(r);n.closeCoordination(r);}process.exit(0);
+ }
+});
+`;
+
+function eventQueue(stream: NodeJS.ReadableStream) {
+  const buffered: Record<string, unknown>[] = [];
+  const waiting: Array<{
+    event: string;
+    resolve: (value: Record<string, unknown>) => void;
+  }> = [];
+  createInterface({ input: stream }).on("line", (line) => {
+    const value = JSON.parse(line) as Record<string, unknown>;
+    const i = waiting.findIndex((entry) => entry.event === value.event);
+    if (i >= 0) waiting.splice(i, 1)[0]!.resolve(value);
+    else buffered.push(value);
+  });
+  return (event: string) => {
+    const i = buffered.findIndex((entry) => entry.event === event);
+    if (i >= 0) return Promise.resolve(buffered.splice(i, 1)[0]!);
+    return new Promise<Record<string, unknown>>((resolve) =>
+      waiting.push({ event, resolve }),
+    );
+  };
+}
+
+async function registeredFixture(
+  operation: (input: {
+    processHandle: ReturnType<typeof spawn>;
+    event: ReturnType<typeof eventQueue>;
+    content: ContentCoordination;
+    consumerChannel: NodeJS.ReadWriteStream;
+  }) => Promise<void>,
+  holdSettlement = false,
+) {
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), "phase7-registered-"));
+  const root = StorageRoot.open(dir, { initialize: true });
+  const bytes = Buffer.from("registered synthetic Original");
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  root.createUploadPayload("1", "4".repeat(32), bytes);
+  root.publishOriginal({
+    familyId: "1",
+    uploadId: "4".repeat(32),
+    sha256Hex: digest,
+    byteSize: String(bytes.length),
+  });
+  const processHandle = spawn(
+    process.execPath,
+    [
+      "-e",
+      coordinatorScript,
+      dir,
+      root.markerId,
+      digest,
+      String(bytes.length),
+      holdSettlement ? "yes" : "no",
+    ],
+    {
+      stdio: ["pipe", "pipe", "pipe", "ignore", "ignore", "ignore", "pipe"],
+    },
+  );
+  const closed = once(processHandle, "close");
+  const event = eventQueue(processHandle.stdout!);
+  const channel = (processHandle.stdio as Array<unknown>)[6] as Duplex;
+  channel.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") throw error;
+  });
+  const content = new ContentCoordination(root, {
+    familyId: "1",
+    sha256Hex: digest,
+    byteSize: String(bytes.length),
+  });
+  try {
+    await event("ARMED");
+    await operation({
+      processHandle,
+      event,
+      content,
+      consumerChannel: channel,
+    });
+  } finally {
+    if (!channel.destroyed) channel.write("E");
+    if (processHandle.exitCode === null && processHandle.signalCode === null)
+      processHandle.stdin!.write("SETTLE\nEXIT\n");
+    await closed;
+    root.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function waitForExclusive(content: ContentCoordination) {
+  const life = await content.acquireLifecycle("X", 0);
+  try {
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      try {
+        const read = await content.acquireRead(life, "X", 0);
+        read.close();
+        return;
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          error.message !== "COORD_ACQUIRE_TIMEOUT"
+        )
+          throw error;
+      }
+      await nextTurn();
+    }
+    throw new Error("EXACT_IDENTITIES_DID_NOT_SETTLE");
+  } finally {
+    life.close();
+  }
+}
+
+describe("registered production supervisor ownership", () => {
+  it("rejects inherited-media launch in every production metadata/renderer supervisor", () => {
+    const fd = openSync("/dev/null", "r"),
+      build = join(import.meta.dirname, "../build");
+    try {
+      const metadata = spawnSync(
+        join(build, "original_probe_supervisor"),
+        [
+          join(import.meta.dirname, "../native/original-probe.sb"),
+          join(build, "original_probe_child"),
+          "/",
+          "/",
+          "capabilities",
+          "1000",
+        ],
+        { stdio: ["ignore", "pipe", "pipe", fd, "pipe"] },
+      );
+      expect(metadata.status).toBe(64);
+      for (const kind of ["thumbnail", "preview"]) {
+        const renderer = spawnSync(
+          join(build, `image_renderer_${kind}_supervisor`),
+          [],
+          { stdio: ["ignore", "pipe", "pipe", fd, "pipe", "pipe"] },
+        );
+        expect(renderer.status).toBe(64);
+      }
+    } finally {
+      closeSync(fd);
+    }
+  });
+  it("rejects wrong handoff/K/role, extra SCM_RIGHTS descriptors and truncated control messages", () => {
+    const result = spawnSync(
+      join(
+        import.meta.dirname,
+        "../build/registered_protocol_harness_phase7_test",
+      ),
+      [],
+      { encoding: "utf8" },
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("PROTOCOL_FAULTS_REJECTED\n");
+  });
+  it("keeps R-X blocked after exact consumer reap until durable settlement completes", async () => {
+    await registeredFixture(
+      async ({ processHandle, event, content, consumerChannel }) => {
+        const live = once(consumerChannel, "data");
+        processHandle.stdin!.write("DELIVER\n");
+        await live;
+        consumerChannel.write("E");
+        await event("REAPED");
+        processHandle.stdin!.write("DROP_R\n");
+        await event("R_DROPPED");
+        const life = await content.acquireLifecycle("X", 0);
+        try {
+          await expect(content.acquireRead(life, "X", 0)).rejects.toThrow(
+            "COORD_ACQUIRE_TIMEOUT",
+          );
+        } finally {
+          life.close();
+        }
+        processHandle.stdin!.write("SETTLE\n");
+        await event("SUP_CLOSED");
+        processHandle.stdin!.write("VERIFY\n");
+        await event("SETTLED");
+        await waitForExclusive(content);
+      },
+      true,
+    );
+  }, 10000);
+  it("uses two real transfers and supervisor exact reap, then permits R-X after libuv reaps the supervisor", async () => {
+    await registeredFixture(
+      async ({ processHandle, event, content, consumerChannel }) => {
+        await event("PREARM_DENIED");
+        const live = once(consumerChannel, "data");
+        processHandle.stdin!.write("DELIVER\n");
+        expect(String((await live)[0])).toBe("LIVE\n");
+        processHandle.stdin!.write("DUPLICATE\n");
+        await event("DUPLICATE_DENIED");
+        consumerChannel.write("E");
+        expect(await event("SUP_CLOSED")).toMatchObject({
+          code: 0,
+          signal: null,
+          reaps: 1,
+        });
+        processHandle.stdin!.write("VERIFY\n");
+        await event("SETTLED");
+        processHandle.stdin!.write("DROP_R\n");
+        await event("R_DROPPED");
+        await waitForExclusive(content);
+      },
+    );
+  }, 10000);
+
+  it("does not settle or forward before SOURCE_RELEASED", async () => {
+    await registeredFixture(
+      async ({ processHandle, event, content, consumerChannel }) => {
+        processHandle.stdin!.write("WITHHOLD\n");
+        await event("WITHHELD");
+        processHandle.stdin!.write("DROP_R\n");
+        await event("R_DROPPED");
+        const life = await content.acquireLifecycle("X", 0);
+        try {
+          await expect(content.acquireRead(life, "X", 0)).rejects.toThrow(
+            "COORD_ACQUIRE_TIMEOUT",
+          );
+        } finally {
+          life.close();
+        }
+        const live = once(consumerChannel, "data");
+        processHandle.stdin!.write("RELEASE_SOURCE\n");
+        await event("RELEASED");
+        expect(String((await live)[0])).toBe("LIVE\n");
+        consumerChannel.write("E");
+        await event("SUP_CLOSED");
+        processHandle.stdin!.write("VERIFY\n");
+        await event("SETTLED");
+        await waitForExclusive(content);
+      },
+    );
+  }, 10000);
+
+  it.each(["node", "supervisor-and-node"])(
+    "keeps a live consumer recorded after %s crashes, then recovers only after its exact identity disappears",
+    async (mode) => {
+      await registeredFixture(
+        async ({ processHandle, event, content, consumerChannel }) => {
+          const live = once(consumerChannel, "data");
+          processHandle.stdin!.write("DELIVER\n");
+          expect(String((await live)[0])).toBe("LIVE\n");
+          if (mode === "supervisor-and-node") {
+            processHandle.stdin!.write("DROP_R\n");
+            await event("R_DROPPED");
+            processHandle.stdin!.write("KILL_SUP\n");
+            await event("SUP_CLOSED");
+            const life = await content.acquireLifecycle("X", 0);
+            try {
+              await expect(content.acquireRead(life, "X", 0)).rejects.toThrow(
+                "COORD_ACQUIRE_TIMEOUT",
+              );
+            } finally {
+              life.close();
+            }
+          }
+          const exited = once(processHandle, "exit");
+          processHandle.kill("SIGKILL");
+          await exited;
+          const life = await content.acquireLifecycle("X", 0);
+          try {
+            await expect(content.acquireRead(life, "X", 0)).rejects.toThrow(
+              "COORD_ACQUIRE_TIMEOUT",
+            );
+          } finally {
+            life.close();
+          }
+          consumerChannel.write("E");
+          await waitForExclusive(content);
+        },
+      );
+    },
+    10000,
+  );
+});
 
 async function child(root: StorageRoot, stay: boolean) {
   const script = `

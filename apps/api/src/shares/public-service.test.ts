@@ -35,11 +35,17 @@ function setup() {
   };
   const bytes = Buffer.from("derived-bytes");
   const derived = {
+    recheckSharedReadyDerived: vi.fn(async () => true),
     findReadyDerivedInAlbum: vi.fn(
       async (input: {
         mediaId: string;
         kind: "THUMBNAIL" | "PREVIEW";
       }): Promise<ReadyDerivedView> => ({
+        lifecycleRevision: "1",
+        storageObjectId: "3",
+        originalSha256Hex: "b".repeat(64),
+        originalByteSize: "5",
+        derivedAssetId: "10",
         familyId: "2",
         mediaId: input.mediaId,
         generation: 1n,

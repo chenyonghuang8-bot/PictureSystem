@@ -1,3 +1,4 @@
+import { activeMediaSql } from "./media-lifecycle.js";
 import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 
 import type { MySqlAlbumRepository } from "./album-repository.js";
@@ -271,7 +272,7 @@ export class MySqlShareRepository {
            FROM album_media am
            JOIN media_items m
              ON m.family_id = am.family_id AND m.id = am.media_id
-          WHERE am.family_id = ? AND am.album_id = ?
+          WHERE am.family_id = ? AND am.album_id = ? AND ${activeMediaSql("m")}
             AND (
               ? = 0
               OR m.timeline_key < ?

@@ -463,6 +463,21 @@ describe.sequential("Phase 6D3 original download", () => {
 
   it.each([
     [
+      "Trash",
+      "NOT_FOUND",
+      404,
+      async (connection: PoolConnection) =>
+        connection.query(
+          "UPDATE media_items SET trashed_at=CURRENT_TIMESTAMP(3),trashed_by_member_id=?,purge_after=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 30 DAY),lifecycle_revision=lifecycle_revision+1 WHERE id=?",
+          [owner.memberId, mediaId],
+        ),
+      async (connection: PoolConnection) =>
+        connection.query(
+          "UPDATE media_items SET trashed_at=NULL,trashed_by_member_id=NULL,purge_after=NULL,lifecycle_revision=lifecycle_revision+1 WHERE id=?",
+          [mediaId],
+        ),
+    ],
+    [
       "ACL revoke",
       "NOT_FOUND",
       404,
@@ -643,119 +658,139 @@ describe.sequential("Phase 6D3 original download", () => {
     },
   );
 
-  it("proves recheck-first ordering through a complete HTTP transfer", async () => {
-    const validated = albumRaceBarrier(
-      {
-        stage: "ORIGINAL_DOWNLOAD_VALIDATED_BEFORE_COMMIT",
-        operation: "ORIGINAL_DOWNLOAD_RECHECK",
-      },
-      { pause: true },
-    );
-    const events: string[] = [];
-    const controlled = controlledDownloadReader(bytes, {
-      holdCleanup: true,
-      events,
-    });
-    let server: ReturnType<typeof createApp> | undefined;
-    try {
-      const winningRepository = new MySqlAlbumRepository(database.pool, {
-        testHook: validated.hook,
+  it.each(["ACL", "Trash"])(
+    "proves $0 recheck-first ordering through a complete HTTP transfer",
+    async (kind) => {
+      const validated = albumRaceBarrier(
+        {
+          stage: "ORIGINAL_DOWNLOAD_VALIDATED_BEFORE_COMMIT",
+          operation: "ORIGINAL_DOWNLOAD_RECHECK",
+        },
+        { pause: true },
+      );
+      const events: string[] = [];
+      const controlled = controlledDownloadReader(bytes, {
+        holdCleanup: true,
+        events,
       });
-      const limiter = new ObservedOriginalDownloadLimiter(events);
-      server = createApp({
-        authService: fixedAuth(viewer),
-        albumService: {} as AlbumService,
-        originalDownloadService: new OriginalDownloadService(
-          serviceRepository(winningRepository, undefined, () =>
-            events.push("second-auth-commit"),
+      let server: ReturnType<typeof createApp> | undefined;
+      try {
+        const winningRepository = new MySqlAlbumRepository(database.pool, {
+          testHook: validated.hook,
+        });
+        const limiter = new ObservedOriginalDownloadLimiter(events);
+        server = createApp({
+          authService: fixedAuth(viewer),
+          albumService: {} as AlbumService,
+          originalDownloadService: new OriginalDownloadService(
+            serviceRepository(winningRepository, undefined, () =>
+              events.push("second-auth-commit"),
+            ),
+            controlled.reader,
+            limiter,
           ),
-          controlled.reader,
-          limiter,
-        ),
-        trustedOrigins: new Set(["https://family.test"]),
-      });
-      const pending = server.inject({
-        method: "GET",
-        url: `/api/v1/albums/${albumId}/media/${mediaId}/download/original`,
-        headers: { cookie: "__Host-family_session=synthetic" },
-      });
-      await controlled.entered;
-      expect(limiter.snapshot()).toEqual({ active: 1, activeMembers: 1 });
-      controlled.releaseVerification();
-      const validatedEvent = await validated.wait();
-      const secondAuthConnectionId = requiredConnectionId(validatedEvent);
-      events.push("second-auth-precommit");
-      const mutationDispatched = deferred<number>();
-      let mutationLockAcquired = false;
-      let mutationCommitted = false;
-      let serverLockWaitObserved = false;
-      const revoke = committedFamilyMutation(
-        database.pool,
-        familyId,
-        async (connection) => {
-          mutationLockAcquired = true;
-          await putView(connection, familyId, albumId, viewer.memberId, false);
-        },
-        (connectionId) => mutationDispatched.resolve(connectionId),
-        () => {
-          mutationCommitted = true;
-          events.push("mutation-commit");
-        },
-        () => {
-          serverLockWaitObserved = true;
-          events.push("mutation-lock-wait-observed");
-        },
-      );
-      const mutationConnectionId = await mutationDispatched.promise;
-      expect(mutationConnectionId).not.toBe(secondAuthConnectionId);
-      expect(serverLockWaitObserved).toBe(true);
-      expect(mutationLockAcquired).toBe(false);
-      expect(mutationCommitted).toBe(false);
-      validated.release();
-      await controlled.cleanupStarted;
-      expect(controlled.ledger.cleanupSettled).toBe(0);
-      expect(limiter.snapshot()).toEqual({ active: 1, activeMembers: 1 });
-      expect(events).not.toContain("capacity-release");
-      controlled.releaseCleanup();
-      const response = await pending;
-      await revoke;
-      expect(response.statusCode).toBe(200);
-      expect(response.rawPayload).toEqual(bytes);
-      expect(controlled.ledger).toEqual({
-        readerEntered: 1,
-        verificationReleased: 1,
-        readCount: 1,
-        cancelApiCalled: 0,
-        cleanupStarted: 1,
-        cleanupSettled: 1,
-      });
-      expect(limiter.snapshot()).toEqual({ active: 0, activeMembers: 0 });
-      expect(events.indexOf("mutation-lock-wait-observed")).toBeLessThan(
-        events.indexOf("second-auth-commit"),
-      );
-      expect(events.indexOf("second-auth-commit")).toBeLessThan(
-        events.indexOf("mutation-commit"),
-      );
-      expect(events.indexOf("cleanup-settle")).toBeLessThan(
-        events.indexOf("capacity-release"),
-      );
-      const next = await server.inject({
-        method: "GET",
-        url: `/api/v1/albums/${albumId}/media/${mediaId}/download/original`,
-        headers: { cookie: "__Host-family_session=synthetic" },
-      });
-      expect(next.statusCode).toBe(404);
-      expect(controlled.ledger.readerEntered).toBe(1);
-    } finally {
-      validated.release();
-      controlled.releaseVerification();
-      controlled.releaseCleanup();
-      await server?.close().catch(() => undefined);
-      await committedFamilyMutation(database.pool, familyId, (connection) =>
-        putView(connection, familyId, albumId, viewer.memberId, true),
-      );
-    }
-  });
+          trustedOrigins: new Set(["https://family.test"]),
+        });
+        const pending = server.inject({
+          method: "GET",
+          url: `/api/v1/albums/${albumId}/media/${mediaId}/download/original`,
+          headers: { cookie: "__Host-family_session=synthetic" },
+        });
+        await controlled.entered;
+        expect(limiter.snapshot()).toEqual({ active: 1, activeMembers: 1 });
+        controlled.releaseVerification();
+        const validatedEvent = await validated.wait();
+        const secondAuthConnectionId = requiredConnectionId(validatedEvent);
+        events.push("second-auth-precommit");
+        const mutationDispatched = deferred<number>();
+        let mutationLockAcquired = false;
+        let mutationCommitted = false;
+        let serverLockWaitObserved = false;
+        const revoke = committedFamilyMutation(
+          database.pool,
+          familyId,
+          async (connection) => {
+            mutationLockAcquired = true;
+            if (kind === "Trash")
+              await connection.query(
+                "UPDATE media_items SET trashed_at=CURRENT_TIMESTAMP(3),trashed_by_member_id=?,purge_after=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 30 DAY),lifecycle_revision=lifecycle_revision+1 WHERE id=?",
+                [owner.memberId, mediaId],
+              );
+            else
+              await putView(
+                connection,
+                familyId,
+                albumId,
+                viewer.memberId,
+                false,
+              );
+          },
+          (connectionId) => mutationDispatched.resolve(connectionId),
+          () => {
+            mutationCommitted = true;
+            events.push("mutation-commit");
+          },
+          () => {
+            serverLockWaitObserved = true;
+            events.push("mutation-lock-wait-observed");
+          },
+        );
+        const mutationConnectionId = await mutationDispatched.promise;
+        expect(mutationConnectionId).not.toBe(secondAuthConnectionId);
+        expect(serverLockWaitObserved).toBe(true);
+        expect(mutationLockAcquired).toBe(false);
+        expect(mutationCommitted).toBe(false);
+        validated.release();
+        await controlled.cleanupStarted;
+        expect(controlled.ledger.cleanupSettled).toBe(0);
+        expect(limiter.snapshot()).toEqual({ active: 1, activeMembers: 1 });
+        expect(events).not.toContain("capacity-release");
+        controlled.releaseCleanup();
+        const response = await pending;
+        await revoke;
+        expect(response.statusCode).toBe(200);
+        expect(response.rawPayload).toEqual(bytes);
+        expect(controlled.ledger).toEqual({
+          readerEntered: 1,
+          verificationReleased: 1,
+          readCount: 1,
+          cancelApiCalled: 0,
+          cleanupStarted: 1,
+          cleanupSettled: 1,
+        });
+        expect(limiter.snapshot()).toEqual({ active: 0, activeMembers: 0 });
+        expect(events.indexOf("mutation-lock-wait-observed")).toBeLessThan(
+          events.indexOf("second-auth-commit"),
+        );
+        expect(events.indexOf("second-auth-commit")).toBeLessThan(
+          events.indexOf("mutation-commit"),
+        );
+        expect(events.indexOf("cleanup-settle")).toBeLessThan(
+          events.indexOf("capacity-release"),
+        );
+        const next = await server.inject({
+          method: "GET",
+          url: `/api/v1/albums/${albumId}/media/${mediaId}/download/original`,
+          headers: { cookie: "__Host-family_session=synthetic" },
+        });
+        expect(next.statusCode).toBe(404);
+        expect(controlled.ledger.readerEntered).toBe(1);
+      } finally {
+        validated.release();
+        controlled.releaseVerification();
+        controlled.releaseCleanup();
+        await server?.close().catch(() => undefined);
+        await committedFamilyMutation(database.pool, familyId, (connection) =>
+          kind === "Trash"
+            ? connection.query(
+                "UPDATE media_items SET trashed_at=NULL,trashed_by_member_id=NULL,purge_after=NULL,lifecycle_revision=lifecycle_revision+1 WHERE id=?",
+                [mediaId],
+              )
+            : putView(connection, familyId, albumId, viewer.memberId, true),
+        );
+      }
+    },
+  );
 
   async function canonicalSnapshot() {
     const [rows] = await database.pool.query<RowDataPacket[]>(

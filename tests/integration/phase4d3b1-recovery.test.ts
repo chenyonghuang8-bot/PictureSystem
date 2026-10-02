@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { ContentCoordination } from "../../packages/storage/src/phase7-coordination.js";
 import { join } from "node:path";
 
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
@@ -54,6 +55,15 @@ describe.sequential("Phase 4D3b-1 derived publish recovery", () => {
   let store: DerivedStore;
   let familyId = "";
   let memberId = "";
+  const acquireLifecycle = (identity: {
+    familyId: string;
+    sha256Hex: string;
+    byteSize: string;
+  }) =>
+    new ContentCoordination(storageRoot, identity).acquireLifecycle(
+      "S",
+      30_000,
+    );
 
   beforeAll(async () => {
     privateDirectory(mediaRoot);
@@ -187,6 +197,7 @@ describe.sequential("Phase 4D3b-1 derived publish recovery", () => {
       recipeId: 1 as const,
       kind: "THUMBNAIL" as const,
       jobId: String(job.insertId),
+      lifecycleRevision: 1n,
       leaseEpoch: 1n,
       workerId,
     };
@@ -253,6 +264,7 @@ describe.sequential("Phase 4D3b-1 derived publish recovery", () => {
     expect(readonly.map((item) => item.code)).toContain("READ_ONLY_REPORT");
     expect(cleaned).toBe(false);
     const released = await reconcileDerivedPublishRecovery({
+      acquireLifecycle,
       pool: database.pool,
       capability: "READ_WRITE",
       inventoryComplete: true,
@@ -301,6 +313,7 @@ describe.sequential("Phase 4D3b-1 derived publish recovery", () => {
     await expireLease(identity.jobId);
     const inventory = await gate.recoveryInventory();
     const result = await reconcileDerivedPublishRecovery({
+      acquireLifecycle,
       pool: database.pool,
       capability: "READ_WRITE",
       inventoryComplete: true,

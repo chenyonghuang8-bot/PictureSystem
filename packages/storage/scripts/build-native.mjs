@@ -97,7 +97,11 @@ if (result.status !== 0) {
   );
 }
 
-for (const source of ["original_probe_supervisor", "original_probe_child"]) {
+for (const source of [
+  "metadata_receiver_bootstrap",
+  "original_probe_supervisor",
+  "original_probe_child",
+]) {
   const executable = spawnSync(
     "clang",
     [
@@ -106,6 +110,7 @@ for (const source of ["original_probe_supervisor", "original_probe_child"]) {
       "-Wextra",
       "-Werror",
       "-O2",
+      `-DPS_METADATA_BOOTSTRAP_PATH="${join(outputDirectory, "metadata_receiver_bootstrap")}"`,
       join(packageRoot, `native/${source}.c`),
       "-o",
       join(outputDirectory, source),
@@ -118,6 +123,54 @@ for (const source of ["original_probe_supervisor", "original_probe_child"]) {
     );
   }
 }
+const qualification = spawnSync(
+  "clang",
+  [
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-O2",
+    "-DPS_LEGACY_QUALIFICATION",
+    `-DPS_METADATA_BOOTSTRAP_PATH="${join(outputDirectory, "metadata_receiver_bootstrap")}"`,
+    join(packageRoot, "native/original_probe_supervisor.c"),
+    "-o",
+    join(outputDirectory, "original_probe_supervisor_qualification"),
+  ],
+  { encoding: "utf8" },
+);
+if (qualification.status !== 0)
+  throw new Error(
+    `Synthetic qualification build failed: ${qualification.stderr}`,
+  );
+
+for (const source of [
+  "metadata_receiver_bootstrap",
+  "original_probe_supervisor",
+  "original_probe_child",
+  "registered_protocol_harness",
+]) {
+  const built = spawnSync(
+    "clang",
+    [
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-O2",
+      "-DPS_P7_TEST_BARRIERS",
+      "-DPS_LIFECYCLE_TRACE",
+      `-DPS_METADATA_BOOTSTRAP_PATH="${join(outputDirectory, "metadata_receiver_bootstrap_phase7_test")}"`,
+      join(packageRoot, `native/${source}.c`),
+      "-o",
+      join(outputDirectory, `${source}_phase7_test`),
+    ],
+    { encoding: "utf8" },
+  );
+  if (built.status !== 0)
+    throw new Error(`Phase 7 lifecycle test build failed: ${built.stderr}`);
+}
+
 const lifecycleHarness = spawnSync(
   "clang",
   [
@@ -321,6 +374,7 @@ buildStartupPart("image renderer synthetic fault supervisor", [
   "-Werror",
   "-O2",
   "-DPS_RENDER_BINARY=2",
+  "-DPS_LEGACY_QUALIFICATION",
   `-DPS_RENDERER_BOOTSTRAP_PATH="${faultBootstrap}"`,
   `-DPS_RENDERER_MODULE_PATH="${faultModule}"`,
   `-DPS_RENDERER_BOOTSTRAP_SHA256="${sha256File(faultBootstrap)}"`,

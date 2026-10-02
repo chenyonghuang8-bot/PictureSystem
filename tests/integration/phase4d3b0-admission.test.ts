@@ -255,6 +255,7 @@ describe.sequential("Phase 4D3b-0 capacity admission transaction", () => {
       recipeId: 1 as const,
       kind: "THUMBNAIL" as const,
       jobId,
+      lifecycleRevision: 1n,
       leaseEpoch: 1n,
       workerId,
     } satisfies DerivedReservationIdentity;
@@ -740,6 +741,7 @@ describe.sequential("Phase 4D3b-0 capacity admission transaction", () => {
       identity: {
         ...b,
         generation: b.generation.toString(),
+        lifecycleRevision: b.lifecycleRevision.toString(),
         leaseEpoch: b.leaseEpoch.toString(),
         workerId: b.workerId.toString("base64url"),
       },

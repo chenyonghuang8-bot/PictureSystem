@@ -1,9 +1,14 @@
-import type { MySqlDerivedReadRepository } from "@family-album/db";
+import {
+  AlbumRepositoryError,
+  type MySqlDerivedReadRepository,
+} from "@family-album/db";
 import { StorageSafetyError } from "@family-album/storage";
 
 import { PublicAuthError, type AuthContext } from "../auth/service.js";
 
 export type DerivedReadIdentity = {
+  originalSha256Hex: string;
+  originalByteSize: string;
   familyId: string;
   mediaId: string;
   generation: bigint;
@@ -23,7 +28,7 @@ export class DerivedReadService {
   constructor(
     private readonly repository: Pick<
       MySqlDerivedReadRepository,
-      "findViewableReadyDerived"
+      "findViewableReadyDerived" | "recheckViewableReadyDerived"
     >,
     private readonly reader: DerivedByteReader,
   ) {}
@@ -60,6 +65,8 @@ export class DerivedReadService {
         kind: view.kind,
         sha256Hex: view.sha256Hex,
         byteSize: view.byteSize,
+        originalSha256Hex: view.originalSha256Hex,
+        originalByteSize: view.originalByteSize,
       });
     } catch (error) {
       if (error instanceof StorageSafetyError && HIDDEN.has(error.reason)) {
@@ -74,6 +81,25 @@ export class DerivedReadService {
     }
     if (BigInt(bytes.length) !== view.byteSize) {
       throw new PublicAuthError(404, "NOT_FOUND");
+    }
+    try {
+      const allowed = await this.repository.recheckViewableReadyDerived({
+        actor: {
+          userId: context.identity.userId,
+          sessionId: context.identity.sessionId,
+          tokenHash: context.tokenHash,
+        },
+        expected: view,
+      });
+      if (!allowed) throw new PublicAuthError(404, "NOT_FOUND");
+    } catch (error) {
+      if (error instanceof PublicAuthError) throw error;
+      if (
+        error instanceof AlbumRepositoryError &&
+        error.reason === "UNAUTHENTICATED"
+      )
+        throw new PublicAuthError(401, "UNAUTHENTICATED");
+      throw new PublicAuthError(503, "SERVICE_UNAVAILABLE");
     }
     return { bytes, contentType: "image/webp", familyId: view.familyId };
   }

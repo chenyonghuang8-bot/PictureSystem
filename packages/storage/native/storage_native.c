@@ -2475,12 +2475,13 @@ static napi_value consume_original_handle(napi_env env, napi_callback_info info)
 #include "original_download.h"
 
 #include "derived_store.h"
+#include "phase7_coordination.h"
+#include "phase7_handoff.h"
+#include "registered_consumer_binding.h"
 #include "image_verifier_launch.h"
 #include "derived_publish.h"
 #include "derived_recovery.h"
 #include "derived_serve.h"
-#include "phase7_coordination.h"
-#include "phase7_handoff.h"
 
 static napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
@@ -2492,6 +2493,13 @@ static napi_value init(napi_env env, napi_value exports) {
        napi_default, NULL},
       {"closeCoordination", NULL, ps_close_coordination, NULL, NULL, NULL,
        napi_default, NULL},
+      {"createRegisteredLaunch", NULL, p7_create_launch, NULL, NULL, NULL, napi_default, NULL},
+      {"registerLaunchSupervisor", NULL, p7_register_supervisor, NULL, NULL, NULL, napi_default, NULL},
+      {"pollRegisteredLaunch", NULL, p7_poll_launch, NULL, NULL, NULL, napi_default, NULL},
+      {"transferRegisteredOriginal", NULL, p7_transfer_original, NULL, NULL, NULL, napi_default, NULL},
+      {"verifyRegisteredSettlement", NULL, p7_verify_settlement, NULL, NULL, NULL, napi_default, NULL},
+      {"closeRegisteredLaunch", NULL, p7_close_launch, NULL, NULL, NULL, napi_default, NULL},
+      {"registeredOriginalIdentity", NULL, p7_original_identity, NULL, NULL, NULL, napi_default, NULL},
       {"createHandoff", NULL, ps_create_handoff, NULL, NULL, NULL,
        napi_default, NULL},
       {"registerHandoffReceiver", NULL, ps_register_handoff_receiver, NULL,
@@ -2505,6 +2513,9 @@ static napi_value init(napi_env env, napi_value exports) {
       {"closeHandoff", NULL, ps_close_handoff, NULL, NULL, NULL,
        napi_default, NULL},
 #ifdef PS_STORAGE_TEST_HOOKS
+      {"phase7TestTransferNoRelease", NULL, p7_test_withhold, NULL, NULL, NULL, napi_default, NULL},
+      {"phase7TestSourceReleased", NULL, p7_test_release, NULL, NULL, NULL, napi_default, NULL},
+      {"phase7TestLaunchSnapshot", NULL, p7_test_snapshot, NULL, NULL, NULL, napi_default, NULL},
       {"phase7TestExactProcessIdentity", NULL,
        ps_test_exact_process_identity, NULL, NULL, NULL, napi_default, NULL},
 #endif

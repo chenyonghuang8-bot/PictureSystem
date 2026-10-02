@@ -25,6 +25,9 @@ import {
 const bytes = Buffer.from("synthetic-preview-webp");
 const sha256Hex = createHash("sha256").update(bytes).digest("hex");
 const record: PreviewDownloadRecord = {
+  lifecycleRevision: "1",
+  originalSha256Hex: "b".repeat(64),
+  originalByteSize: "5",
   familyId: "1",
   albumId: "2",
   actorMemberId: "3",

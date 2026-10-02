@@ -60,3 +60,5 @@ export function createDatabase(databaseUrl: string) {
     pool,
   };
 }
+
+export * from "./trash-repository.js";

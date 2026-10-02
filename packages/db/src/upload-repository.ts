@@ -49,7 +49,8 @@ export type UploadState =
   | "COMPLETE"
   | "FAILED"
   | "ABORTED"
-  | "EXPIRED";
+  | "EXPIRED"
+  | "RETIRED";
 
 export type UploadRecord = {
   id: string;

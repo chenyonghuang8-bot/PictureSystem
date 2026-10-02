@@ -10,8 +10,10 @@ import {
   MySqlDerivedReadRepository,
   MySqlShareRepository,
   MySqlUploadRepository,
+  MySqlTrashRepository,
 } from "@family-album/db";
 import { resolve } from "node:path";
+import { coordinatedDerivedReader } from "./derived-serving/reader.js";
 import {
   CapacityGate,
   OriginalReader,
@@ -26,6 +28,7 @@ import { AlbumService } from "./albums/service.js";
 import { PublicShareService } from "./shares/public-service.js";
 import { ShareService } from "./shares/service.js";
 import { UploadService } from "./uploads/service.js";
+import { TrashService } from "./trash/service.js";
 import type { ReconciliationResult } from "./uploads/recovery.js";
 import { UploadMutex } from "./uploads/mutex.js";
 import { assessStorageStartup } from "./uploads/startup.js";
@@ -103,23 +106,10 @@ if (env.DEV_STORAGE_MARKER_ID) {
   }
 }
 const derivedReads = new MySqlDerivedReadRepository(database.pool);
-const derivedReader = {
-  async read(identity: {
-    familyId: string;
-    mediaId: string;
-    generation: bigint;
-    recipeId: 1;
-    kind: "THUMBNAIL" | "PREVIEW";
-    sha256Hex: string;
-    byteSize: bigint;
-  }) {
-    const gate = sharedCapacityGate;
-    if (!gate) throw new StorageSafetyError("DERIVED_SERVE_UNAVAILABLE");
-    return gate.withLock(() =>
-      Promise.resolve(gate.readDerivedFinal(identity)),
-    );
-  },
-};
+const derivedReader = coordinatedDerivedReader(
+  storageCapability,
+  sharedCapacityGate,
+);
 const derivedService = new DerivedReadService(derivedReads, derivedReader);
 let originalReader: OriginalReader | undefined;
 if (storageCapability.state !== "UNAVAILABLE") {
@@ -141,16 +131,7 @@ const originalDownloadService = new OriginalDownloadService(
   albumRepository,
   originalReader ?? unavailableOriginalReader,
 );
-const previewDownloadReader: PreviewDownloadReader = {
-  async read(identity, options) {
-    const gate = sharedCapacityGate;
-    if (!gate) throw new StorageSafetyError("DERIVED_SERVE_UNAVAILABLE");
-    return gate.withLock(() => {
-      options.signal.throwIfAborted();
-      return Promise.resolve(gate.readDerivedFinal(identity));
-    });
-  },
-};
+const previewDownloadReader: PreviewDownloadReader = derivedReader;
 const previewDownloadService = new PreviewDownloadService(
   albumRepository,
   previewDownloadReader,
@@ -167,6 +148,10 @@ const uploadService = new UploadService(
   sharedCapacityGate,
 );
 const app = createApp({
+  trashService: new TrashService(
+    new MySqlTrashRepository(database.pool),
+    storageCapability,
+  ),
   authService,
   phase1cService,
   albumService,

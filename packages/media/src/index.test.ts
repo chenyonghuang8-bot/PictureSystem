@@ -146,7 +146,7 @@ describe("Phase 4D0 isolated original probe", () => {
     const packageRoot = resolve(import.meta.dirname, "../../storage");
     const fd = openSync(originalPath, "r");
     const supervised = spawn(
-      join(packageRoot, "build/original_probe_supervisor"),
+      join(packageRoot, "build/original_probe_supervisor_qualification"),
       [
         join(packageRoot, "native/original-probe.sb"),
         join(packageRoot, "build/original_probe_child"),

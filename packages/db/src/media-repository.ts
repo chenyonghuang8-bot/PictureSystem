@@ -12,6 +12,9 @@ import type {
 import { runCheckedTransaction } from "./connection.js";
 
 export type CanonicalMediaRecord = {
+  lifecycleRevision: bigint;
+  trashedAt: Date | null;
+  purgeIntentId: string | null;
   id: string;
   familyId: string;
   storageObjectId: string;
@@ -66,6 +69,9 @@ type StorageObjectRow = RowDataPacket & {
 };
 
 type MediaRow = RowDataPacket & {
+  lifecycleRevision: string;
+  trashedAt: Date | null;
+  purgeIntentId: string | null;
   id: string;
   familyId: string;
   storageObjectId: string;
@@ -89,7 +95,8 @@ const MEDIA_SELECT = `SELECT CAST(id AS CHAR) AS id,
   processing_state AS processingState, CAST(generation AS CHAR) AS generation,
   recipe_id AS recipeId, timeline_key AS timelineKey,
   timeline_basis AS timelineBasis, created_at AS createdAt,
-  updated_at AS updatedAt
+  updated_at AS updatedAt,CAST(lifecycle_revision AS CHAR) lifecycleRevision,
+  trashed_at trashedAt,CAST(purge_intent_id AS CHAR) purgeIntentId
 FROM media_items WHERE family_id=? AND storage_object_id=?`;
 
 export class MySqlMediaRepository {
@@ -118,7 +125,11 @@ export class MySqlMediaRepository {
         storage.id,
         false,
       );
-      if (existing) return { media: existing, created: false };
+      if (existing) {
+        if (existing.purgeIntentId !== null)
+          throw new MediaRepositoryError("STORAGE_UNAVAILABLE");
+        return { media: existing, created: false };
+      }
 
       try {
         await connection.execute<ResultSetHeader>(
@@ -269,6 +280,9 @@ async function findCanonicalMedia(
 
 function mapMedia(row: MediaRow): CanonicalMediaRecord {
   return {
+    lifecycleRevision: BigInt(row.lifecycleRevision),
+    trashedAt: row.trashedAt,
+    purgeIntentId: row.purgeIntentId,
     id: row.id,
     familyId: row.familyId,
     storageObjectId: row.storageObjectId,

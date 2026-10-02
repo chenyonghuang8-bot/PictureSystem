@@ -7,31 +7,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#define PS_HANDOFF_MAGIC UINT64_C(0x48414e444f464631)
-#define PS_HANDOFF_FORMAT UINT32_C(2)
-#define PS_HANDOFF_PREPARED UINT32_C(1)
-#define PS_HANDOFF_REGISTERED UINT32_C(2)
-#define PS_HANDOFF_SETTLED UINT32_C(3)
-typedef struct {
-  uint64_t magic;
-  uint32_t format;
-  uint32_t stage;
-  unsigned char handoff_id[16];
-  uint64_t root_device;
-  uint64_t root_inode;
-  char marker[33];
-  // Opaque digest of the same canonical K used for the lock namespace.
-  // No raw content SHA, family path or media path is persisted here.
-  unsigned char coordination_id[CC_SHA256_DIGEST_LENGTH];
-  char boot_uuid[37];
-  int32_t supervisor_pid;
-  uint64_t supervisor_start_sec;
-  uint64_t supervisor_start_usec;
-  int32_t receiver_pid;
-  uint64_t receiver_start_sec;
-  uint64_t receiver_start_usec;
-  unsigned char checksum[CC_SHA256_DIGEST_LENGTH];
-} ps_handoff_record_t;
+#include "registered_consumer_protocol.h"
 
 typedef struct {
   uint64_t magic;
@@ -52,6 +28,11 @@ static int ps_handoff_same_registration(const ps_handoff_record_t *a,
       memcmp(a->marker,b->marker,sizeof(a->marker))==0 &&
       memcmp(a->coordination_id,b->coordination_id,sizeof(a->coordination_id))==0 &&
       memcmp(a->boot_uuid,b->boot_uuid,sizeof(a->boot_uuid))==0 &&
+      a->coordinator_pid==b->coordinator_pid &&
+      a->coordinator_start_sec==b->coordinator_start_sec &&
+      a->coordinator_start_usec==b->coordinator_start_usec &&
+      a->input_type==b->input_type &&
+      memcmp(a->asset_binding,b->asset_binding,32)==0 &&
       a->supervisor_pid==b->supervisor_pid &&
       a->supervisor_start_sec==b->supervisor_start_sec &&
       a->supervisor_start_usec==b->supervisor_start_usec &&
@@ -159,9 +140,7 @@ static ps_handoff_t *ps_handoff_get(napi_env env,napi_value value) {
   }
   return handoff;
 }
-static napi_value ps_create_handoff(napi_env env,napi_callback_info info) {
-  napi_value arg;size_t argc=1;napi_get_cb_info(env,info,&argc,&arg,NULL,NULL);
-  ps_coord_t *coord=ps_coord_get(env,arg);if (!coord) return NULL;
+static ps_handoff_t *ps_allocate_handoff(napi_env env,ps_coord_t *coord) {
   if (coord->basename[65]!='R' || !coord->locked) {
     throw_code(env,"HANDOFF_READ_GUARD_REQUIRED","Hold R before handoff registration.");return NULL;
   }
@@ -184,6 +163,8 @@ static napi_value ps_create_handoff(napi_env env,napi_callback_info info) {
   record->root_inode=(uint64_t)coord->root_inode;
   strcpy(record->marker,coord->marker);strcpy(record->boot_uuid,boot);
   memcpy(record->coordination_id,coord->coordination_id,sizeof(record->coordination_id));
+  record->coordinator_pid=getpid();record->coordinator_start_sec=sec;
+  record->coordinator_start_usec=usec;record->input_type=1;
   record->supervisor_pid=getpid();record->supervisor_start_sec=sec;
   record->supervisor_start_usec=usec;
   for(size_t i=0;i<sizeof(record->handoff_id);i++)
@@ -196,8 +177,13 @@ static napi_value ps_create_handoff(napi_env env,napi_callback_info info) {
     // Intentionally leave a corrupt/partial record to fail R-X closed.
     ps_handoff_finalize(env,handoff,NULL);throw_errno(env,"durable handoff registration");return NULL;
   }
-  napi_value external;napi_create_external(env,handoff,ps_handoff_finalize,NULL,&external);
-  return external;
+  return handoff;
+}
+static napi_value ps_create_handoff(napi_env env,napi_callback_info info) {
+  napi_value arg;size_t argc=1;napi_get_cb_info(env,info,&argc,&arg,NULL,NULL);
+  ps_coord_t *coord=ps_coord_get(env,arg);if(!coord)return NULL;
+  ps_handoff_t *handoff=ps_allocate_handoff(env,coord);if(!handoff)return NULL;
+  napi_value external;napi_create_external(env,handoff,ps_handoff_finalize,NULL,&external);return external;
 }
 static napi_value ps_register_handoff_receiver(napi_env env,napi_callback_info info) {
   napi_value args[2];size_t argc=2;napi_get_cb_info(env,info,&argc,args,NULL,NULL);
@@ -364,7 +350,11 @@ static int ps_handoff_record_status(ps_handoff_record_t *record,
   if (record->stage==PS_HANDOFF_SETTLED) return 1;
   if (strcmp(record->boot_uuid,boot)!=0) return 2;
   uint64_t sec=0,usec=0;
-  int supervisor=ps_process_identity(record->supervisor_pid,&sec,&usec);
+  int coordinator=ps_process_identity(record->coordinator_pid,&sec,&usec);
+  if (coordinator<0) return -1;
+  int coordinator_live=ps_exact_process_alive(coordinator,sec,usec,
+      record->coordinator_start_sec,record->coordinator_start_usec);
+  int supervisor=record->supervisor_pid>0?ps_process_identity(record->supervisor_pid,&sec,&usec):0;
   if (supervisor<0) return -1;
   int supervisor_live=ps_exact_process_alive(supervisor,sec,usec,
       record->supervisor_start_sec,record->supervisor_start_usec);
@@ -375,7 +365,7 @@ static int ps_handoff_record_status(ps_handoff_record_t *record,
     receiver_live=ps_exact_process_alive(receiver,sec,usec,
         record->receiver_start_sec,record->receiver_start_usec);
   }
-  return supervisor_live||receiver_live?0:2;
+  return coordinator_live||supervisor_live||receiver_live?0:2;
 }
 static int ps_handoff_admit_exclusive(ps_coord_t *coord) {
   int dir=ps_handoff_directory(coord,0);

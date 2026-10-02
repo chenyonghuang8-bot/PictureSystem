@@ -21,6 +21,7 @@ process.once("message", async (message) => {
       familyId: message.identity.familyId,
       mediaId: message.identity.mediaId,
       generation: BigInt(message.identity.generation),
+      lifecycleRevision: BigInt(message.identity.lifecycleRevision),
       recipeId: 1,
       kind: "THUMBNAIL",
       jobId: message.identity.jobId,

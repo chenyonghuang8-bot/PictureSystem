@@ -122,7 +122,7 @@ static int accept_verifier_json(const char *json, int *width, int *height,
 }
 
 static int spawn_verifier(const char *supervisor, int sealed_fd, int owner_death,
-                          int prove_high_fds, char *output, size_t output_cap,
+                          int prove_high_fds, ps_handoff_t *registered, char *output, size_t output_cap,
                           size_t *output_size, int *status) {
   int control[2] = {-1, -1};
   int errors[2] = {-1, -1};
@@ -134,6 +134,7 @@ static int spawn_verifier(const char *supervisor, int sealed_fd, int owner_death
   int high_installed = 0;
   pid_t child = -1;
   int result = 70;
+  int delivery[2]={-1,-1};
   if (pipe(control) != 0 || pipe(errors) != 0 || pipe(liveness) != 0) goto done;
   int pipe_fds[] = {control[0], control[1], errors[0], errors[1], liveness[0],
                     liveness[1]};
@@ -141,7 +142,11 @@ static int spawn_verifier(const char *supervisor, int sealed_fd, int owner_death
        index += 1) {
     if (fcntl(pipe_fds[index], F_SETFD, FD_CLOEXEC) != 0) goto done;
   }
-  input = fcntl(sealed_fd, F_DUPFD_CLOEXEC, 10);
+  if(registered) {
+    if(socketpair(AF_UNIX,SOCK_DGRAM,0,delivery)!=0)goto done;
+    fcntl(delivery[0],F_SETFD,FD_CLOEXEC);fcntl(delivery[1],F_SETFD,FD_CLOEXEC);
+  }
+  input = fcntl(registered?delivery[1]:sealed_fd, F_DUPFD_CLOEXEC, 10);
   if (input < 0) goto done;
   if (prove_high_fds) {
     high_file = open("/dev/null", O_RDONLY | O_CLOEXEC);
@@ -187,6 +192,23 @@ static int spawn_verifier(const char *supervisor, int sealed_fd, int owner_death
   posix_spawn_file_actions_destroy(&actions);
   posix_spawnattr_destroy(&attributes);
   if (launch != 0) goto done;
+  if(registered) {
+    close(delivery[1]);delivery[1]=-1;close(input);input=-1;
+    uint64_t sec=0,usec=0;ps_handoff_record_t r=registered->record;
+    if(p7_identity(child,&sec,&usec)!=1)goto done;
+    r.supervisor_pid=child;r.supervisor_start_sec=sec;r.supervisor_start_usec=usec;
+    r.stage=PS_HANDOFF_SUPERVISOR_REGISTERED;
+    if(ps_handoff_write(registered->record_fd,&r)||p7_send(delivery[0],&r,P7_INIT,registered->record_fd))goto done;
+    int unused=-1;ps_handoff_record_t armed;
+    if(p7_receive(delivery[0],&r,P7_ARMED,0,&unused,15000)||
+      ps_handoff_read(registered->record_fd,&armed)||!p7_same(&r,&armed)||armed.stage!=PS_HANDOFF_REGISTERED)goto done;
+    registered->record=armed;
+    input=fcntl(sealed_fd,F_DUPFD_CLOEXEC,10);if(input<0)goto done;
+    if(p7_send(delivery[0],&armed,P7_MEDIA,input))goto done;
+    if(close(input)){input=-1;goto done;}input=-1;
+    if(p7_send(delivery[0],&armed,P7_SOURCE_RELEASED,-1))goto done;
+    close(delivery[0]);delivery[0]=-1;
+  }
   close(control[1]);
   control[1] = -1;
   close(errors[1]);
@@ -230,6 +252,11 @@ static int spawn_verifier(const char *supervisor, int sealed_fd, int owner_death
   } while (waited < 0 && errno == EINTR);
   if (waited != child) goto done;
   child = -1;
+  if(registered) {
+    ps_handoff_record_t settled;
+    if(ps_handoff_read(registered->record_fd,&settled)||
+      !ps_handoff_same_registration(&settled,&registered->record)||settled.stage!=PS_HANDOFF_SETTLED)goto done;
+  }
   *output_size = used;
   *status = wait_status;
   result = 0;
@@ -247,6 +274,7 @@ done:
   if (liveness[0] >= 0) close(liveness[0]);
   if (liveness[1] >= 0) close(liveness[1]);
   if (input >= 0) close(input);
+  if (delivery[0]>=0)close(delivery[0]);if(delivery[1]>=0)close(delivery[1]);
   if (high_file >= 0) close(high_file);
   if (high_lock >= 0) close(high_lock);
   if (sockets[0] >= 0) close(sockets[0]);
@@ -260,10 +288,10 @@ done:
 }
 
 static napi_value verify_sealed_output(napi_env env, napi_callback_info info) {
-  size_t argc = 3;
-  napi_value args[3];
+  size_t argc = 4;
+  napi_value args[4];
   napi_get_cb_info(env, info, &argc, args, NULL, NULL);
-  derived_sealed_t *sealed = argc == 3 ? derived_get_sealed(env, args[0]) : NULL;
+  derived_sealed_t *sealed = argc >= 3 ? derived_get_sealed(env, args[0]) : NULL;
   derived_store_t *store = sealed == NULL ? NULL : derived_get_store(env, args[1]);
   char scenario[16];
   if (sealed == NULL || store == NULL ||
@@ -313,13 +341,37 @@ static napi_value verify_sealed_output(napi_env env, napi_callback_info info) {
   store->fail_next_verify_post = 0;
   pthread_mutex_unlock(&store->mutex);
 
+  ps_handoff_t *registered=NULL;
+  if(argc==4) {
+    ps_coord_t *coord=ps_coord_get(env,args[3]);if(!coord)return NULL;
+    if(!coord->locked||coord->basename[65]!='R'||coord->root_device!=store->device||
+      coord->root_inode!=store->root_inode||strcmp(coord->marker,store->marker)||
+      strcmp(coord->family,sealed->writer->family)) {
+      derived_throw(env,"HANDOFF_CONTENT_MISMATCH","Verifier coordination identity mismatch.");return NULL;
+    }
+    registered=ps_allocate_handoff(env,coord);if(!registered)return NULL;
+    registered->record.supervisor_pid=0;registered->record.supervisor_start_sec=0;
+    registered->record.supervisor_start_usec=0;registered->record.input_type=2;
+    char binding[512];derived_writer_t *w=sealed->writer;
+    int count=snprintf(binding,sizeof(binding),"%s:%s:%s:%s:%s:%s:%s:%s:%llu:%llu:%llu",
+      w->family,w->media,w->generation,w->recipe,w->kind,w->job,w->epoch,w->reservation,
+      (unsigned long long)w->device,(unsigned long long)w->inode,(unsigned long long)w->size);
+    CC_SHA256_CTX hash;CC_SHA256_Init(&hash);CC_SHA256_Update(&hash,binding,(CC_LONG)count);
+    CC_SHA256_Update(&hash,w->sha,32);CC_SHA256_Final(registered->record.asset_binding,&hash);
+    if(ps_handoff_write(registered->record_fd,&registered->record)) {
+      ps_handoff_finalize(env,registered,NULL);throw_errno(env,"prepare derived handoff");return NULL;
+    }
+  } else if(process_is_production()) {
+    derived_throw(env,"HANDOFF_READ_GUARD_REQUIRED","Registered verifier requires R occupancy.");return NULL;
+  }
   char output[4096];
   size_t output_size = 0;
   int wait_status = 0;
   int launched = spawn_verifier(
       supervisor, sealed_fd, strcmp(scenario, "owner-death") == 0,
-      strcmp(scenario, "high-fd") == 0, output, sizeof(output) - 1,
+      strcmp(scenario, "high-fd") == 0, registered, output, sizeof(output) - 1,
       &output_size, &wait_status);
+  if(registered)ps_handoff_finalize(env,registered,NULL);
 
   pthread_mutex_lock(&store->mutex);
   if (sealed->consumed || sealed->writer == NULL ||

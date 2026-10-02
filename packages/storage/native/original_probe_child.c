@@ -129,8 +129,24 @@ static int probe_capabilities(void) {
 }
 
 int main(int argc, char **argv) {
+#ifdef PS_P7_TEST_BARRIERS
+  if(argc==2 && strcmp(argv[1],"phase7-hold")==0) {
+    /* Check before defensive closure: the registered bootstrap must not
+       inherit the ledger, root, locks, or any unrelated high descriptor. */
+    for(int fd=1024;fd<8192;fd++)if(fcntl(fd,F_GETFD)!=-1)return 71;
+  }
+#endif
   for (int fd = 4; fd < 1024; fd += 1) close(fd);
   if (argc != 2) return 64;
+#ifdef PS_P7_TEST_BARRIERS
+  if(strcmp(argv[1],"phase7-hold")==0) {
+    unsigned char byte;if(pread(3,&byte,1,0)!=1)return 70;
+    if(write(0,"LIVE\n",5)!=5)return 70;
+    if(read(0,&byte,1)!=1)return 70;
+    dprintf(STDOUT_FILENO,"{\"settled\":true}\n");
+    return 0;
+  }
+#endif
   if (strcmp(argv[1], "capabilities") == 0) return probe_capabilities();
   if (strcmp(argv[1], "fork-denied") == 0) {
     dprintf(STDOUT_FILENO, "FORK_ATTEMPT\n");

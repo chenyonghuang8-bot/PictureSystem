@@ -27,6 +27,7 @@ function deferred<T>() {
 }
 
 const record: OriginalDownloadRecord = {
+  lifecycleRevision: "1",
   familyId: "1",
   albumId: "2",
   actorMemberId: "3",

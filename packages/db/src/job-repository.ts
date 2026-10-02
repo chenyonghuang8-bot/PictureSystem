@@ -1,3 +1,4 @@
+import { activeMediaSql, isActiveMedia } from "./media-lifecycle.js";
 import { randomBytes } from "node:crypto";
 
 import type {
@@ -24,6 +25,7 @@ const RETRY_RANGES_SECONDS = {
 export type WorkerIdentity = Buffer;
 
 export type BackgroundJobRecord = {
+  lifecycleRevision?: bigint;
   id: string;
   familyId: string;
   mediaId: string;
@@ -85,6 +87,9 @@ type JobRow = RowDataPacket & {
 };
 
 type MediaFenceRow = RowDataPacket & {
+  lifecycleRevision: string;
+  trashedAt: Date | null;
+  purgeIntentId: string | null;
   generation: string;
   recipeId: number;
 };
@@ -171,70 +176,105 @@ export class MySqlJobRepository {
     ) {
       throw new JobRepositoryError("INVALID_INPUT");
     }
-    return runCheckedTransaction(this.pool, async (connection) => {
-      const [rows] = await connection.query<JobRow[]>(
-        `${JOB_SELECT} FORCE INDEX (idx_background_jobs_claim)
-         WHERE state IN ('QUEUED','RETRY_WAIT')
-           AND available_at <= CURRENT_TIMESTAMP(3)
-           AND attempts < max_attempts
-           ${options.jobType === undefined ? "" : "AND job_type=?"}
-         ORDER BY available_at ASC,id ASC
-         LIMIT 1 FOR UPDATE SKIP LOCKED`,
-        options.jobType === undefined ? [] : [options.jobType],
+    // Nonlocking candidate discovery never holds a job row while acquiring
+    // family/media. Each bounded attempt releases its locks before the next.
+    const candidates = await runCheckedTransaction(
+      this.pool,
+      async (connection) => {
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT CAST(j.id AS CHAR) id,CAST(j.family_id AS CHAR) familyId,CAST(j.media_id AS CHAR) mediaId
+          FROM background_jobs j JOIN media_items m ON m.family_id=j.family_id AND m.id=j.media_id
+          WHERE j.state IN ('QUEUED','RETRY_WAIT') AND j.available_at<=CURRENT_TIMESTAMP(3)
+            AND j.attempts<j.max_attempts AND j.generation=m.generation AND j.recipe_id=m.recipe_id
+            AND ${activeMediaSql("m")} ${options.jobType === undefined ? "" : "AND j.job_type=?"}
+          ORDER BY j.available_at,j.id LIMIT 64`,
+          options.jobType === undefined ? [] : [options.jobType],
+        );
+        return rows;
+      },
+    );
+    for (const located of candidates) {
+      const claimed = await runCheckedTransaction(
+        this.pool,
+        async (connection) => {
+          const [families] = await connection.query<RowDataPacket[]>(
+            "SELECT id FROM families WHERE id=? FOR SHARE SKIP LOCKED",
+            [located.familyId],
+          );
+          if (!families.length) return null;
+          const [mediaRows] = await connection.query<MediaFenceRow[]>(
+            `SELECT CAST(generation AS CHAR) generation,recipe_id recipeId,CAST(lifecycle_revision AS CHAR) lifecycleRevision,
+            trashed_at trashedAt,CAST(purge_intent_id AS CHAR) purgeIntentId
+           FROM media_items WHERE family_id=? AND id=? FOR UPDATE SKIP LOCKED`,
+            [located.familyId, located.mediaId],
+          );
+          const media = mediaRows[0];
+          if (!media || !isActiveMedia(media)) return null;
+          const [jobs] = await connection.query<JobRow[]>(
+            `${JOB_SELECT} WHERE id=? AND family_id=? AND media_id=? FOR UPDATE SKIP LOCKED`,
+            [located.id, located.familyId, located.mediaId],
+          );
+          const candidate = jobs[0];
+          const now = await readServerTime(connection);
+          if (
+            !candidate ||
+            !["QUEUED", "RETRY_WAIT"].includes(candidate.state) ||
+            candidate.availableAt.getTime() > now.getTime() ||
+            candidate.attempts >= candidate.maxAttempts ||
+            candidate.generation !== media.generation ||
+            candidate.recipeId !== media.recipeId ||
+            (options.jobType !== undefined &&
+              candidate.jobType !== options.jobType) ||
+            BigInt(candidate.leaseEpoch) === 18446744073709551615n
+          )
+            return null;
+          const lockedUntil = new Date(now.getTime() + LEASE_MILLISECONDS);
+          const [changed] = await connection.execute<ResultSetHeader>(
+            `UPDATE background_jobs SET state='RUNNING',attempts=attempts+1,worker_id=?,lease_epoch=lease_epoch+1,
+            locked_at=?,heartbeat_at=?,locked_until=?,updated_at=? WHERE id=? AND family_id=? AND media_id=?
+            AND generation=? AND state IN ('QUEUED','RETRY_WAIT') AND available_at<=? AND attempts=?
+            AND attempts<max_attempts AND lease_epoch=?`,
+            [
+              workerId,
+              now,
+              now,
+              lockedUntil,
+              now,
+              candidate.id,
+              candidate.familyId,
+              candidate.mediaId,
+              candidate.generation,
+              now,
+              candidate.attempts,
+              candidate.leaseEpoch,
+            ],
+          );
+          if (changed.affectedRows !== 1) return null;
+          return {
+            ...mapJob(candidate),
+            lifecycleRevision: BigInt(media.lifecycleRevision),
+            state: "RUNNING" as const,
+            attempts: candidate.attempts + 1,
+            workerId: Buffer.from(workerId),
+            leaseEpoch: BigInt(candidate.leaseEpoch) + 1n,
+            lockedAt: now,
+            heartbeatAt: now,
+            lockedUntil,
+            updatedAt: now,
+          };
+        },
       );
-      const candidate = rows[0];
-      if (!candidate) return null;
-      const now = await readServerTime(connection);
-      if (
-        candidate.availableAt.getTime() > now.getTime() ||
-        candidate.attempts >= candidate.maxAttempts
-      ) {
-        return null;
-      }
-      const lockedUntil = new Date(now.getTime() + LEASE_MILLISECONDS);
-      const [changed] = await connection.execute<ResultSetHeader>(
-        `UPDATE background_jobs
-         SET state='RUNNING',attempts=attempts+1,worker_id=?,
-             lease_epoch=lease_epoch+1,locked_at=?,heartbeat_at=?,
-             locked_until=?,updated_at=?
-         WHERE id=? AND family_id=? AND media_id=? AND generation=?
-           AND state IN ('QUEUED','RETRY_WAIT') AND available_at<=?
-           AND attempts=? AND attempts<max_attempts AND lease_epoch=?`,
-        [
-          workerId,
-          now,
-          now,
-          lockedUntil,
-          now,
-          candidate.id,
-          candidate.familyId,
-          candidate.mediaId,
-          candidate.generation,
-          now,
-          candidate.attempts,
-          candidate.leaseEpoch,
-        ],
-      );
-      if (changed.affectedRows !== 1) throw new JobRepositoryError("CONFLICT");
-      return {
-        ...mapJob(candidate),
-        state: "RUNNING",
-        attempts: candidate.attempts + 1,
-        workerId: Buffer.from(workerId),
-        leaseEpoch: BigInt(candidate.leaseEpoch) + 1n,
-        lockedAt: now,
-        heartbeatAt: now,
-        lockedUntil,
-        updatedAt: now,
-      };
-    });
+      if (claimed) return claimed;
+    }
+    return null;
   }
 
   async heartbeat(input: LeaseFence): Promise<FencedMutationResult> {
     assertLeaseFence(input);
     return runCheckedTransaction(this.pool, async (connection) => {
-      const job = await lockJobOnly(connection, input);
-      if (!job) return { affectedRows: 0 };
+      const { media, job } = await lockMediaThenJob(connection, input);
+      if (!job || !mediaMatchesFence(media, job, input))
+        return { affectedRows: 0 };
       const now = await readServerTime(connection);
       if (!isCurrentUnexpiredLease(job, input, now)) {
         return { affectedRows: 0 };
@@ -331,6 +371,11 @@ export class MySqlJobRepository {
   }): Promise<FencedMutationResult> {
     assertFenceIds(input);
     return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, input.familyId);
+      await connection.query(
+        "SELECT id FROM media_items WHERE family_id=? AND id=? FOR UPDATE",
+        [input.familyId, input.mediaId],
+      );
       const [rows] = await connection.query<JobRow[]>(
         `${JOB_SELECT}
          WHERE id=? AND family_id=? AND media_id=? AND generation=?
@@ -426,6 +471,7 @@ export class MySqlJobRepository {
 }
 
 export type LeaseFence = {
+  lifecycleRevision: bigint;
   familyId: string;
   mediaId: string;
   jobId: string;
@@ -467,18 +513,22 @@ async function lockMedia(
   mediaId: string,
 ) {
   const [rows] = await connection.query<MediaFenceRow[]>(
-    `SELECT CAST(generation AS CHAR) AS generation,recipe_id AS recipeId
+    `SELECT CAST(generation AS CHAR) AS generation,recipe_id AS recipeId,
+       CAST(lifecycle_revision AS CHAR) lifecycleRevision,trashed_at trashedAt,CAST(purge_intent_id AS CHAR) purgeIntentId
      FROM media_items WHERE id=? AND family_id=? FOR UPDATE`,
     [mediaId, familyId],
   );
   const media = rows[0];
-  if (!media) throw new JobRepositoryError("NOT_FOUND");
+  if (!media || !isActiveMedia(media))
+    throw new JobRepositoryError("NOT_FOUND");
   return media;
 }
 
 async function lockMediaThenJob(connection: PoolConnection, input: LeaseFence) {
+  await lockFamily(connection, input.familyId);
   const [mediaRows] = await connection.query<MediaFenceRow[]>(
-    `SELECT CAST(generation AS CHAR) AS generation,recipe_id AS recipeId
+    `SELECT CAST(generation AS CHAR) AS generation,recipe_id AS recipeId,
+       CAST(lifecycle_revision AS CHAR) lifecycleRevision,trashed_at trashedAt,CAST(purge_intent_id AS CHAR) purgeIntentId
      FROM media_items WHERE id=? AND family_id=? FOR UPDATE`,
     [input.mediaId, input.familyId],
   );
@@ -488,15 +538,6 @@ async function lockMediaThenJob(connection: PoolConnection, input: LeaseFence) {
     [input.jobId, input.familyId, input.mediaId, input.generation.toString()],
   );
   return { media: mediaRows[0], job: jobRows[0] };
-}
-
-async function lockJobOnly(connection: PoolConnection, input: LeaseFence) {
-  const [rows] = await connection.query<JobRow[]>(
-    `${JOB_SELECT}
-     WHERE id=? AND family_id=? AND media_id=? AND generation=? FOR UPDATE`,
-    [input.jobId, input.familyId, input.mediaId, input.generation.toString()],
-  );
-  return rows[0];
 }
 
 async function findIdentity(
@@ -567,6 +608,8 @@ function mediaMatchesFence(
 ) {
   return (
     media !== undefined &&
+    isActiveMedia(media) &&
+    BigInt(media.lifecycleRevision) === input.lifecycleRevision &&
     BigInt(media.generation) === input.generation &&
     BigInt(job.generation) === input.generation &&
     media.recipeId === job.recipeId
@@ -613,7 +656,12 @@ function assertJobIdentity(input: {
 function assertLeaseFence(input: LeaseFence) {
   assertFenceIds(input);
   assertWorkerId(input.workerId);
-  if (input.generation < 1n || input.leaseEpoch < 1n) {
+  if (
+    input.generation < 1n ||
+    input.leaseEpoch < 1n ||
+    typeof input.lifecycleRevision !== "bigint" ||
+    input.lifecycleRevision < 1n
+  ) {
     throw new JobRepositoryError("INVALID_INPUT");
   }
 }

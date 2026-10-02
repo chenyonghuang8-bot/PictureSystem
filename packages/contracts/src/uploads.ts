@@ -50,6 +50,7 @@ export const uploadStatusResponseSchema = z
       "FAILED",
       "ABORTED",
       "EXPIRED",
+      "RETIRED",
     ]),
     declaredSize: z.string().regex(/^[1-9][0-9]*$/u),
     committedOffset: z.string().regex(/^(?:0|[1-9][0-9]*)$/u),

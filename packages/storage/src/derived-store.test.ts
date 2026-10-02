@@ -48,6 +48,7 @@ function identity(
     recipeId: 1,
     kind,
     jobId: "42",
+    lifecycleRevision: 1n,
     leaseEpoch: 5n,
     workerId: randomBytes(16),
   };

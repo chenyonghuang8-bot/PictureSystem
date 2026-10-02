@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { closeSync } from "node:fs";
+import type { RegisteredOriginalRun } from "./registered-consumer.js";
 import { resolve } from "node:path";
 
 import { StorageSafetyError } from "./index.js";
@@ -158,15 +158,13 @@ export function parseRendererControl(
 
 /** Fixed binary only. No path, argv, FD number, profile or encoder options. */
 export async function runImageRendererProducerFd(
-  fd: number,
+  run: RegisteredOriginalRun,
   kind: ImageProducerKind,
 ): Promise<UnverifiedRenderedCandidate> {
   if (kind !== "THUMBNAIL" && kind !== "PREVIEW") {
-    closeSync(fd);
     return rejectProducer("RENDERER_KIND_INVALID");
   }
   if (heavyRenderBusy) {
-    closeSync(fd);
     return rejectProducer("RENDERER_BUSY");
   }
   heavyRenderBusy = true;
@@ -189,7 +187,7 @@ export async function runImageRendererProducerFd(
           let child;
           try {
             child = spawn(binary, [], {
-              stdio: ["ignore", "pipe", "pipe", fd, "pipe", "pipe"],
+              stdio: ["ignore", "pipe", "pipe", run.childFd, "pipe", "pipe"],
               env: { LANG: "C", LC_ALL: "C" },
             });
           } catch {
@@ -229,6 +227,12 @@ export async function runImageRendererProducerFd(
           });
           child.once("close", (exitCode, signal) => {
             child.stdio.at(5)?.destroy();
+            try {
+              run.verifySettlement();
+            } catch {
+              reject(new StorageSafetyError("HANDOFF_UNSETTLED"));
+              return;
+            }
             if (
               failed ||
               exitCode !== 0 ||
@@ -262,10 +266,17 @@ export async function runImageRendererProducerFd(
               reject(new StorageSafetyError("RENDERER_CANDIDATE_INVALID"));
             }
           });
+          void run
+            .start(
+              child.pid!,
+              () => child.exitCode !== null || child.signalCode !== null,
+            )
+            .catch(() => {
+              abort();
+            });
         },
       );
     } finally {
-      closeSync(fd);
       if (!succeeded) candidate.fill(0);
     }
   } finally {

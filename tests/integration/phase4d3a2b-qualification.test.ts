@@ -393,6 +393,7 @@ describe.sequential("Phase 4D3a-2b renderer qualification", () => {
       recipeId: 1,
       kind,
       jobId: String(job.insertId),
+      lifecycleRevision: 1n,
       leaseEpoch: 1n,
       workerId,
     };

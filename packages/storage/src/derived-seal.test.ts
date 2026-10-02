@@ -48,6 +48,7 @@ function identity(): DerivedTempPermitIdentity {
     recipeId: 1,
     kind: "THUMBNAIL",
     jobId: "42",
+    lifecycleRevision: 1n,
     leaseEpoch: 5n,
     workerId: randomBytes(16),
   };

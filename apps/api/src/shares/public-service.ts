@@ -3,6 +3,7 @@ import type {
   MySqlShareRepository,
 } from "@family-album/db";
 import { StorageSafetyError } from "@family-album/storage";
+import { hashShareToken } from "@family-album/auth";
 
 import {
   decodeGalleryCursor,
@@ -24,7 +25,7 @@ export class PublicShareService {
     >,
     private readonly derived: Pick<
       MySqlDerivedReadRepository,
-      "findReadyDerivedInAlbum"
+      "findReadyDerivedInAlbum" | "recheckSharedReadyDerived"
     >,
     private readonly reader: DerivedByteReader,
   ) {}
@@ -95,6 +96,8 @@ export class PublicShareService {
         kind: view.kind,
         sha256Hex: view.sha256Hex,
         byteSize: view.byteSize,
+        originalSha256Hex: view.originalSha256Hex,
+        originalByteSize: view.originalByteSize,
       });
     } catch (error) {
       if (error instanceof StorageSafetyError && HIDDEN.has(error.reason)) {
@@ -105,6 +108,25 @@ export class PublicShareService {
     if (BigInt(bytes.length) !== view.byteSize) {
       throw new PublicAuthError(404, "NOT_FOUND");
     }
+    const current = await this.notFound(() =>
+      this.shares.verifyShareToken(token),
+    );
+    if (
+      current.familyId !== capability.familyId ||
+      current.albumId !== capability.albumId ||
+      current.shareId !== capability.shareId
+    )
+      throw new PublicAuthError(404, "NOT_FOUND");
+    const allowed = await this.notFound(() =>
+      this.derived.recheckSharedReadyDerived({
+        familyId: current.familyId,
+        albumId: current.albumId,
+        shareId: current.shareId,
+        tokenHash: hashShareToken(token),
+        expected: view,
+      }),
+    );
+    if (!allowed) throw new PublicAuthError(404, "NOT_FOUND");
     return { bytes, contentType: "image/webp" };
   }
 

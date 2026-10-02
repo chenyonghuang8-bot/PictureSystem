@@ -9,6 +9,7 @@ export * from "./shares.js";
 export * from "./media-processing.js";
 export * from "./derived-serving.js";
 export * from "./gallery.js";
+export * from "./trash.js";
 
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),

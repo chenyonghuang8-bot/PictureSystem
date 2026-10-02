@@ -1,3 +1,4 @@
+import { ContentCoordination } from "../../../../packages/storage/src/phase7-coordination.js";
 import type {
   MySqlUploadRepository,
   UploadRecord,
@@ -324,6 +325,24 @@ export class StorageReconciler {
     // FAILED after a frozen finalize retains its candidate for diagnosis.
   }
 
+  private async verifyOriginal(
+    familyId: string,
+    sha256Hex: string,
+    byteSize: string,
+  ) {
+    const root = this.root!;
+    const read = await new ContentCoordination(root, {
+      familyId,
+      sha256Hex,
+      byteSize,
+    }).acquireReadOnly(30_000);
+    try {
+      return root.verifyOriginal(familyId, sha256Hex, byteSize);
+    } finally {
+      read.close();
+    }
+  }
+
   private async inspectFinalizing(
     upload: UploadRecord,
     budget: ScanBudget,
@@ -343,7 +362,7 @@ export class StorageReconciler {
       return;
     }
     try {
-      const verified = this.root!.verifyOriginal(
+      const verified = await this.verifyOriginal(
         upload.familyId,
         shaHex,
         upload.declaredSize.toString(),
@@ -416,7 +435,7 @@ export class StorageReconciler {
         return;
       }
       try {
-        root.verifyOriginal(
+        await this.verifyOriginal(
           upload.familyId,
           upload.computedSha256.toString("hex"),
           upload.declaredSize.toString(),
@@ -473,7 +492,7 @@ export class StorageReconciler {
     }
     let issue: "MISSING" | "CORRUPT" | null = null;
     try {
-      this.root!.verifyOriginal(
+      await this.verifyOriginal(
         object.familyId,
         object.sha256.toString("hex"),
         object.byteSize.toString(),
@@ -775,7 +794,7 @@ export class StorageReconciler {
             }
             if (known) {
               try {
-                this.root!.verifyOriginal(family.name, parsed[1], parsed[2]!);
+                await this.verifyOriginal(family.name, parsed[1], parsed[2]!);
                 result.finalizingCandidatesVerified += 1;
                 result.knownRecoverableFinalizingCandidates += 1;
               } catch {

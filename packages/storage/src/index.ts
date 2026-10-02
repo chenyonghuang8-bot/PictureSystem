@@ -8,6 +8,8 @@ import {
   type ImageProducerKind,
   type UnverifiedRenderedCandidate,
 } from "./image-renderer-producer.js";
+import { ContentCoordination } from "./phase7-coordination.js";
+import { RegisteredOriginalRun } from "./registered-consumer.js";
 import { pollWithBoundedBackoff } from "./original-download-polling.js";
 
 export type {
@@ -427,6 +429,13 @@ class VerifiedOriginalHandleImpl implements VerifiedOriginalHandle {
     }
   }
 
+  async prepareRegisteredConsumer() {
+    if (this.#consumed || this.#handle === null)
+      throw new StorageSafetyError("ORIGINAL_HANDLE_CONSUMED");
+    this.#consumed = true;
+    return RegisteredOriginalRun.prepare(this.#handle);
+  }
+
   close() {
     const handle = this.#handle;
     if (handle === null) return;
@@ -479,15 +488,18 @@ class VerifiedOriginalDownloadImpl implements VerifiedOriginalDownload {
   #finished = false;
   #abortSignal: AbortSignal;
   #onAbort: () => void;
+  #onNativeSettled: () => void;
 
   constructor(
     handle: NativeOriginalDownload,
     native: NativeBinding,
     signal: AbortSignal,
+    onNativeSettled: () => void,
   ) {
     this.#handle = handle;
     this.#native = native;
     this.#abortSignal = signal;
+    this.#onNativeSettled = onNativeSettled;
     this.#onAbort = () => {
       void this.cancel().catch(() => undefined);
     };
@@ -495,6 +507,7 @@ class VerifiedOriginalDownloadImpl implements VerifiedOriginalDownload {
   }
 
   async readNext(): Promise<OriginalDownloadReadResult> {
+    if (this.#finished && !this.#cancelled) return { done: true };
     if (this.#cancelled || this.#handle === null) {
       throw new StorageSafetyError("ORIGINAL_DOWNLOAD_CLOSED");
     }
@@ -530,6 +543,7 @@ class VerifiedOriginalDownloadImpl implements VerifiedOriginalDownload {
       throw safetyError("ORIGINAL_DOWNLOAD_READ_FAILED", error);
     } finally {
       if (this.#active === operation) this.#active = null;
+      if (this.#finished) await this.#close(false);
     }
   }
 
@@ -564,6 +578,7 @@ class VerifiedOriginalDownloadImpl implements VerifiedOriginalDownload {
       }
       try {
         this.#native.closeOriginalDownload(handle);
+        this.#onNativeSettled();
       } catch (error) {
         throw safetyError("ORIGINAL_DOWNLOAD_CLOSE_FAILED", error);
       } finally {
@@ -578,6 +593,7 @@ class VerifiedOriginalDownloadImpl implements VerifiedOriginalDownload {
 export class OriginalReader {
   readonly markerId: string;
   readonly device: string;
+  readonly #rootPath: string;
   #handle: NativeOriginalReader | null;
   #native: NativeBinding;
 
@@ -588,7 +604,9 @@ export class OriginalReader {
       device: string;
     },
     native: NativeBinding,
+    rootPath: string,
   ) {
+    this.#rootPath = rootPath;
     this.#handle = result.handle;
     this.#native = native;
     this.markerId = result.markerId;
@@ -609,7 +627,7 @@ export class OriginalReader {
         native.closeOriginalReader(result.handle);
         throw new StorageSafetyError("MEDIA_ROOT_MARKER_MISMATCH");
       }
-      return new OriginalReader(result, native);
+      return new OriginalReader(result, native, root);
     } catch (error) {
       if (error instanceof StorageSafetyError) throw error;
       throw safetyError("ORIGINAL_READER_UNAVAILABLE", error);
@@ -624,6 +642,14 @@ export class OriginalReader {
     assertIdentifier(input.sha256Hex, SHA256, "SHA256_INVALID");
     assertIdentifier(input.byteSize, BYTE_SIZE, "BYTE_SIZE_INVALID");
     const reader = this.#requiredHandle();
+    const occupancy = await new ContentCoordination(
+      { mediaRoot: this.#rootPath, expectedMarkerId: this.markerId },
+      input,
+    )
+      .acquireReadOnly(30_000)
+      .catch((error) => {
+        throw safetyError("ORIGINAL_OPEN_FAILED", error);
+      });
     let nativeHandle: NativeOriginalHandle;
     try {
       nativeHandle = this.#native.openVerifiedOriginal(
@@ -633,13 +659,18 @@ export class OriginalReader {
         input.byteSize,
       );
     } catch (error) {
+      occupancy.close();
       throw safetyError("ORIGINAL_OPEN_FAILED", error);
     }
     const handle = new VerifiedOriginalHandleImpl(nativeHandle, this.#native);
     try {
       return await callback(handle);
     } finally {
-      handle.close();
+      try {
+        handle.close();
+      } finally {
+        occupancy.close();
+      }
     }
   }
 
@@ -653,6 +684,22 @@ export class OriginalReader {
     assertIdentifier(input.byteSize, BYTE_SIZE, "BYTE_SIZE_INVALID");
     options.signal.throwIfAborted();
     const reader = this.#requiredHandle();
+    let occupancy: Awaited<ReturnType<ContentCoordination["acquireReadOnly"]>>;
+    try {
+      occupancy = await new ContentCoordination(
+        { mediaRoot: this.#rootPath, expectedMarkerId: this.markerId },
+        input,
+      ).acquireReadOnly(30_000);
+    } catch (error) {
+      throw safetyError("ORIGINAL_DOWNLOAD_OPEN_FAILED", error);
+    }
+    let released = false;
+    const releaseOccupancy = () => {
+      if (!released) {
+        occupancy.close();
+        released = true;
+      }
+    };
     let handle: NativeOriginalDownload;
     try {
       handle = this.#native.startVerifiedOriginalDownload(
@@ -662,6 +709,7 @@ export class OriginalReader {
         input.byteSize,
       );
     } catch (error) {
+      releaseOccupancy();
       throw safetyError("ORIGINAL_DOWNLOAD_OPEN_FAILED", error);
     }
     const completion = waitForOriginalDownloadOpen(this.#native, handle);
@@ -686,6 +734,7 @@ export class OriginalReader {
         handle,
         this.#native,
         options.signal,
+        releaseOccupancy,
       );
       return await callback(download);
     } finally {
@@ -701,6 +750,7 @@ export class OriginalReader {
         }
         try {
           this.#native.closeOriginalDownload(handle);
+          releaseOccupancy();
         } catch {
           // Native open failure already closed its owned resources.
         }
@@ -815,8 +865,13 @@ export async function renderUnverifiedCandidate(
   if (!(handle instanceof VerifiedOriginalHandleImpl)) {
     throw new StorageSafetyError("ORIGINAL_HANDLE_INVALID");
   }
-  const { fd } = handle.consumeForFixedProbe();
-  return await runImageRendererProducerFd(fd, kind);
+  const run = await handle.prepareRegisteredConsumer();
+  try {
+    return await runImageRendererProducerFd(run, kind);
+  } finally {
+    handle.close();
+    run.close();
+  }
 }
 
 export async function runFixedMetadataParser(
@@ -846,100 +901,116 @@ async function runFixedOriginalChild(
   timeoutMs: number,
   validate: (parsed: unknown) => boolean,
 ): Promise<unknown> {
-  const { fd, rootPath } = handle.consumeForFixedProbe();
+  const run = await handle.prepareRegisteredConsumer();
+  const rootPath = "/"; // The fixed sandbox profile grants no media-root path access.
   const packageRoot = resolve(import.meta.dirname, "..");
   const supervisor = resolve(packageRoot, "build/original_probe_supervisor");
   const childExecutable = resolve(packageRoot, "build", executableName);
   const sandboxProfile = resolve(packageRoot, "native/original-probe.sb");
 
-  return await new Promise<unknown>((resolveResult, reject) => {
-    let child;
-    try {
-      child = spawn(
-        supervisor,
-        [
-          sandboxProfile,
-          childExecutable,
-          rootPath,
-          homedir(),
-          kind,
-          timeoutMs.toString(),
-        ],
-        {
-          stdio: ["ignore", "pipe", "pipe", fd, "pipe"],
-          env: { PATH: "/usr/bin:/bin", LANG: "C" },
-        },
-      );
-    } catch (error) {
-      closeSync(fd);
-      reject(safetyError("ISOLATED_PROBE_LAUNCH_FAILED", error));
-      return;
-    }
-    closeSync(fd);
-    const childStdout = child.stdout;
-    const childStderr = child.stderr;
-    if (childStdout === null || childStderr === null) {
-      child.stdio[4]?.destroy();
-      child.kill("SIGTERM");
-      reject(new StorageSafetyError("ISOLATED_PROBE_PIPE_MISSING"));
-      return;
-    }
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let stdoutSize = 0;
-    let stderrSize = 0;
-    let settled = false;
-    const fail = (reason: string) => {
-      if (settled) return;
-      settled = true;
-      child.stdio[4]?.destroy();
-      reject(new StorageSafetyError(reason));
-    };
-    childStdout.on("data", (chunk: Buffer) => {
-      stdoutSize += chunk.length;
-      if (stdoutSize > 64 * 1024) {
-        fail("PROBE_STDOUT_LIMIT");
-        return;
-      }
-      stdout.push(chunk);
-    });
-    childStderr.on("data", (chunk: Buffer) => {
-      stderrSize += chunk.length;
-      if (stderrSize > 16 * 1024) {
-        fail("PROBE_STDERR_LIMIT");
-        return;
-      }
-      stderr.push(chunk);
-    });
-    child.once("error", () => fail("ISOLATED_PROBE_LAUNCH_FAILED"));
-    child.once("close", (code, signal) => {
-      child.stdio[4]?.destroy();
-      if (settled) return;
-      settled = true;
-      if (signal !== null || code !== 0 || stderrSize !== 0) {
-        reject(
-          new StorageSafetyError(
-            code === 78
-              ? "PROBE_TIMEOUT"
-              : `PROBE_EXECUTION_FAILED:${code ?? "SIGNAL"}`,
-          ),
-        );
-        return;
-      }
-      let parsed: unknown;
+  try {
+    return await new Promise<unknown>((resolveResult, reject) => {
+      let child;
       try {
-        parsed = JSON.parse(Buffer.concat(stdout).toString("utf8"));
-      } catch {
-        reject(new StorageSafetyError("PROBE_PROTOCOL_INVALID"));
+        child = spawn(
+          supervisor,
+          [
+            sandboxProfile,
+            childExecutable,
+            rootPath,
+            homedir(),
+            kind,
+            timeoutMs.toString(),
+          ],
+          {
+            stdio: ["ignore", "pipe", "pipe", run.childFd, "pipe"],
+            env: { PATH: "/usr/bin:/bin", LANG: "C" },
+          },
+        );
+      } catch (error) {
+        reject(safetyError("ISOLATED_PROBE_LAUNCH_FAILED", error));
         return;
       }
-      if (!validate(parsed)) {
-        reject(new StorageSafetyError("PROBE_PROTOCOL_INVALID"));
+      const childStdout = child.stdout;
+      const childStderr = child.stderr;
+      if (childStdout === null || childStderr === null) {
+        child.stdio[4]?.destroy();
+        child.kill("SIGTERM");
+        reject(new StorageSafetyError("ISOLATED_PROBE_PIPE_MISSING"));
         return;
       }
-      resolveResult(parsed);
+      const stdout: Buffer[] = [];
+      const stderr: Buffer[] = [];
+      let stdoutSize = 0;
+      let stderrSize = 0;
+      let settled = false;
+      const fail = (reason: string) => {
+        if (settled) return;
+        settled = true;
+        child.stdio[4]?.destroy();
+        reject(new StorageSafetyError(reason));
+      };
+      childStdout.on("data", (chunk: Buffer) => {
+        stdoutSize += chunk.length;
+        if (stdoutSize > 64 * 1024) {
+          fail("PROBE_STDOUT_LIMIT");
+          return;
+        }
+        stdout.push(chunk);
+      });
+      childStderr.on("data", (chunk: Buffer) => {
+        stderrSize += chunk.length;
+        if (stderrSize > 16 * 1024) {
+          fail("PROBE_STDERR_LIMIT");
+          return;
+        }
+        stderr.push(chunk);
+      });
+      child.once("error", () => fail("ISOLATED_PROBE_LAUNCH_FAILED"));
+      child.once("close", (code, signal) => {
+        child.stdio[4]?.destroy();
+        try {
+          run.verifySettlement();
+        } catch {
+          reject(new StorageSafetyError("HANDOFF_UNSETTLED"));
+          return;
+        }
+        if (settled) return;
+        settled = true;
+        if (signal !== null || code !== 0 || stderrSize !== 0) {
+          reject(
+            new StorageSafetyError(
+              code === 78
+                ? "PROBE_TIMEOUT"
+                : `PROBE_EXECUTION_FAILED:${code ?? "SIGNAL"}`,
+            ),
+          );
+          return;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(Buffer.concat(stdout).toString("utf8"));
+        } catch {
+          reject(new StorageSafetyError("PROBE_PROTOCOL_INVALID"));
+          return;
+        }
+        if (!validate(parsed)) {
+          reject(new StorageSafetyError("PROBE_PROTOCOL_INVALID"));
+          return;
+        }
+        resolveResult(parsed);
+      });
+      void run
+        .start(
+          child.pid!,
+          () => child.exitCode !== null || child.signalCode !== null,
+        )
+        .catch(() => fail("ORIGINAL_HANDOFF_FAILED"));
     });
-  });
+  } finally {
+    handle.close();
+    run.close();
+  }
 }
 
 function isValidProbeResult(

@@ -20,7 +20,7 @@ import {
   assertMigrationReadiness,
   createDatabase,
   MySqlDerivedReadRepository,
-} from "../../packages/db/src/index.js";
+} from "../../packages/db/dist/index.js";
 import { CapacityGate, StorageRoot } from "../../packages/storage/src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -65,6 +65,7 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
   });
   const jobs = new Map<string, string>();
   const users = new Map<string, string>();
+  const sessions = new Map<string, { id: string; hash: Buffer }>();
   const reads: Array<Record<string, unknown>> = [];
   let userId = "";
   let familyA = "";
@@ -84,8 +85,8 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
 
   const authService = {
     authenticate: vi.fn(async () => ({
-      identity: { userId, sessionId: "1" },
-      tokenHash: Buffer.alloc(32),
+      identity: { userId, sessionId: sessions.get(userId)!.id },
+      tokenHash: sessions.get(userId)!.hash,
     })),
   } as unknown as AuthService;
   const app = createApp({
@@ -291,6 +292,9 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
         users.get(foreignUser),
       ].filter((id): id is string => Boolean(id));
       if (userIds.length > 0) {
+        await database.pool.query("DELETE FROM sessions WHERE user_id IN (?)", [
+          userIds,
+        ]);
         await database.pool.query("DELETE FROM users WHERE id IN (?)", [
           userIds,
         ]);
@@ -455,6 +459,12 @@ describe.sequential("Phase 4D3c-2 derived serving", () => {
     );
     const memberId = String(member.insertId);
     users.set(memberId, String(user.insertId));
+    const hash = randomBytes(32);
+    const [session] = await connection.query(
+      `INSERT INTO sessions (user_id,token_hash,client_type,authenticated_at,last_seen_at,expires_at) VALUES (?, ?,'WEB',CURRENT_TIMESTAMP(3),CURRENT_TIMESTAMP(3),DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 1 DAY))`,
+      [String(user.insertId), hash],
+    );
+    sessions.set(String(user.insertId), { id: String(session.insertId), hash });
     return memberId;
   }
 

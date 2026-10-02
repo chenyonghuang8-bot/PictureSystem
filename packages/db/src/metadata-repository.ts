@@ -1,3 +1,4 @@
+import { isActiveMedia } from "./media-lifecycle.js";
 import type {
   Phase4FailureCode,
   Phase4JobState,
@@ -65,6 +66,9 @@ type StorageRow = RowDataPacket & {
 };
 
 type MediaRow = RowDataPacket & {
+  lifecycleRevision: string;
+  trashedAt: Date | null;
+  purgeIntentId: string | null;
   id: string;
   familyId: string;
   storageObjectId: string;
@@ -286,7 +290,8 @@ async function lockContext(
     `SELECT CAST(id AS CHAR) AS id,CAST(family_id AS CHAR) AS familyId,
       CAST(storage_object_id AS CHAR) AS storageObjectId,
       CAST(source_upload_id AS CHAR) AS sourceUploadId,uploaded_at AS uploadedAt,
-      CAST(generation AS CHAR) AS generation,recipe_id AS recipeId
+      CAST(generation AS CHAR) AS generation,recipe_id AS recipeId,
+      CAST(lifecycle_revision AS CHAR) lifecycleRevision,trashed_at trashedAt,CAST(purge_intent_id AS CHAR) purgeIntentId
      FROM media_items WHERE id=? AND family_id=? FOR UPDATE`,
     [fence.mediaId, fence.familyId],
   );
@@ -317,6 +322,8 @@ function isCurrentProbeLease(
   preparation?: MetadataPreparation,
 ) {
   return (
+    isActiveMedia(context.media) &&
+    BigInt(context.media.lifecycleRevision) === fence.lifecycleRevision &&
     context.storage.state === "AVAILABLE" &&
     context.storage.familyId === fence.familyId &&
     (preparation === undefined ||
@@ -718,6 +725,8 @@ function assertFence(fence: LeaseFence) {
   if (
     fence.generation < 1n ||
     fence.leaseEpoch < 1n ||
+    typeof fence.lifecycleRevision !== "bigint" ||
+    fence.lifecycleRevision < 1n ||
     !Buffer.isBuffer(fence.workerId) ||
     fence.workerId.byteLength !== 16
   ) {

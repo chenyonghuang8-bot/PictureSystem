@@ -12,6 +12,11 @@
 #include <time.h>
 #include <unistd.h>
 #include "process_lifecycle.h"
+#include <spawn.h>
+#include "registered_consumer_protocol.h"
+#ifndef PS_METADATA_BOOTSTRAP_PATH
+#error Fixed metadata bootstrap required
+#endif
 
 #define STDOUT_LIMIT (64 * 1024)
 #define STDERR_LIMIT (16 * 1024)
@@ -24,7 +29,11 @@ static long long monotonic_ms(void) {
 }
 
 static int approved_kind(const char *kind) {
-  return strcmp(kind, "capabilities") == 0 ||
+  return
+#ifdef PS_P7_TEST_BARRIERS
+         strcmp(kind,"phase7-hold")==0 ||
+#endif
+         strcmp(kind, "capabilities") == 0 ||
          strcmp(kind, "metadata") == 0 ||
          strcmp(kind, "fork-denied") == 0 ||
          strcmp(kind, "exec-denied") == 0 ||
@@ -45,10 +54,45 @@ int main(int argc, char **argv) {
   if (end == NULL || *end != '\0' || timeout_ms < 50 || timeout_ms > 30000)
     return 64;
 
+  p7_supervisor registered;int registered_run=p7_is_socket(3);
+#ifndef PS_LEGACY_QUALIFICATION
+  if(!registered_run)return 64;
+#endif
+  if(registered_run&&p7_supervisor_init(&registered,3)!=0)return 64;
   int out_pipe[2], err_pipe[2];
   if (pipe(out_pipe) != 0 || pipe(err_pipe) != 0) return 70;
-  pid_t pid = fork();
+  int delivery[2]={-1,-1};
+  pid_t pid=-1;
+  if(registered_run) {
+    if(socketpair(AF_UNIX,SOCK_DGRAM,0,delivery)!=0)return 70;
+    fcntl(delivery[0],F_SETFD,FD_CLOEXEC);fcntl(delivery[1],F_SETFD,FD_CLOEXEC);
+    registered.consumer_fd=delivery[0];
+    posix_spawn_file_actions_t actions;posix_spawnattr_t attr;
+    if(posix_spawn_file_actions_init(&actions)||posix_spawnattr_init(&attr))return 70;
+    int source=fcntl(delivery[1],F_DUPFD_CLOEXEC,10);
+    if(source<0||posix_spawnattr_setflags(&attr,POSIX_SPAWN_CLOEXEC_DEFAULT|POSIX_SPAWN_SETPGROUP)||
+      posix_spawnattr_setpgroup(&attr,0)||
+#ifdef PS_P7_TEST_BARRIERS
+      posix_spawn_file_actions_adddup2(&actions,6,0)||
+#else
+      posix_spawn_file_actions_addopen(&actions,0,"/dev/null",O_RDONLY,0)||
+#endif
+
+      posix_spawn_file_actions_adddup2(&actions,out_pipe[1],1)||
+      posix_spawn_file_actions_adddup2(&actions,err_pipe[1],2)||
+      posix_spawn_file_actions_adddup2(&actions,source,3)||
+      posix_spawn_file_actions_addclose(&actions,source))return 70;
+    char *const args[]={(char*)PS_METADATA_BOOTSTRAP_PATH,argv[1],argv[2],argv[3],argv[4],argv[5],NULL};
+    char *const clean[]={(char*)"PATH=/usr/bin:/bin",(char*)"LANG=C",NULL};
+    int launch=posix_spawn(&pid,PS_METADATA_BOOTSTRAP_PATH,&actions,&attr,args,clean);
+    close(source);close(delivery[1]);posix_spawn_file_actions_destroy(&actions);posix_spawnattr_destroy(&attr);
+    if(launch)return 70;
+  }
+#ifdef PS_LEGACY_QUALIFICATION
+  else pid=fork();
+#endif
   if (pid < 0) return 70;
+#ifdef PS_LEGACY_QUALIFICATION
   if (pid == 0) {
     (void)setpgid(0, 0);
     int null_fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
@@ -74,9 +118,13 @@ int main(int argc, char **argv) {
     execve("/usr/bin/sandbox-exec", child_argv, clean_env);
     _exit(71);
   }
+#endif
   (void)setpgid(pid, pid);
   ps_lifecycle owner;
   ps_lifecycle_init(&owner, pid);
+  if(registered_run&&p7_supervisor_deliver(&registered,pid)!=0) {
+    ps_stop_exact(&owner,monotonic_ms,TERM_GRACE_MS);return 79;
+  }
   close(out_pipe[1]); close(err_pipe[1]);
   (void)fcntl(out_pipe[0], F_SETFL, O_NONBLOCK);
   (void)fcntl(err_pipe[0], F_SETFL, O_NONBLOCK);
@@ -126,6 +174,7 @@ int main(int argc, char **argv) {
   if (!child_done && ps_stop_exact(&owner, monotonic_ms, TERM_GRACE_MS) < 0)
     failed = 74;
   close(out_pipe[0]); close(err_pipe[0]);
+  if(registered_run&&p7_supervisor_settle(&registered,owner.state==PS_REAPED)!=0)failed=79;
   if (failed != 0) return failed;
   int denied_operation = strcmp(argv[5], "fork-denied") == 0 ||
                          strcmp(argv[5], "exec-denied") == 0;

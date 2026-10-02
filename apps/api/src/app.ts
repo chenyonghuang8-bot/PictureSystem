@@ -18,6 +18,8 @@ import { registerDerivedRoutes } from "./derived-serving/routes.js";
 import type { DerivedReadService } from "./derived-serving/service.js";
 import type { OriginalDownloadService } from "./original-download/service.js";
 import type { PreviewDownloadService } from "./preview-download/service.js";
+import type { TrashService } from "./trash/service.js";
+import { registerTrashRoutes } from "./trash/routes.js";
 
 export function createApp(options?: {
   authService: AuthService;
@@ -29,6 +31,7 @@ export function createApp(options?: {
   derivedService?: DerivedReadService;
   originalDownloadService?: OriginalDownloadService;
   previewDownloadService?: PreviewDownloadService;
+  trashService?: TrashService;
   publicApiOrigin?: string;
   trustedOrigins: ReadonlySet<string>;
   trustedProxies?: readonly string[];
@@ -52,6 +55,12 @@ export function createApp(options?: {
   );
 
   if (options) {
+    if (options.trashService)
+      registerTrashRoutes(app, {
+        authService: options.authService,
+        trashService: options.trashService,
+        trustedOrigins: options.trustedOrigins,
+      });
     registerAuthRoutes(app, {
       service: options.authService,
       trustedOrigins: options.trustedOrigins,

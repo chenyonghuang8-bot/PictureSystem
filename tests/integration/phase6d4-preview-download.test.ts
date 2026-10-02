@@ -584,6 +584,19 @@ describe.sequential("Phase 6D4 private preview download", () => {
 
   it.each([
     {
+      name: "Trash",
+      mutate: (connection: PoolConnection) =>
+        connection.query(
+          "UPDATE media_items SET trashed_at=CURRENT_TIMESTAMP(3),trashed_by_member_id=?,purge_after=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 30 DAY),lifecycle_revision=lifecycle_revision+1 WHERE id=?",
+          [owner.memberId, mediaId],
+        ),
+      restore: (connection: PoolConnection) =>
+        connection.query(
+          "UPDATE media_items SET trashed_at=NULL,trashed_by_member_id=NULL,purge_after=NULL,lifecycle_revision=lifecycle_revision+1 WHERE id=?",
+          [mediaId],
+        ),
+    },
+    {
       name: "ACL",
       mutate: (connection: PoolConnection) =>
         putView(connection, familyId, albumId, viewer.memberId, false),
@@ -829,6 +842,19 @@ describe.sequential("Phase 6D4 private preview download", () => {
 
   function stateFirstMutations() {
     return [
+      {
+        name: "Trash",
+        mutate: (connection: PoolConnection) =>
+          connection.query(
+            "UPDATE media_items SET trashed_at=CURRENT_TIMESTAMP(3),trashed_by_member_id=?,purge_after=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 30 DAY),lifecycle_revision=lifecycle_revision+1 WHERE id=?",
+            [owner.memberId, mediaId],
+          ),
+        restore: (connection: PoolConnection) =>
+          connection.query(
+            "UPDATE media_items SET trashed_at=NULL,trashed_by_member_id=NULL,purge_after=NULL,lifecycle_revision=lifecycle_revision+1 WHERE id=?",
+            [mediaId],
+          ),
+      },
       row(
         "ACL",
         (c) => putView(c, familyId, albumId, viewer.memberId, false),

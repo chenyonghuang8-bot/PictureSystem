@@ -36,6 +36,8 @@ type PreviewDownloadRepository = Pick<
 export type PreviewDownloadReader = {
   read(
     identity: {
+      originalSha256Hex: string;
+      originalByteSize: string;
       familyId: string;
       mediaId: string;
       generation: bigint;
@@ -148,6 +150,8 @@ export class PreviewDownloadService {
           kind: "PREVIEW",
           sha256Hex: authorized.sha256Hex,
           byteSize: authorized.byteSize,
+          originalSha256Hex: authorized.originalSha256Hex,
+          originalByteSize: authorized.originalByteSize,
         },
         controller.signal,
       );

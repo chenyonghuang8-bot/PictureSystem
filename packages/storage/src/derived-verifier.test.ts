@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ContentCoordination } from "./phase7-coordination.js";
 
 import {
   DerivedStore,
@@ -52,6 +53,7 @@ function identity(): DerivedTempPermitIdentity {
     recipeId: 1,
     kind: "THUMBNAIL",
     jobId: "42",
+    lifecycleRevision: 1n,
     leaseEpoch: 5n,
     workerId: randomBytes(16),
   };
@@ -182,6 +184,38 @@ function partPath(rootPath: string) {
 }
 
 describe("isolated verify-output", () => {
+  it("settles a registered Derived handoff while the parent sealed capability retains its own occupancy", async () => {
+    await withStore(async ({ capability, store }) => {
+      const coordination = new ContentCoordination(capability.root, {
+        familyId: "7",
+        sha256Hex: "b".repeat(64),
+        byteSize: "5",
+      });
+      const lifecycle = await coordination.acquireLifecycle("S", 0);
+      const read = await coordination.acquireRead(lifecycle, "S", 0);
+      const sealed = await sealBytes(store, capability, opaque);
+      try {
+        expect(
+          sealed.verify(store, { ...binding, readGuard: read }),
+        ).toMatchObject({ width: 8, height: 4, staticImage: true });
+        const exclusiveLife = await coordination
+          .acquireLifecycle("X", 0)
+          .catch(() => null);
+        expect(exclusiveLife).toBeNull();
+        sealed.consume(store);
+      } finally {
+        read.close();
+        lifecycle.close();
+      }
+      const exclusive = await coordination.acquireLifecycle("X", 0);
+      try {
+        const occupancy = await coordination.acquireRead(exclusive, "X", 0);
+        occupancy.close();
+      } finally {
+        exclusive.close();
+      }
+    });
+  });
   it("full-decodes a sealed static WebP and reports decoded geometry", async () => {
     await withStore(async ({ rootPath, capability, store }) => {
       const sealed = await sealBytes(store, capability, opaque);

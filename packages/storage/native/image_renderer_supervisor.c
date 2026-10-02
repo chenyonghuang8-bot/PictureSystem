@@ -18,6 +18,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "process_lifecycle.h"
+#include "registered_consumer_protocol.h"
 
 #ifndef PS_RENDERER_BOOTSTRAP_PATH
 #error PS_RENDERER_BOOTSTRAP_PATH must be fixed at build time
@@ -114,6 +115,12 @@ static int owned_pipe(int pair[2]) {
 }
 
 int main(int argc, char **argv) {
+  p7_supervisor registered;
+  int registered_run=p7_is_socket(3);
+#if defined(PS_RENDER_BINARY) && !defined(PS_LEGACY_QUALIFICATION)
+  if(!registered_run)return 64;
+#endif
+  if(registered_run && p7_supervisor_init(&registered,3)!=0)return 64;
   (void)argv;
   if (argc != 1) return 64;
   if (fcntl(3, F_GETFL) < 0 || fcntl(4, F_GETFL) < 0) return 64;
@@ -140,7 +147,14 @@ int main(int argc, char **argv) {
 #else
   if (owned_pipe(control) != 0 || owned_pipe(errors) != 0) return 70;
 #endif
-  int input_source = fcntl(3, F_DUPFD_CLOEXEC, 10);
+  int delivery_pair[2]={-1,-1};
+  if(registered_run && socketpair(AF_UNIX,SOCK_DGRAM,0,delivery_pair)!=0)return 70;
+  if(registered_run) {
+    fcntl(delivery_pair[0],F_SETFD,FD_CLOEXEC);
+    fcntl(delivery_pair[1],F_SETFD,FD_CLOEXEC);
+    registered.consumer_fd=delivery_pair[0];
+  }
+  int input_source = fcntl(registered_run?delivery_pair[1]:3, F_DUPFD_CLOEXEC, 10);
   if (input_source < 0) return 70;
   posix_spawn_file_actions_t actions;
   posix_spawnattr_t attributes;
@@ -181,6 +195,12 @@ int main(int argc, char **argv) {
   if (launch != 0) { close(control[0]); close(errors[0]); return 71; }
   ps_lifecycle owner;
   ps_lifecycle_init(&owner, child);
+  if(registered_run) {
+    close(delivery_pair[1]);
+    if(p7_supervisor_deliver(&registered,child)!=0) {
+      ps_stop_exact(&owner,now_ms,250);return 93;
+    }
+  }
   (void)fcntl(control[0], F_SETFL, O_NONBLOCK);
   (void)fcntl(errors[0], F_SETFL, O_NONBLOCK);
 #ifdef PS_RENDER_BINARY
@@ -287,6 +307,7 @@ int main(int argc, char **argv) {
   if (owner.state != PS_REAPED && ps_stop_exact(&owner, now_ms, 250) < 0)
     failure = 83;
   close(control[0]); close(errors[0]);
+  if(registered_run && p7_supervisor_settle(&registered,owner.state==PS_REAPED)!=0)failure=94;
 #ifdef PS_RENDER_BINARY
   close(binary[0]);
 #endif

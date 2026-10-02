@@ -12,6 +12,7 @@ const fence = {
   jobId: "3",
   generation: 1n,
   workerId: Buffer.alloc(16, 7),
+  lifecycleRevision: 1n,
   leaseEpoch: 1n,
 };
 
