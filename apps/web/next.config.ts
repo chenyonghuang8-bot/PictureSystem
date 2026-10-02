@@ -5,6 +5,9 @@ const apiOrigin =
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Search URLs carry private calendar/album/favorite conditions and cursors.
+  // Disable only raw incoming request logs; keep compilation/errors/warnings.
+  logging: { incomingRequests: false },
   transpilePackages: ["@family-album/ui-tokens", "@family-album/contracts"],
   webpack: (config) => {
     config.resolve.extensionAlias = {
@@ -13,12 +16,16 @@ const nextConfig: NextConfig = {
     return config;
   },
   async rewrites() {
-    return [
-      {
-        source: "/api/v1/:path*",
-        destination: `${apiOrigin}/api/v1/:path*`,
-      },
-    ];
+    // Let the exact search Route Handler own its safe error boundary; all
+    // other API paths retain the existing external forwarding destination.
+    return {
+      fallback: [
+        {
+          source: "/api/v1/:path*",
+          destination: `${apiOrigin}/api/v1/:path*`,
+        },
+      ],
+    };
   },
 };
 

@@ -1,3 +1,8 @@
+import {
+  familySearchQuerySchema,
+  type FamilySearchFilters,
+} from "@family-album/contracts";
+
 const ID = /^[1-9][0-9]*$/;
 
 export function assertGalleryId(id: string) {
@@ -23,6 +28,50 @@ export function timelinePath(
   return galleryQuery(`/api/v1/families/${familyId}/timeline`, {
     limit: input.limit,
     cursor: input.cursor,
+  });
+}
+
+export function searchPath(
+  familyId: string,
+  filters: FamilySearchFilters,
+  input: { cursor?: string; limit: number },
+) {
+  assertGalleryId(familyId);
+  return galleryQuery(`/api/v1/families/${familyId}/search`, {
+    fromDate: filters.fromDate,
+    toDate: filters.toDate,
+    albumId: filters.albumId,
+    favoritesOnly: filters.favoritesOnly ? "true" : undefined,
+    limit: input.limit,
+    cursor: input.cursor,
+  });
+}
+
+export function searchFiltersFromUrl(
+  values: Record<string, string | string[] | undefined>,
+): FamilySearchFilters {
+  if (
+    Object.keys(values).some(
+      (key) =>
+        !["fromDate", "toDate", "albumId", "favoritesOnly"].includes(key),
+    )
+  )
+    throw new Error("SEARCH_FILTERS_INVALID");
+  const query = familySearchQuerySchema.parse(values);
+  return {
+    ...(query.fromDate ? { fromDate: query.fromDate } : {}),
+    ...(query.toDate ? { toDate: query.toDate } : {}),
+    ...(query.albumId ? { albumId: query.albumId } : {}),
+    favoritesOnly: query.favoritesOnly,
+  };
+}
+
+export function searchFilterQuery(filters: FamilySearchFilters) {
+  return galleryQuery("/", {
+    fromDate: filters.fromDate,
+    toDate: filters.toDate,
+    albumId: filters.albumId,
+    favoritesOnly: filters.favoritesOnly ? "true" : undefined,
   });
 }
 

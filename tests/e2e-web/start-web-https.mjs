@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
+  createWriteStream,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -60,6 +61,16 @@ if (generated.status !== 0) {
   throw new Error("PHASE5_WEB_E2E_CERTIFICATE_GENERATION_FAILED");
 }
 
+// Capture actual Next stdout/stderr only inside the already-validated owned run.
+// Forward both streams unchanged; the observer must not redact or silence logs.
+const webLog =
+  configuredCertificateDirectory && configuredRunRoot
+    ? createWriteStream(join(configuredRunRoot, "web-observation.log"), {
+        flags: "wx",
+        mode: 0o600,
+      })
+    : null;
+
 const child = spawn(
   "pnpm",
   [
@@ -85,9 +96,16 @@ const child = spawn(
       ...process.env,
       FAMILY_ALBUM_API_ORIGIN: "http://127.0.0.1:4400",
     },
-    stdio: "inherit",
+    stdio: webLog ? ["ignore", "pipe", "pipe"] : "inherit",
   },
 );
+
+if (webLog) {
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.pipe(webLog, { end: false });
+    stream.pipe(stream === child.stdout ? process.stdout : process.stderr);
+  }
+}
 
 let stopping = false;
 function stop(signal) {
@@ -102,8 +120,12 @@ child.once("exit", (code, signal) => {
   if (standaloneCertificateDirectory) {
     rmSync(certificateDirectory, { recursive: true, force: true });
   }
-  if (signal) process.kill(process.pid, signal);
-  else process.exit(code ?? 1);
+  const finish = () => {
+    if (signal) process.kill(process.pid, signal);
+    else process.exit(code ?? 1);
+  };
+  if (webLog) webLog.end(finish);
+  else finish();
 });
 
 function assertConfiguredCertificateOwnership(input) {

@@ -647,7 +647,7 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
         },
       );
       await page.route(
-        `**/api/v1/families/${familyId}/timeline*`,
+        `**/api/v1/families/${familyId}/search*`,
         async (route) => {
           const response = await route.fetch();
           const body = await response.json();
@@ -677,6 +677,160 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
       expect(posts).toBe(1);
     } finally {
       await context.unrouteAll({ behavior: "wait" });
+      await context.close();
+    }
+  });
+
+  test("8A1 real HTTPS search applies date/album/favorite, keysets, Viewer refresh and URL history", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: { width: 1440, height: 1000 },
+    });
+    try {
+      await realLogin(context);
+      const runRoot = process.env.PHASE6D5_WEB_E2E_RUN_ROOT;
+      if (!runRoot) throw new Error("OWNED_HTTPS_RUN_ROOT_REQUIRED");
+      writeFileSync(
+        resolve(rootDir, ".cache/phase8a1/https-run.json"),
+        JSON.stringify({
+          runRoot,
+          startedAt: new Date().toISOString(),
+          syntheticOnly: true,
+        }) + "\n",
+      );
+      const endpoint = `/api/v1/families/${familyId}/search`;
+      const first = await context.request.get(`${endpoint}?limit=1`);
+      expect(first.status()).toBe(200);
+      expect(first.headers()["cache-control"]).toBe("private, no-store");
+      const firstPage = await first.json();
+      expect(firstPage.media).toHaveLength(1);
+      expect(firstPage.nextCursor).toBeTruthy();
+      const second = await context.request.get(
+        `${endpoint}?limit=1&cursor=${encodeURIComponent(firstPage.nextCursor)}`,
+      );
+      const secondPage = await second.json();
+      expect(secondPage.media).toHaveLength(1);
+      expect(secondPage.media[0].mediaId).not.toBe(firstPage.media[0].mediaId);
+      expect(secondPage.nextCursor).toBeNull();
+      const bad = await context.request.get(`${endpoint}?favoritesOnly=false`);
+      expect(bad.status()).toBe(400);
+      expect(bad.headers()["cache-control"]).toBe("private, no-store");
+      const privateMarker = "synthetic_private_search_marker_8a1";
+      const privateQuery = await context.request.get(
+        `${endpoint}?filename=${privateMarker}`,
+      );
+      expect(privateQuery.status()).toBe(400);
+      const logPath = process.env.PHASE6D5_API_OBSERVATION_LOG;
+      if (!logPath) throw new Error("OWNED_API_LOG_REQUIRED");
+      const observedLog = readFileSync(logPath, "utf8");
+      expect(observedLog.includes(privateMarker)).toBe(false);
+      expect(observedLog.includes(firstPage.nextCursor)).toBe(false);
+      const favorite = await context.request.put(
+        `/api/v1/albums/${albumId}/media/${mediaIds[0]}/favorite`,
+        {
+          headers: {
+            origin: "https://localhost:3443",
+            "content-type": "application/json",
+          },
+          data: {},
+        },
+      );
+      expect(favorite.status()).toBe(200);
+      const page = await context.newPage();
+      await page.goto("/");
+      await expect(page.locator(".gallery-cell")).toHaveCount(2);
+      await page.getByLabel("开始日期").fill("2026-09-01");
+      await page.getByLabel("结束日期").fill("2026-09-30");
+      await expect(
+        page.getByRole("option", { name: albumName, exact: true }),
+      ).toHaveCount(1);
+      await page.getByLabel("相册", { exact: true }).selectOption(albumId);
+      await page.getByLabel("仅我的收藏").check();
+      await page.getByRole("button", { name: "查找照片", exact: true }).click();
+      await expect(page.locator(".gallery-cell")).toHaveCount(1);
+      await expect(page).toHaveURL(/favoritesOnly=true/u);
+      await page.locator(".gallery-cell").click();
+      await page.getByRole("button", { name: "取消收藏", exact: true }).click();
+      await expect(page.locator(".gallery-viewer")).toHaveCount(0);
+      await expect(page.locator(".gallery-cell")).toHaveCount(0);
+      await expect(page.getByText("还没有照片", { exact: true })).toBeVisible();
+      await expect(page).toHaveURL(/favoritesOnly=true/u);
+      await page.getByRole("button", { name: "清除筛选", exact: true }).click();
+      await expect(page.locator(".gallery-cell")).toHaveCount(2);
+      await page.goBack();
+      await expect(page.getByLabel("仅我的收藏")).toBeChecked();
+      await expect(page.locator(".gallery-cell")).toHaveCount(0);
+      await page.setViewportSize({ width: 390, height: 844 });
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+      await page.reload();
+      await expect(page.getByLabel("仅我的收藏")).toBeChecked();
+      await expect(page.locator(".gallery-cell")).toHaveCount(0);
+      // R1: inspect unmodified output from the actual Next child process,
+      // after SSR URL refresh and search-proxy pagination/invalid-query traffic.
+      const webLogPath = resolve(runRoot, "web-observation.log");
+      await expect
+        .poll(() => readFileSync(webLogPath, "utf8").includes("Ready"))
+        .toBe(true);
+      const webLog = readFileSync(webLogPath, "utf8");
+      expect(webLog.includes("Self-signed certificates")).toBe(true);
+      for (const sensitive of [
+        "fromDate=",
+        "toDate=",
+        "albumId=",
+        "favoritesOnly=",
+        "cursor=",
+        privateMarker,
+        firstPage.nextCursor,
+      ]) {
+        expect(webLog.includes(sensitive)).toBe(false);
+      }
+      writeFileSync(
+        resolve(rootDir, ".cache/phase8a1-r1-e1/web-log-regression.json"),
+        JSON.stringify({
+          checkedAt: new Date().toISOString(),
+          source: "actual-next-stdout-stderr",
+          rawAccessLogging: false,
+          startupCaptured: true,
+          stderrWarningCaptured: true,
+          ssrReloadExercised: true,
+          proxyPaginationExercised: true,
+          invalidQueryExercised: true,
+          sensitiveQueriesAbsent: true,
+          ownedRunRoot: runRoot,
+        }) + "\n",
+      );
+      copyFileSync(
+        webLogPath,
+        resolve(rootDir, ".cache/phase8a1-r1-e1/web-observation.log"),
+      );
+      const viewer = await browser.newContext({ ignoreHTTPSErrors: true });
+      try {
+        await realLogin(viewer, viewerUsername);
+        const hidden = await viewer.request.get(
+          `${endpoint}?albumId=${hiddenAlbumId}`,
+        );
+        expect(hidden.status()).toBe(200);
+        expect(await hidden.json()).toEqual({ media: [], nextCursor: null });
+        expect(hidden.headers()["cache-control"]).toBe("private, no-store");
+        const denied = await viewer.request.get(
+          "/api/v1/families/18446744073709551615/search",
+        );
+        expect(denied.status()).toBe(404);
+        expect(denied.headers()["cache-control"]).toBe("private, no-store");
+      } finally {
+        await viewer.close();
+      }
+      await context.clearCookies();
+      const signedOut = await context.request.get(endpoint);
+      expect(signedOut.status()).toBe(401);
+      expect(signedOut.headers()["cache-control"]).toBe("private, no-store");
+    } finally {
       await context.close();
     }
   });
@@ -1239,6 +1393,14 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
         page.locator(".gallery-cell").first(),
         page.getByRole("dialog", { name: "照片" }),
       );
+      expect(
+        await page.evaluate(
+          () =>
+            !!document
+              .elementFromPoint(window.innerWidth / 2, window.innerHeight - 20)
+              ?.closest(".gallery-viewer"),
+        ),
+      ).toBe(true);
       await page.keyboard.press("Escape");
       await expect(page.getByRole("dialog", { name: "照片" })).toHaveCount(0);
       expect(originalRequested).toBe(false);

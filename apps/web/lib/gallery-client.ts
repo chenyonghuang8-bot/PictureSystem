@@ -36,6 +36,7 @@ export async function readGalleryResponse<Schema extends z.ZodType>(
 export async function browserGalleryGet<Schema extends z.ZodType>(
   path: string,
   schema: Schema,
+  signal?: AbortSignal,
 ): Promise<z.output<Schema>> {
   if (!path.startsWith("/api/v1/") || path.includes("://")) {
     throw new GalleryClientError("UNAVAILABLE");
@@ -47,6 +48,7 @@ export async function browserGalleryGet<Schema extends z.ZodType>(
       headers: { accept: "application/json" },
       credentials: "same-origin",
       cache: "no-store",
+      ...(signal ? { signal } : {}),
     });
   } catch {
     throw new GalleryClientError("UNAVAILABLE");

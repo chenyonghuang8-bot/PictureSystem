@@ -13,6 +13,7 @@ import {
   albumResponseSchema,
   albumsResponseSchema,
   familyTimelinePageSchema,
+  familySearchQuerySchema,
   favoriteStateSchema,
   featuredStateSchema,
   familyTimelineParamsSchema,
@@ -79,7 +80,9 @@ export function registerAlbumRoutes(
   } = options;
 
   app.addHook("onSend", async (request, reply) => {
-    if (request.url.startsWith("/api/v1/albums")) {
+    if (/^\/api\/v1\/families\/[^/?]+\/search(?:\?|$)/u.test(request.url)) {
+      void reply.header("cache-control", "private, no-store");
+    } else if (request.url.startsWith("/api/v1/albums")) {
       void reply.header("cache-control", "no-store");
     }
   });
@@ -118,6 +121,20 @@ export function registerAlbumRoutes(
       );
     }),
   );
+
+  app.get("/api/v1/families/:familyId/search", async (request, reply) => {
+    void reply.header("cache-control", "private, no-store");
+    return handleAlbum(request, reply, "family_search", async () => {
+      const { familyId } = familyTimelineParamsSchema.parse(request.params);
+      const query = familySearchQuerySchema.parse(request.query);
+      const context = await authenticate(request, authService);
+      return reply.send(
+        familyTimelinePageSchema.parse(
+          await albumService.search(context, familyId, query),
+        ),
+      );
+    });
+  });
 
   app.get("/api/v1/families/:familyId/timeline", async (request, reply) =>
     handleAlbum(request, reply, "family_timeline", async () => {

@@ -10,6 +10,68 @@ export const galleryMediaQuerySchema = z
   })
   .strict();
 
+// Search dates describe the existing timeline calendar, without viewer timezone conversion.
+export const familySearchDateSchema = z
+  .string()
+  .regex(/^[1-9][0-9]{3}-[0-9]{2}-[0-9]{2}$/)
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return (
+      !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+    );
+  });
+
+export const familySearchQuerySchema = z
+  .object({
+    fromDate: familySearchDateSchema.optional(),
+    toDate: familySearchDateSchema.optional(),
+    albumId: unsignedBigIntStringSchema.optional(),
+    favoritesOnly: z
+      .literal("true")
+      .optional()
+      .transform((value) => value === "true"),
+    limit: z
+      .string()
+      .regex(/^[1-9][0-9]{0,2}$/)
+      .transform(Number)
+      .pipe(z.number().int().min(1).max(100))
+      .default(20),
+    cursor: z
+      .string()
+      .min(1)
+      .max(1024)
+      .regex(/^[A-Za-z0-9_-]+$/)
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      !value.fromDate || !value.toDate || value.fromDate <= value.toDate,
+  );
+
+export const familySearchCursorSchema = z
+  .object({
+    version: z.literal(1),
+    timelineKey: z
+      .string()
+      .regex(
+        /^[1-9][0-9]{3}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/,
+      )
+      .refine((value) => {
+        const date = new Date(value);
+        return !Number.isNaN(date.getTime()) && date.toISOString() === value;
+      }),
+    mediaId: unsignedBigIntStringSchema,
+    scope: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+
+export type FamilySearchQuery = z.output<typeof familySearchQuerySchema>;
+export type FamilySearchFilters = Pick<
+  FamilySearchQuery,
+  "fromDate" | "toDate" | "albumId" | "favoritesOnly"
+>;
+
 export const galleryMediaParamsSchema = z
   .object({
     albumId: unsignedBigIntStringSchema,

@@ -64,6 +64,13 @@ export type FamilyTimelineRecord = {
   isFamilyFeatured: boolean;
 };
 
+export type FamilySearchFilters = {
+  fromDate?: Date;
+  toDate?: Date;
+  albumId?: string;
+  favoritesOnly?: boolean;
+};
+
 export type AlbumMediaRecord = {
   mediaId: string;
   timelineKey: Date;
@@ -374,6 +381,41 @@ export class MySqlAlbumRepository {
         input.limit,
         input.cursor,
       );
+    });
+  }
+
+  async searchFamilyMedia(input: {
+    actor: Phase1CActor;
+    familyId: string;
+    limit: number;
+    cursor?: { timelineKey: Date; mediaId: string };
+    filters: FamilySearchFilters;
+  }): Promise<FamilyTimelineRecord[]> {
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, input.familyId);
+      const locked = await lockActor(connection, input.familyId, input.actor);
+      const now = await readServerTime(connection);
+      assertActor(locked, input.actor, now);
+      const query = buildFamilySearchQuery(
+        input.familyId,
+        locked.member.id,
+        input.limit,
+        input.cursor,
+        input.filters,
+      );
+      const [rows] = await connection.query<
+        (RowDataPacket & FamilyTimelineRecord)[]
+      >(query.sql, query.values);
+      return rows.map((row) => ({
+        mediaId: String(row.mediaId),
+        albumId: String(row.albumId),
+        timelineKey: row.timelineKey,
+        timelineBasis: row.timelineBasis,
+        displayWidth: nullableInteger(row.displayWidth),
+        displayHeight: nullableInteger(row.displayHeight),
+        isFavorite: Number(row.isFavorite) === 1,
+        isFamilyFeatured: Number(row.isFamilyFeatured) === 1,
+      }));
     });
   }
 
@@ -3137,4 +3179,83 @@ function compareIds(left: string, right: string) {
     : BigInt(left) > BigInt(right)
       ? 1
       : 0;
+}
+
+// Fixed SQL only; shared with bounded DEV EXPLAIN acceptance. No request-controlled fragments.
+export function buildFamilySearchQuery(
+  familyId: string,
+  memberId: string,
+  limit: number,
+  cursor: { timelineKey: Date; mediaId: string } | undefined,
+  filters: FamilySearchFilters,
+) {
+  const conditions: string[] = [];
+  const filterValues: (string | Date)[] = [];
+  if (filters.fromDate) {
+    conditions.push("m.timeline_key >= ?");
+    filterValues.push(filters.fromDate);
+  }
+  if (filters.toDate) {
+    conditions.push("m.timeline_key <= ?");
+    filterValues.push(filters.toDate);
+  }
+  if (filters.albumId) {
+    conditions.push("a.id = ?");
+    filterValues.push(filters.albumId);
+  }
+  if (filters.favoritesOnly) conditions.push("favorite.id IS NOT NULL");
+  return {
+    sql: `SELECT CAST(m.id AS CHAR) AS mediaId,
+            CAST(MIN(a.id) AS CHAR) AS albumId,
+            m.timeline_key AS timelineKey,
+            m.timeline_basis AS timelineBasis,
+            m.display_width AS displayWidth,
+            m.display_height AS displayHeight,
+            MAX(CASE WHEN favorite.id IS NULL THEN 0 ELSE 1 END) AS isFavorite,
+            MAX(CASE WHEN featured.id IS NULL THEN 0 ELSE 1 END) AS isFamilyFeatured
+       FROM media_items m
+       JOIN album_media placement
+         ON placement.family_id = m.family_id
+        AND placement.media_id = m.id
+       JOIN albums a
+         ON a.family_id = placement.family_id
+        AND a.id = placement.album_id
+        AND a.deleted_at IS NULL
+       LEFT JOIN album_members grant_row
+         ON grant_row.family_id = a.family_id
+        AND grant_row.album_id = a.id
+        AND grant_row.member_id = ?
+       LEFT JOIN user_favorites favorite
+         ON favorite.family_id = m.family_id
+        AND favorite.media_id = m.id
+        AND favorite.member_id = ?
+       LEFT JOIN family_featured featured
+         ON featured.family_id = m.family_id
+        AND featured.media_id = m.id
+      WHERE m.family_id = ? AND ${activeMediaSql("m")}
+        AND (a.owner_member_id = ? OR a.visibility = 'FAMILY'
+             OR grant_row.can_view = 1)
+        AND (
+          ? = 0
+          OR m.timeline_key < ?
+          OR (m.timeline_key = ? AND m.id < ?)
+        )
+        ${conditions.length ? "AND " + conditions.join(" AND ") : ""}
+      GROUP BY m.id, m.timeline_key, m.timeline_basis,
+               m.display_width, m.display_height
+      ORDER BY m.timeline_key DESC, m.id DESC
+      LIMIT ?`,
+    values: [
+      memberId,
+      memberId,
+      familyId,
+      memberId,
+      cursor ? 1 : 0,
+      cursor?.timelineKey ?? new Date(0),
+      cursor?.timelineKey ?? new Date(0),
+      cursor?.mediaId ?? "0",
+      ...filterValues,
+      limit,
+    ],
+  };
 }

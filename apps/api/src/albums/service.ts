@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { countCodePoints, hasMalformedUnicode } from "@family-album/auth";
 import {
   AlbumRepositoryError,
@@ -9,6 +10,8 @@ import {
 } from "@family-album/db";
 import {
   galleryCursorSchema,
+  familySearchCursorSchema,
+  type FamilySearchQuery,
   mediaCommentCursorSchema,
   type AlbumVisibility,
   type PutAlbumMemberRequest,
@@ -39,6 +42,7 @@ export type AlbumRepository = Pick<
   | "addAlbumMedia"
   | "removeAlbumMedia"
   | "listFamilyTimeline"
+  | "searchFamilyMedia"
   | "putFavorite"
   | "deleteFavorite"
   | "putFeatured"
@@ -96,6 +100,43 @@ export class AlbumService {
     return this.database(() =>
       this.repository.getAlbum({ actor: actor(context), albumId }),
     );
+  }
+
+  async search(
+    context: AuthContext,
+    familyId: string,
+    query: FamilySearchQuery,
+  ) {
+    const scope = familySearchScope(familyId, context.identity.userId, query);
+    const cursor = query.cursor
+      ? decodeFamilySearchCursor(query.cursor, scope)
+      : undefined;
+    const rows = await this.database(() =>
+      this.repository.searchFamilyMedia({
+        actor: actor(context),
+        familyId,
+        limit: query.limit + 1,
+        ...(cursor ? { cursor } : {}),
+        filters: {
+          ...(query.fromDate
+            ? { fromDate: new Date(`${query.fromDate}T00:00:00.000Z`) }
+            : {}),
+          ...(query.toDate
+            ? { toDate: new Date(`${query.toDate}T23:59:59.999Z`) }
+            : {}),
+          ...(query.albumId ? { albumId: query.albumId } : {}),
+          favoritesOnly: query.favoritesOnly,
+        },
+      }),
+    );
+    const media = rows.slice(0, query.limit).map(familyTimelineItem);
+    return {
+      media,
+      nextCursor:
+        rows.length > query.limit
+          ? encodeFamilySearchCursor(media.at(-1)!, scope)
+          : null,
+    };
   }
 
   async listTimeline(
@@ -642,4 +683,65 @@ function validateAlbumDescription(input: unknown): string | null {
     throw new PublicAuthError(400, "INVALID_REQUEST");
   }
   return input;
+}
+
+export function familySearchScope(
+  familyId: string,
+  userId: string,
+  query: FamilySearchQuery,
+) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        "family-search-v1",
+        familyId,
+        userId,
+        query.fromDate ?? null,
+        query.toDate ?? null,
+        query.albumId ?? null,
+        query.favoritesOnly,
+        query.limit,
+      ]),
+    )
+    .digest("hex");
+}
+
+export function decodeFamilySearchCursor(cursor: string, scope: string) {
+  if (cursor.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(cursor))
+    throw new PublicAuthError(400, "INVALID_REQUEST");
+  let parsed: unknown;
+  try {
+    const bytes = Buffer.from(cursor, "base64url");
+    const text = bytes.toString("utf8");
+    if (
+      bytes.length > 768 ||
+      bytes.toString("base64url") !== cursor ||
+      !Buffer.from(text, "utf8").equals(bytes)
+    )
+      throw new Error();
+    parsed = JSON.parse(text);
+  } catch {
+    throw new PublicAuthError(400, "INVALID_REQUEST");
+  }
+  const result = familySearchCursorSchema.safeParse(parsed);
+  if (!result.success || result.data.scope !== scope)
+    throw new PublicAuthError(400, "INVALID_REQUEST");
+  return {
+    timelineKey: new Date(result.data.timelineKey),
+    mediaId: result.data.mediaId,
+  };
+}
+
+export function encodeFamilySearchCursor(
+  item: { timelineKey: string; mediaId: string },
+  scope: string,
+) {
+  return Buffer.from(
+    JSON.stringify({
+      version: 1,
+      timelineKey: item.timelineKey,
+      mediaId: item.mediaId,
+      scope,
+    }),
+  ).toString("base64url");
 }

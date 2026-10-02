@@ -3,11 +3,19 @@
 import {
   familyTimelinePageSchema,
   type FamilyTimelinePage,
+  type FamilySearchFilters,
 } from "@family-album/contracts";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { browserGalleryGet } from "../../lib/gallery-client.js";
-import { groupByMonth, timelinePath } from "../../lib/gallery-paths.js";
+import {
+  browserGalleryGet,
+  GalleryClientError,
+} from "../../lib/gallery-client.js";
+import {
+  groupByMonth,
+  timelinePath,
+  searchPath,
+} from "../../lib/gallery-paths.js";
 import { PhotoGrid } from "./photo-grid.js";
 import { EmptyPhotos, UnavailableState } from "./states.js";
 import { Viewer } from "./viewer.js";
@@ -18,10 +26,16 @@ export function Timeline({
   userId,
   familyId,
   initial,
+  filters,
+  onRefresh,
+  onAuthLost,
 }: {
   userId: string;
   familyId: string;
   initial: FamilyTimelinePage;
+  filters?: FamilySearchFilters;
+  onRefresh?: () => void;
+  onAuthLost?: () => void;
 }) {
   const [items, setItems] = useState(initial.media);
   const [cursor, setCursor] = useState(initial.nextCursor);
@@ -29,15 +43,39 @@ export function Timeline({
   const [failed, setFailed] = useState(false);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
+  const alive = useRef(true);
+  const request = useRef<AbortController | null>(null);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      request.current?.abort();
+    };
+  }, []);
+  const pagePath = (nextCursor?: string) =>
+    filters
+      ? searchPath(familyId, filters, {
+          limit: PAGE_SIZE,
+          ...(nextCursor ? { cursor: nextCursor } : {}),
+        })
+      : timelinePath(familyId, {
+          limit: PAGE_SIZE,
+          ...(nextCursor ? { cursor: nextCursor } : {}),
+        });
+
   async function loadMore() {
     if (!cursor || loading) return;
+    const controller = new AbortController();
+    request.current = controller;
     setLoading(true);
     setFailed(false);
     try {
       const page = await browserGalleryGet(
-        timelinePath(familyId, { cursor, limit: PAGE_SIZE }),
+        pagePath(cursor),
         familyTimelinePageSchema,
+        controller.signal,
       );
+      if (!alive.current || controller.signal.aborted) return;
       setItems((current) => {
         const seen = new Set(current.map((item) => item.mediaId));
         return current.concat(
@@ -45,10 +83,20 @@ export function Timeline({
         );
       });
       setCursor(page.nextCursor);
-    } catch {
+    } catch (error) {
+      if (!alive.current || controller.signal.aborted) return;
+      if (
+        error instanceof GalleryClientError &&
+        error.code === "UNAUTHENTICATED"
+      ) {
+        setItems([]);
+        setCursor(null);
+        setOpenIndex(null);
+        onAuthLost?.();
+      }
       setFailed(true);
     } finally {
-      setLoading(false);
+      if (alive.current && !controller.signal.aborted) setLoading(false);
     }
   }
 
@@ -109,28 +157,34 @@ export function Timeline({
           onIndex={setOpenIndex}
           onClose={() => setOpenIndex(null)}
           onAuthLost={() => {
+            onAuthLost?.();
             setOpenIndex(null);
             setItems([]);
             setCursor(null);
             setFailed(true);
           }}
           onTrashed={(mediaId) => {
+            if (onRefresh) {
+              onRefresh();
+              return;
+            }
             setOpenIndex(null);
             setItems((current) =>
               current.filter((item) => item.mediaId !== mediaId),
             );
             setCursor(null);
-            void browserGalleryGet(
-              timelinePath(familyId, { limit: PAGE_SIZE }),
-              familyTimelinePageSchema,
-            )
+            void browserGalleryGet(pagePath(), familyTimelinePageSchema)
               .then((page) => {
                 setItems(page.media);
                 setCursor(page.nextCursor);
               })
               .catch(() => setFailed(true));
           }}
-          onDetail={(detail) =>
+          onDetail={(detail) => {
+            if (filters?.favoritesOnly && !detail.isFavorite) {
+              onRefresh?.();
+              return;
+            }
             setItems((current) =>
               current.map((item) =>
                 item.mediaId === detail.mediaId
@@ -141,8 +195,8 @@ export function Timeline({
                     }
                   : item,
               ),
-            )
-          }
+            );
+          }}
         />
       ) : null}
     </div>
