@@ -176,6 +176,11 @@ export class LifecycleGuard {
   heldBy(owner: ContentCoordination) {
     return this.owner === owner && this.#handle !== null;
   }
+  withNativeExclusive<T>(operation: (handle: object) => T): T {
+    if (!this.#handle || this.mode !== "X")
+      throw new Error("PURGE_L_X_REQUIRED");
+    return operation(this.#handle);
+  }
   attachRead() {
     if (!this.#handle) throw new Error("COORD_LIFECYCLE_CLOSED");
     this.#reads++;
@@ -225,6 +230,13 @@ export class ReadGuard {
     if (!this.#handle || this.mode !== "S")
       throw new Error("HANDOFF_SHARED_READ_REQUIRED");
     return operation(this.#handle);
+  }
+  withNativeExclusive<T>(operation: (life: object, read: object) => T): T {
+    if (!this.#handle || this.mode !== "X" || !this.lifecycle)
+      throw new Error("PURGE_R_X_REQUIRED");
+    return this.lifecycle.withNativeExclusive((life) =>
+      operation(life, this.#handle!),
+    );
   }
   close() {
     if (!this.#handle || this.#handoffs !== 0)

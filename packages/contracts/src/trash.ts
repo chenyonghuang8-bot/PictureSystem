@@ -22,6 +22,39 @@ export const trashRequestSchema = z
 export const restoreRequestSchema = trashRequestSchema
   .omit({ selectedAlbumId: true })
   .strict();
+export const permanentDeleteRequestSchema = restoreRequestSchema;
+export const purgeRequestResponseSchema = z
+  .object({ operationId: operationIdSchema })
+  .strict();
+export const purgeStatusParamsSchema = z
+  .object({
+    familyId: unsignedBigIntStringSchema,
+    operationId: operationIdSchema,
+  })
+  .strict();
+export const purgeStatusResponseSchema = z
+  .object({
+    operationId: operationIdSchema,
+    executionState: z.enum([
+      "QUEUED",
+      "RUNNING",
+      "RETRY_WAIT",
+      "BLOCKED",
+      "DONE",
+    ]),
+    progress: z.enum(["REQUESTED", "DETACHED", "FILES_REMOVED", "COMPLETED"]),
+    completedAt: z.iso.datetime().nullable(),
+    failureCategory: z
+      .enum([
+        "REFERENCE_CONFLICT",
+        "FILESYSTEM_UNCERTAIN",
+        "CAPACITY_UNAVAILABLE",
+        "TRANSIENT_DB",
+        "INVARIANT_VIOLATION",
+      ])
+      .nullable(),
+  })
+  .strict();
 export const trashListQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(100).default(20),

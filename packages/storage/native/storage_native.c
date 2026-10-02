@@ -2482,6 +2482,8 @@ static napi_value consume_original_handle(napi_env env, napi_callback_info info)
 #include "derived_publish.h"
 #include "derived_recovery.h"
 #include "derived_serve.h"
+#include "purge_cleanup.h"
+#include "purge_files.h"
 
 static napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
@@ -2535,6 +2537,14 @@ static napi_value init(napi_env env, napi_value exports) {
       {"closeCapacityGate", NULL, close_capacity_gate, NULL, NULL, NULL,
        napi_default, NULL},
       {"openRoot", NULL, open_root, NULL, NULL, NULL, napi_default, NULL},
+      {"purgeOwners", NULL, pf_owners, NULL, NULL, NULL, napi_default, NULL},
+      {"purgeFileExact", NULL, pf_execute, NULL, NULL, NULL, napi_default, NULL},
+      {"purgeDerivedExact", NULL, pg_derived, NULL, NULL, NULL, napi_default, NULL},
+      {"purgeDerivedInventory", NULL, pg_inventory, NULL, NULL, NULL, napi_default, NULL},
+      {"purgeMonotonicClock", NULL, pg_clock, NULL, NULL, NULL, napi_default, NULL},
+#ifdef PS_STORAGE_TEST_HOOKS
+      {"failNextPurgeDirectorySync", NULL, pg_fail_fsync, NULL, NULL, NULL, napi_default, NULL},
+#endif
       {"closeRoot", NULL, close_root, NULL, NULL, NULL, napi_default, NULL},
       {"ensureDirectory", NULL, ensure_directory, NULL, NULL, NULL,
        napi_default, NULL},

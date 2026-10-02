@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { bindPurgeRoot } from "./purge-bindings.js";
 import { closeSync, statfsSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, normalize, resolve } from "node:path";
@@ -1116,6 +1117,7 @@ export class StorageRoot {
     this.canonicalPath = result.canonicalPath;
     this.markerId = result.markerId;
     this.device = result.device;
+    bindPurgeRoot(this, result.handle);
   }
 
   assertIdentity() {

@@ -18,6 +18,7 @@ typedef struct {
   char byte_size[21];
   unsigned char coordination_id[CC_SHA256_DIGEST_LENGTH];
   int locked;
+  int exclusive;
 } ps_coord_t;
 static int ps_handoff_admit_exclusive(ps_coord_t *coord);
 
@@ -199,6 +200,7 @@ static napi_value ps_try_coordination(napi_env env,napi_callback_info info) {
     }
   }
   coord->locked=1;
+  coord->exclusive=mode[0]=='X';
   napi_value yes; napi_get_boolean(env,true,&yes); return yes;
 }
 

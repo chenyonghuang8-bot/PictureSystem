@@ -221,7 +221,7 @@ export class MySqlUploadRepository {
         `${uploadColumns()} FROM upload_sessions
           WHERE id > ? ${familyScope === undefined ? "" : "AND family_id=?"}
             AND (state IN ('CREATED','UPLOADING','FINALIZING')
-            OR (state IN ('COMPLETE','ABORTED','EXPIRED')
+            OR (state IN ('COMPLETE','RETIRED','ABORTED','EXPIRED')
                 AND staging_cleaned_at IS NULL))
           ORDER BY id ASC LIMIT ?`,
         familyScope === undefined
@@ -693,7 +693,9 @@ export class MySqlUploadRepository {
     return runCheckedTransaction(this.pool, async (connection) => {
       const upload = await this.readLockedByPublicId(connection, publicId);
       if (
-        !["ABORTED", "EXPIRED", "FAILED", "COMPLETE"].includes(upload.state)
+        !["ABORTED", "EXPIRED", "FAILED", "COMPLETE", "RETIRED"].includes(
+          upload.state,
+        )
       ) {
         throw new UploadRepositoryError("UPLOAD_STATE_CONFLICT");
       }
@@ -701,7 +703,7 @@ export class MySqlUploadRepository {
       if (upload.stagingCleanedAt) return;
       const [changed] = await connection.execute<ResultSetHeader>(
         `UPDATE upload_sessions SET staging_cleaned_at=COALESCE(staging_cleaned_at, ?), updated_at=?
-          WHERE id=? AND public_id=? AND state IN ('ABORTED','EXPIRED','FAILED','COMPLETE')
+          WHERE id=? AND public_id=? AND state IN ('ABORTED','EXPIRED','FAILED','COMPLETE','RETIRED')
             AND staging_cleaned_at IS NULL`,
         [now, now, upload.id, publicId],
       );

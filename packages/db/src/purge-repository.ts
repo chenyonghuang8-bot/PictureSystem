@@ -5,6 +5,7 @@ import type {
   ResultSetHeader,
   RowDataPacket,
 } from "mysql2/promise";
+import { readPurgeIntent, purgeAudit } from "./purge-execution.js";
 import { runCheckedTransaction } from "./connection.js";
 
 export type PurgeProgress =
@@ -161,7 +162,7 @@ export class PurgeIntentRepository {
     if (workerId.length !== 16) throw new Error("INVALID_WORKER_ID");
     return runCheckedTransaction(this.pool, async (connection) => {
       const [rows] = await connection.execute<RowDataPacket[]>(
-        `SELECT CAST(id AS CHAR) id, CAST(lease_epoch AS CHAR) epoch
+        `SELECT CAST(id AS CHAR) id, CAST(lease_epoch AS CHAR) epoch, execution_state executionState
          FROM purge_intents
          WHERE attempts < max_attempts AND
            ((execution_state IN ('QUEUED','RETRY_WAIT') AND available_at <= CURRENT_TIMESTAMP(3))
@@ -171,6 +172,17 @@ export class PurgeIntentRepository {
       );
       const row = rows[0];
       if (!row) return null;
+      if (row.executionState === "RUNNING") {
+        const expired = await readPurgeIntent(connection, String(row.id));
+        if (!expired) throw new Error("PURGE_STALE");
+        await purgeAudit(
+          connection,
+          expired,
+          "PURGE_FAILED",
+          String(row.epoch),
+          "TRANSIENT_DB",
+        );
+      }
       const epoch = BigInt(row.epoch) + 1n;
       const [changed] = await connection.execute<ResultSetHeader>(
         `UPDATE purge_intents SET execution_state='RUNNING', worker_id=?,
@@ -249,8 +261,9 @@ export class PurgeIntentRepository {
         retryDelaySeconds > 3600)
     )
       throw new Error("PURGE_INVALID_RETRY_DELAY");
-    const [changed] = await this.pool.execute<ResultSetHeader>(
-      `UPDATE purge_intents SET
+    return runCheckedTransaction(this.pool, async (connection) => {
+      const [changed] = await connection.execute<ResultSetHeader>(
+        `UPDATE purge_intents SET
         execution_state=IF(? IS NULL OR attempts>=max_attempts,'BLOCKED','RETRY_WAIT'),
         failure_category=?,
         available_at=IF(? IS NULL,available_at,CURRENT_TIMESTAMP(3) + INTERVAL ? SECOND),
@@ -258,27 +271,54 @@ export class PurgeIntentRepository {
         locked_at=NULL, heartbeat_at=NULL, locked_until=NULL
        WHERE id=? AND execution_state='RUNNING' AND lease_epoch=?
          AND worker_id=? AND locked_until > CURRENT_TIMESTAMP(3)`,
-      [
-        retryDelaySeconds,
-        category,
-        retryDelaySeconds,
-        retryDelaySeconds,
-        lease.id,
-        lease.epoch.toString(),
-        lease.workerId,
-      ],
-    );
-    return changed.affectedRows === 1;
+        [
+          retryDelaySeconds,
+          category,
+          retryDelaySeconds,
+          retryDelaySeconds,
+          lease.id,
+          lease.epoch.toString(),
+          lease.workerId,
+        ],
+      );
+      if (changed.affectedRows === 1) {
+        const p = await readPurgeIntent(connection, lease.id);
+        if (!p) throw new Error("PURGE_STALE");
+        await purgeAudit(
+          connection,
+          p,
+          "PURGE_FAILED",
+          lease.epoch.toString(),
+          category,
+        );
+      }
+      return changed.affectedRows === 1;
+    });
   }
 
   async recoverExhausted(connection: PoolConnection) {
-    const [changed] = await connection.execute<ResultSetHeader>(
-      `UPDATE purge_intents SET execution_state='BLOCKED', worker_id=NULL,
-         locked_at=NULL, heartbeat_at=NULL, locked_until=NULL
+    const [rows] = await connection.execute<RowDataPacket[]>(
+      `SELECT CAST(id AS CHAR) id,CAST(lease_epoch AS CHAR) epoch FROM purge_intents
        WHERE execution_state='RUNNING' AND attempts>=max_attempts
-         AND locked_until < CURRENT_TIMESTAMP(3)`,
+         AND locked_until < CURRENT_TIMESTAMP(3) FOR UPDATE`,
     );
-    return changed.affectedRows;
+    for (const row of rows) {
+      await connection.execute(
+        `UPDATE purge_intents SET execution_state='BLOCKED',failure_category='TRANSIENT_DB',
+        worker_id=NULL,locked_at=NULL,heartbeat_at=NULL,locked_until=NULL WHERE id=?`,
+        [row.id],
+      );
+      const p = await readPurgeIntent(connection, row.id);
+      if (!p) throw new Error("PURGE_STALE");
+      await purgeAudit(
+        connection,
+        p,
+        "PURGE_FAILED",
+        row.epoch,
+        "TRANSIENT_DB",
+      );
+    }
+    return rows.length;
   }
 
   async manifest(familyId: string, intentId: string) {

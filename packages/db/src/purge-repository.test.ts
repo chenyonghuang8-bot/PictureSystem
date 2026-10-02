@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { Pool, PoolConnection } from "mysql2/promise";
 import { AuditRepository, PurgeIntentRepository } from "./purge-repository.js";
 
+// These tests inspect statement fences; checked transaction health and atomic
+// failure audit behavior are exercised by the live DEV integration suite.
+vi.mock("./connection.js", () => ({
+  runCheckedTransaction: async (
+    pool: Pool,
+    operation: (connection: PoolConnection) => Promise<unknown>,
+  ) => operation(pool as unknown as PoolConnection),
+}));
+
 const lease = { id: "42", epoch: 3n, workerId: Buffer.alloc(16, 7) };
 function poolWithRows(affectedRows: number) {
   const execute = vi.fn().mockResolvedValue([{ affectedRows }]);

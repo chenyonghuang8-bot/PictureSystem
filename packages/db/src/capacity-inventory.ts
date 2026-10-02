@@ -6,7 +6,7 @@ export const RESERVED_FUTURE_SQL = `CASE WHEN state IN ('CREATED','UPLOADING')
   THEN declared_size - committed_offset ELSE 0 END`;
 export const RETAINED_STAGING_SQL = `CASE
   WHEN state IN ('CREATED','UPLOADING') THEN committed_offset
-  WHEN state IN ('FINALIZING','COMPLETE','FAILED','ABORTED','EXPIRED')
+  WHEN state IN ('FINALIZING','COMPLETE','RETIRED','FAILED','ABORTED','EXPIRED')
     AND staging_cleaned_at IS NULL THEN declared_size
   ELSE 0 END`;
 
@@ -62,6 +62,20 @@ export async function readDerivedCapacityInventory(connection: PoolConnection) {
       (familyUsage.get(asset.familyId) ?? 0n) + charge,
     );
     if (asset.state !== "READY") unsettled += BigInt(asset.reservedBytes);
+  }
+  const [purges] = await connection.query<RowDataPacket[]>(
+    `SELECT CAST(family_id AS CHAR) familyId,
+      CAST(GREATEST(derived_bytes-LEAST(released_bytes,derived_bytes),0) AS CHAR) charge
+     FROM purge_intents WHERE progress IN ('DETACHED','FILES_REMOVED') ORDER BY id FOR UPDATE`,
+  );
+  for (const purge of purges) {
+    const charge = BigInt(purge.charge);
+    globalUsage += charge;
+    unsettled += charge;
+    familyUsage.set(
+      purge.familyId,
+      (familyUsage.get(purge.familyId) ?? 0n) + charge,
+    );
   }
   return { globalUsage, familyUsage, unsettled };
 }

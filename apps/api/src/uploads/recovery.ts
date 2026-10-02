@@ -316,7 +316,9 @@ export class StorageReconciler {
       return;
     }
     if (
-      ["EXPIRED", "ABORTED", "COMPLETE", "FAILED"].includes(upload.state) &&
+      ["EXPIRED", "ABORTED", "COMPLETE", "RETIRED", "FAILED"].includes(
+        upload.state,
+      ) &&
       !(upload.state === "FAILED" && upload.finalizeStartedAt) &&
       !upload.stagingCleanedAt
     ) {
@@ -454,7 +456,9 @@ export class StorageReconciler {
     if (
       current.familyId !== upload.familyId ||
       current.publicId !== upload.publicId ||
-      !["EXPIRED", "ABORTED", "COMPLETE", "FAILED"].includes(current.state) ||
+      !["EXPIRED", "ABORTED", "COMPLETE", "RETIRED", "FAILED"].includes(
+        current.state,
+      ) ||
       (current.state === "FAILED" && current.finalizeStartedAt !== null)
     ) {
       recordError(result, "CLEANUP_STATE_CHANGED");
@@ -581,7 +585,7 @@ export class StorageReconciler {
           }
           if (receipt) {
             if (
-              ["EXPIRED", "ABORTED", "COMPLETE", "FAILED"].includes(
+              ["EXPIRED", "ABORTED", "COMPLETE", "RETIRED", "FAILED"].includes(
                 receipt.state,
               ) &&
               !(receipt.state === "FAILED" && receipt.finalizeStartedAt)

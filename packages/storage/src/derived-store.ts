@@ -1,4 +1,5 @@
 import type { ReadGuard } from "./phase7-coordination.js";
+import { bindPurgeStore } from "./purge-bindings.js";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { performance } from "node:perf_hooks";
@@ -664,6 +665,7 @@ export class DerivedStore {
     this.#native = native;
     this.#handle = handle;
     this.#rootPath = rootPath;
+    bindPurgeStore(this, handle);
   }
 
   static open(capability: StorageCapability) {

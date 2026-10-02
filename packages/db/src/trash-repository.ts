@@ -13,6 +13,7 @@ import {
   lockIds,
 } from "./album-repository.js";
 import { runCheckedTransaction, readServerTime } from "./connection.js";
+import { PurgeIntentRepository } from "./purge-repository.js";
 
 export type LifecycleIdentity = {
   familyId: string;
@@ -33,8 +34,14 @@ export type LifecycleMutation = {
   operationId: string;
   action: "TRASH" | "RESTORE";
 };
+export type PermanentDeleteMutation = Omit<
+  LifecycleMutation,
+  "action" | "selectedAlbumId"
+> & {
+  action: "PERMANENT_DELETE_REQUEST";
+};
 type MediaRow = RowDataPacket &
-  LifecycleIdentity & { purgeIntentId: string | null };
+  LifecycleIdentity & { purgeIntentId: string | null; sourceUploadId: string };
 type PlacementRow = RowDataPacket & {
   albumId: string;
   grantId: string | null;
@@ -45,6 +52,134 @@ type PlacementRow = RowDataPacket & {
 // Trash has explicit access paths. Ordinary repositories have no includeTrash flag.
 export class MySqlTrashRepository {
   constructor(private readonly pool: Pool) {}
+
+  async preflightPermanentDelete(
+    input: PermanentDeleteMutation,
+  ): Promise<LifecycleIdentity> {
+    return runCheckedTransaction(this.pool, async (connection) => {
+      const scope = await this.lockScope(connection, input);
+      return this.identity(scope.media);
+    });
+  }
+
+  async requestPermanentDelete(
+    input: PermanentDeleteMutation,
+    expected: LifecycleIdentity,
+  ) {
+    return runCheckedTransaction(this.pool, async (connection) => {
+      const { media, memberId, replay } = await this.lockScope(
+        connection,
+        input,
+      );
+      if (
+        media.storageObjectId !== expected.storageObjectId ||
+        media.sha256Hex !== expected.sha256Hex ||
+        media.byteSize !== expected.byteSize
+      )
+        throw new AlbumRepositoryError("SERVICE_UNAVAILABLE");
+      if (replay) return { operationId: input.operationId };
+      const revision = BigInt(media.lifecycleRevision);
+      if (
+        media.lifecycleRevision !== input.expectedLifecycleRevision ||
+        revision === 18446744073709551615n ||
+        !media.trashedAt ||
+        !media.purgeAfter ||
+        media.purgeIntentId
+      )
+        throw new AlbumRepositoryError("CONFLICT");
+      const intent = await new PurgeIntentRepository(this.pool).create(
+        connection,
+        {
+          familyId: input.familyId,
+          operationId: input.operationId,
+          mediaId: input.mediaId,
+          storageObjectId: media.storageObjectId,
+          sourceUploadId: media.sourceUploadId,
+          lifecycleRevision: revision + 1n,
+          trashedAt: media.trashedAt,
+          purgeAfter: media.purgeAfter,
+          requestSource: "MANUAL",
+          actorMemberId: memberId,
+          originalBytes: BigInt(media.byteSize),
+        },
+      );
+      if (!intent.created) throw new AlbumRepositoryError("CONFLICT");
+      const [changed] = await connection.execute<ResultSetHeader>(
+        `UPDATE media_items SET lifecycle_revision=lifecycle_revision+1,purge_intent_id=?
+         WHERE family_id=? AND id=? AND lifecycle_revision=? AND trashed_at IS NOT NULL
+          AND purge_intent_id IS NULL AND purge_after<=CURRENT_TIMESTAMP(3)`,
+        [
+          intent.id,
+          input.familyId,
+          input.mediaId,
+          input.expectedLifecycleRevision,
+        ],
+      );
+      if (changed.affectedRows !== 1)
+        throw new AlbumRepositoryError("CONFLICT");
+      await connection.execute(
+        `INSERT INTO audit_logs (family_id,operation_id,purge_intent_id,media_id,storage_object_id,
+          actor_kind,actor_member_id,action,lifecycle_revision,transition_id,result_category)
+         VALUES (?,?,?,?,?,'MEMBER',?,'PERMANENT_DELETE_REQUEST',?,?,'SUCCESS')`,
+        [
+          input.familyId,
+          input.operationId,
+          intent.id,
+          input.mediaId,
+          media.storageObjectId,
+          memberId,
+          (revision + 1n).toString(),
+          input.operationId,
+        ],
+      );
+      return { operationId: input.operationId };
+    });
+  }
+  async confirmPermanentDelete(
+    input: PermanentDeleteMutation,
+    expected: LifecycleIdentity,
+  ) {
+    return runCheckedTransaction(this.pool, async (connection) => {
+      const { media, replay } = await this.lockScope(connection, input);
+      if (
+        !replay ||
+        media.storageObjectId !== expected.storageObjectId ||
+        media.sha256Hex !== expected.sha256Hex ||
+        media.byteSize !== expected.byteSize
+      )
+        return null;
+      return { operationId: input.operationId };
+    });
+  }
+
+  async purgeStatus(input: {
+    actor: Phase1CActor;
+    familyId: string;
+    operationId: string;
+  }) {
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, input.familyId);
+      const actor = await lockActor(connection, input.familyId, input.actor);
+      assertActor(actor, input.actor, await readServerTime(connection));
+      if (!["ADMIN", "SUPER_ADMIN"].includes(actor.member.role))
+        throw new AlbumRepositoryError("NOT_FOUND");
+      const [rows] = await connection.execute<RowDataPacket[]>(
+        `SELECT operation_id operationId,progress,execution_state executionState,
+          completed_at completedAt,failure_category failureCategory FROM purge_intents
+         WHERE family_id=? AND operation_id=? AND request_source='MANUAL' AND actor_member_id=?`,
+        [input.familyId, input.operationId, actor.member.id],
+      );
+      const row = rows[0];
+      if (!row) throw new AlbumRepositoryError("NOT_FOUND");
+      return {
+        operationId: String(row.operationId),
+        progress: String(row.progress),
+        executionState: String(row.executionState),
+        completedAt: row.completedAt as Date | null,
+        failureCategory: row.failureCategory as string | null,
+      };
+    });
+  }
 
   async preflight(input: LifecycleMutation): Promise<LifecycleIdentity> {
     return runCheckedTransaction(this.pool, async (connection) => {
@@ -172,7 +307,7 @@ export class MySqlTrashRepository {
 
   private async lockScope(
     connection: PoolConnection,
-    input: LifecycleMutation,
+    input: LifecycleMutation | PermanentDeleteMutation,
   ) {
     await lockFamily(connection, input.familyId);
     const actor = await lockActor(connection, input.familyId, input.actor);
@@ -231,7 +366,23 @@ export class MySqlTrashRepository {
       input.familyId,
       input.mediaId,
     );
-    assertActor(actor, input.actor, await readServerTime(connection));
+    const now = await readServerTime(connection);
+    assertActor(actor, input.actor, now);
+    const permanent = input.action === "PERMANENT_DELETE_REQUEST";
+    if (permanent) {
+      const age = actor.session
+        ? now.getTime() - actor.session.authenticatedAt.getTime()
+        : Infinity;
+      if (
+        !["ADMIN", "SUPER_ADMIN"].includes(actor.member.role) ||
+        age < 0 ||
+        age >= 15 * 60 * 1000
+      )
+        throw new AlbumRepositoryError("FORBIDDEN");
+      if (!media?.trashedAt) throw new AlbumRepositoryError("NOT_FOUND");
+      if (!media.purgeAfter || now.getTime() < media.purgeAfter.getTime())
+        throw new AlbumRepositoryError("CONFLICT");
+    }
     const visible =
       input.action === "TRASH"
         ? placements.some(
@@ -239,7 +390,7 @@ export class MySqlTrashRepository {
               p.albumId === input.selectedAlbumId && Number(p.canView) === 1,
           )
         : placements.some((p) => Number(p.canView) === 1);
-    if (!media || !visible || media.purgeIntentId !== null)
+    if (!media || !visible || (!permanent && media.purgeIntentId !== null))
       throw new AlbumRepositoryError("NOT_FOUND");
     const [history] = await connection.query<RowDataPacket[]>(
       `SELECT CAST(media_id AS CHAR) mediaId,CAST(storage_object_id AS CHAR) storageObjectId,
@@ -260,11 +411,27 @@ export class MySqlTrashRepository {
         BigInt(row.lifecycleRevision) ===
           BigInt(input.expectedLifecycleRevision) + 1n &&
         row.lifecycleRevision === media.lifecycleRevision &&
-        (input.action === "TRASH"
+        (input.action !== "RESTORE"
           ? media.trashedAt !== null
           : media.trashedAt === null);
       if (!replay) throw new AlbumRepositoryError("CONFLICT");
     }
+    if (permanent && media.purgeIntentId !== null) {
+      const [intents] = await connection.execute<RowDataPacket[]>(
+        `SELECT id FROM purge_intents WHERE id=? AND family_id=? AND media_id=? AND operation_id=?
+          AND actor_member_id=? AND request_source='MANUAL' AND lifecycle_revision=?`,
+        [
+          media.purgeIntentId,
+          input.familyId,
+          input.mediaId,
+          input.operationId,
+          actor.member.id,
+          media.lifecycleRevision,
+        ],
+      );
+      if (!replay || intents.length !== 1)
+        throw new AlbumRepositoryError("CONFLICT");
+    } else if (permanent && replay) throw new AlbumRepositoryError("CONFLICT");
     if (input.action === "RESTORE" && media.trashedAt === null && !replay)
       throw new AlbumRepositoryError("NOT_FOUND");
     if (placements.some((p) => Number(p.canDelete) !== 1))
@@ -281,7 +448,8 @@ export class MySqlTrashRepository {
       `SELECT CAST(m.family_id AS CHAR) familyId,CAST(m.id AS CHAR) mediaId,
         CAST(m.storage_object_id AS CHAR) storageObjectId,LOWER(HEX(s.sha256)) sha256Hex,
         CAST(s.byte_size AS CHAR) byteSize,CAST(m.lifecycle_revision AS CHAR) lifecycleRevision,
-        m.trashed_at trashedAt,m.purge_after purgeAfter,CAST(m.purge_intent_id AS CHAR) purgeIntentId
+        m.trashed_at trashedAt,m.purge_after purgeAfter,CAST(m.purge_intent_id AS CHAR) purgeIntentId,
+        CAST(m.source_upload_id AS CHAR) sourceUploadId
        FROM media_items m JOIN storage_objects s ON s.family_id=m.family_id AND s.id=m.storage_object_id
        WHERE m.family_id=? AND m.id=? AND s.state='AVAILABLE'`,
       [familyId, mediaId],

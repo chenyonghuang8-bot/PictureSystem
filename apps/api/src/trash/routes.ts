@@ -9,6 +9,10 @@ import {
   trashPageSchema,
   familyTimelineParamsSchema,
   createAuthErrorResponse,
+  permanentDeleteRequestSchema,
+  purgeRequestResponseSchema,
+  purgeStatusParamsSchema,
+  purgeStatusResponseSchema,
 } from "@family-album/contracts";
 import {
   readWebSessionCookie,
@@ -30,6 +34,36 @@ export function registerTrashRoutes(
     if (!token) throw new PublicAuthError(401, "UNAUTHENTICATED");
     return options.authService.authenticate(token);
   };
+  app.post(
+    "/api/v1/families/:familyId/trash/:mediaId/permanent-delete",
+    { bodyLimit: 4096 },
+    async (request, reply) =>
+      handle(request, reply, async () => {
+        requireTrustedJsonOrigin(request, options.trustedOrigins);
+        const params = trashMediaParamsSchema.parse(request.params),
+          body = permanentDeleteRequestSchema.parse(request.body);
+        const result = await options.trashService.permanentDelete(
+          await authenticate(request),
+          { ...params, ...body },
+        );
+        return reply.status(202).send(purgeRequestResponseSchema.parse(result));
+      }),
+  );
+  app.get(
+    "/api/v1/families/:familyId/purge-requests/:operationId",
+    async (request, reply) =>
+      handle(request, reply, async () => {
+        const params = purgeStatusParamsSchema.parse(request.params);
+        return reply.send(
+          purgeStatusResponseSchema.parse(
+            await options.trashService.purgeStatus(
+              await authenticate(request),
+              params,
+            ),
+          ),
+        );
+      }),
+  );
   const handle = async (
     request: FastifyRequest,
     reply: FastifyReply,

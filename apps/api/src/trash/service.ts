@@ -3,6 +3,7 @@ import {
   CommitOutcomeUnknownError,
   type MySqlTrashRepository,
   type LifecycleMutation,
+  type PermanentDeleteMutation,
 } from "@family-album/db";
 import type { StorageCapability } from "@family-album/storage";
 import { ContentCoordination } from "../../../../packages/storage/src/phase7-coordination.js";
@@ -13,9 +14,73 @@ export class TrashService {
     private readonly repository: Pick<
       MySqlTrashRepository,
       "preflight" | "transition" | "list"
-    >,
+    > &
+      Partial<
+        Pick<
+          MySqlTrashRepository,
+          | "preflightPermanentDelete"
+          | "requestPermanentDelete"
+          | "confirmPermanentDelete"
+          | "purgeStatus"
+        >
+      >,
     private readonly storage: StorageCapability,
   ) {}
+  async permanentDelete(
+    context: AuthContext,
+    input: Omit<PermanentDeleteMutation, "actor" | "action">,
+  ) {
+    return this.safe(async () => {
+      if (
+        !this.repository.preflightPermanentDelete ||
+        !this.repository.requestPermanentDelete ||
+        this.storage.state !== "READ_WRITE"
+      )
+        throw new PublicAuthError(503, "SERVICE_UNAVAILABLE");
+      const request: PermanentDeleteMutation = {
+        ...input,
+        actor: this.actor(context),
+        action: "PERMANENT_DELETE_REQUEST",
+      };
+      const identity = await this.repository.preflightPermanentDelete(request);
+      const content = new ContentCoordination(this.storage.root, identity);
+      const life = await content.acquireLifecycle("X", 30000);
+      try {
+        try {
+          return await this.repository.requestPermanentDelete(
+            request,
+            identity,
+          );
+        } catch (error) {
+          if (!(error instanceof CommitOutcomeUnknownError)) throw error;
+          const resolved = await this.repository
+            .confirmPermanentDelete?.(request, identity)
+            .catch(() => null);
+          if (resolved) return resolved;
+          throw error;
+        }
+      } finally {
+        life.close();
+      }
+    });
+  }
+  async purgeStatus(
+    context: AuthContext,
+    input: { familyId: string; operationId: string },
+  ) {
+    return this.safe(async () => {
+      if (!this.repository.purgeStatus)
+        throw new PublicAuthError(503, "SERVICE_UNAVAILABLE");
+      const result = await this.repository.purgeStatus({
+        ...input,
+        actor: this.actor(context),
+      });
+      return {
+        ...result,
+        completedAt: result.completedAt?.toISOString() ?? null,
+      };
+    });
+  }
 
   async mutate(context: AuthContext, input: Omit<LifecycleMutation, "actor">) {
     return this.safe(async () => {
