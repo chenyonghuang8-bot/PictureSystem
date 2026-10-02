@@ -13,6 +13,10 @@ typedef struct {
   uint64_t magic;
   int directory_fd;
   int record_fd;
+  int root_fd;
+  int v1_fd;
+  char root_path[PATH_MAX];
+  sm_marker binding;
   char name[37];
   ps_handoff_record_t record;
   // Immutable trusted K copied from the acquired native read guard.
@@ -114,7 +118,15 @@ static int ps_handoff_write(int fd,ps_handoff_record_t *record) {
       full_sync_file_fd(fd)!=0) return -1;
   return 0;
 }
+static int ps_validate_handoff_namespace(ps_handoff_t *handoff) {
+  int fd=sm_validate_namespace(handoff->root_fd,handoff->root_path,&handoff->binding,handoff->v1_fd);
+  if(fd<0)return -1;close(fd);
+  return sm_record_namespace(handoff->record_fd,handoff->record.marker,
+    handoff->record.root_device,handoff->record.root_inode,
+    handoff->record.coordination_id,handoff->record.handoff_id);
+}
 static int ps_handoff_directory(ps_coord_t *coord,int create) {
+  if(ps_validate_coord_namespace(coord))return -1;
   char name[67]; memcpy(name,coord->basename,64); memcpy(name+64,".h",3);
   int fd=secure_open_child_directory(coord->directory_fd,name,create,1);
   if (fd<0) return -1;
@@ -123,6 +135,7 @@ static int ps_handoff_directory(ps_coord_t *coord,int create) {
       status.st_uid!=geteuid() || (status.st_mode&07777)!=0700) {
     close(fd);errno=EPERM;return -1;
   }
+  if(ps_validate_coord_namespace(coord)){close(fd);return -1;}
   return fd;
 }
 static void ps_handoff_finalize(napi_env env,void *data,void *hint) {
@@ -130,6 +143,8 @@ static void ps_handoff_finalize(napi_env env,void *data,void *hint) {
   if (!handoff) return;
   if (handoff->record_fd>=0) close(handoff->record_fd);
   if (handoff->directory_fd>=0) close(handoff->directory_fd);
+  if (handoff->v1_fd>=0)close(handoff->v1_fd);
+  if (handoff->root_fd>=0)close(handoff->root_fd);
   handoff->magic=0;free(handoff);
 }
 static ps_handoff_t *ps_handoff_get(napi_env env,napi_value value) {
@@ -153,6 +168,10 @@ static ps_handoff_t *ps_allocate_handoff(napi_env env,ps_coord_t *coord) {
   ps_handoff_t *handoff=calloc(1,sizeof(*handoff));
   if (!handoff) {close(dir);throw_code(env,"STORAGE_NATIVE_ERROR","Handoff allocation failed.");return NULL;}
   handoff->magic=PS_HANDOFF_MAGIC;handoff->directory_fd=dir;handoff->record_fd=-1;
+  handoff->root_fd=fcntl(coord->root_fd,F_DUPFD_CLOEXEC,0);
+  handoff->v1_fd=fcntl(coord->directory_fd,F_DUPFD_CLOEXEC,0);
+  strcpy(handoff->root_path,coord->root_path);handoff->binding=coord->binding;
+  if(handoff->root_fd<0||handoff->v1_fd<0){ps_handoff_finalize(env,handoff,NULL);throw_code(env,"HANDOFF_NAMESPACE_UNCERTAIN","Cannot retain handoff namespace.");return NULL;}
   strcpy(handoff->family,coord->family);strcpy(handoff->sha,coord->sha);
   strcpy(handoff->byte_size,coord->byte_size);
   ps_handoff_record_t *record=&handoff->record;
@@ -173,7 +192,8 @@ static ps_handoff_t *ps_allocate_handoff(napi_env env,ps_coord_t *coord) {
   int fd=openat(dir,handoff->name,O_RDWR|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600);
   if (fd<0) {ps_handoff_finalize(env,handoff,NULL);throw_errno(env,"create handoff record");return NULL;}
   handoff->record_fd=fd;
-  if (ps_handoff_write(fd,record)!=0 || sync_directory_fd(dir)!=0) {
+  if (ps_handoff_write(fd,record)!=0 || sync_directory_fd(dir)!=0 ||
+      ps_validate_handoff_namespace(handoff)!=0) {
     // Intentionally leave a corrupt/partial record to fail R-X closed.
     ps_handoff_finalize(env,handoff,NULL);throw_errno(env,"durable handoff registration");return NULL;
   }
@@ -191,6 +211,7 @@ static napi_value ps_register_handoff_receiver(napi_env env,napi_callback_info i
   int32_t pid=0;uint64_t sec=0,usec=0;
   ps_handoff_record_t current;
   if (argc!=2 || napi_get_value_int32(env,args[1],&pid)!=napi_ok || pid<=0 ||
+      ps_validate_handoff_namespace(handoff)!=0 ||
       handoff->record.stage!=PS_HANDOFF_PREPARED ||
       ps_process_identity(pid,&sec,&usec)!=1 ||
       ps_handoff_read(handoff->record_fd,&current)!=0 ||
@@ -204,7 +225,7 @@ static napi_value ps_register_handoff_receiver(napi_env env,napi_callback_info i
   current.receiver_start_sec=sec;
   current.receiver_start_usec=usec;
   current.stage=PS_HANDOFF_REGISTERED;
-  if (ps_handoff_write(handoff->record_fd,&current)!=0) {
+  if (ps_validate_handoff_namespace(handoff)!=0 || ps_handoff_write(handoff->record_fd,&current)!=0) {
     throw_errno(env,"register handoff receiver");return NULL;
   }
   handoff->record=current;
@@ -214,7 +235,8 @@ static napi_value ps_handoff_registered(napi_env env,napi_callback_info info) {
   napi_value arg;size_t argc=1;napi_get_cb_info(env,info,&argc,&arg,NULL,NULL);
   ps_handoff_t *handoff=ps_handoff_get(env,arg);if (!handoff) return NULL;
   ps_handoff_record_t current;
-  if (ps_handoff_read(handoff->record_fd,&current)!=0 ||
+  if (ps_validate_handoff_namespace(handoff)!=0 ||
+      ps_handoff_read(handoff->record_fd,&current)!=0 ||
       ps_handoff_named_identity(handoff->directory_fd,handoff->record_fd,
                                 handoff->name)!=0 ||
       current.stage!=PS_HANDOFF_REGISTERED ||
@@ -292,7 +314,7 @@ static napi_value ps_send_registered_original(napi_env env,napi_callback_info in
   control->cmsg_level=SOL_SOCKET;control->cmsg_type=SCM_RIGHTS;
   control->cmsg_len=CMSG_LEN(sizeof(int));
   memcpy(CMSG_DATA(control),&original->file_fd,sizeof(int));
-  if (sendmsg(socket_fd,&message,MSG_DONTWAIT)!=1) {
+  if (ps_validate_handoff_namespace(handoff)!=0 || sendmsg(socket_fd,&message,MSG_DONTWAIT)!=1) {
     throw_errno(env,"send registered original");return NULL;
   }
   int failure=0;
@@ -308,7 +330,8 @@ static napi_value ps_settle_handoff(napi_env env,napi_callback_info info) {
   napi_value arg;size_t argc=1;napi_get_cb_info(env,info,&argc,&arg,NULL,NULL);
   ps_handoff_t *handoff=ps_handoff_get(env,arg);if (!handoff) return NULL;
   ps_handoff_record_t current;
-  if (ps_handoff_read(handoff->record_fd,&current)!=0 ||
+  if (ps_validate_handoff_namespace(handoff)!=0 ||
+      ps_handoff_read(handoff->record_fd,&current)!=0 ||
       ps_handoff_named_identity(handoff->directory_fd,handoff->record_fd,
                                 handoff->name)!=0 ||
       current.stage!=PS_HANDOFF_REGISTERED ||
@@ -327,7 +350,7 @@ static napi_value ps_settle_handoff(napi_env env,napi_callback_info info) {
     throw_code(env,"HANDOFF_RECEIVER_UNSETTLED","Exact child has not been reaped.");return NULL;
   }
   current.stage=PS_HANDOFF_SETTLED;
-  if (ps_handoff_write(handoff->record_fd,&current)!=0) {
+  if (ps_validate_handoff_namespace(handoff)!=0 || ps_handoff_write(handoff->record_fd,&current)!=0) {
     throw_errno(env,"settle handoff");return NULL;
   }
   handoff->record=current;
@@ -339,6 +362,7 @@ static napi_value ps_close_handoff(napi_env env,napi_callback_info info) {
   if (close(handoff->record_fd)!=0) {throw_errno(env,"close handoff record");return NULL;}
   handoff->record_fd=-1;
   close(handoff->directory_fd);handoff->directory_fd=-1;
+  close(handoff->v1_fd);handoff->v1_fd=-1;close(handoff->root_fd);handoff->root_fd=-1;
   return undefined_value(env);
 }
 static int ps_handoff_record_status(ps_handoff_record_t *record,
@@ -368,6 +392,7 @@ static int ps_handoff_record_status(ps_handoff_record_t *record,
   return coordinator_live||supervisor_live||receiver_live?0:2;
 }
 static int ps_handoff_admit_exclusive(ps_coord_t *coord) {
+  if(ps_validate_coord_namespace(coord))return -1;
   int dir=ps_handoff_directory(coord,0);
   if (dir<0) return errno==ENOENT?1:-1;
   char boot[37];if (ps_boot_uuid(boot)!=0) {close(dir);return -1;}
@@ -394,7 +419,7 @@ static int ps_handoff_admit_exclusive(ps_coord_t *coord) {
     int status=ps_handoff_record_status(&record,coord,boot);
     if (status==2) {
       record.stage=PS_HANDOFF_SETTLED;
-      if (ps_handoff_write(fd,&record)!=0) status=-1;
+      if (ps_validate_coord_namespace(coord)||ps_handoff_write(fd,&record)!=0) status=-1;
     }
     close(fd);
     if (status!=1 && status!=2) {result=status;break;}
@@ -402,6 +427,7 @@ static int ps_handoff_admit_exclusive(ps_coord_t *coord) {
   }
   if (errno!=0 && result==1) result=-1;
   closedir(stream);close(dir);
+  if(ps_validate_coord_namespace(coord))return -1;
   return result;
 }
 

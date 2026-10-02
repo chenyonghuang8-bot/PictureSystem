@@ -1,11 +1,10 @@
+import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
   existsSync,
   linkSync,
   mkdirSync,
-  mkdtempSync,
-  realpathSync,
   rmSync,
   rmdirSync,
   symlinkSync,
@@ -15,7 +14,6 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { StorageRoot, DerivedStore } from "./index.js";
@@ -140,10 +138,10 @@ async function fixture(
     },
   ) => Promise<void>,
 ) {
-  const media = mkdtempSync(join(realpathSync(tmpdir()), "ps7c-native-"));
+  const media = freshStorageRootPath("ps7c-native-");
+  const root = StorageRoot.open(media, { initialize: true });
   chmodSync(media, 0o700);
   mkdirSync(join(media, "derived"), { mode: 0o700 });
-  const root = StorageRoot.open(media, { initialize: true });
   root.provisionDerivedWriterLockForDev();
   const store = DerivedStore.open({ state: "READ_WRITE", root });
   const coord = new ContentCoordination(root, {

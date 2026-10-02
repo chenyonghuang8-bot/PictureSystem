@@ -13,6 +13,7 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include "storage_marker.h"
 
 #define PS_HANDOFF_MAGIC UINT64_C(0x48414e444f464631)
 #define PS_HANDOFF_FORMAT UINT32_C(3)
@@ -74,9 +75,12 @@ P7_FN int p7_record_read(int fd,ps_handoff_record_t *r) {
   memcpy(saved,r->checksum,32);p7_checksum(r);
   int valid=memcmp(saved,r->checksum,32)==0&&r->magic==PS_HANDOFF_MAGIC&&
     r->format==PS_HANDOFF_FORMAT&&r->stage>=1&&r->stage<=4;
-  memcpy(r->checksum,saved,32);return valid?0:-1;
+  memcpy(r->checksum,saved,32);
+  if(valid&&sm_record_namespace(fd,r->marker,r->root_device,r->root_inode,r->coordination_id,r->handoff_id))valid=0;
+  return valid?0:-1;
 }
 P7_FN int p7_record_write(int fd,ps_handoff_record_t *r) {
+  if(sm_record_namespace(fd,r->marker,r->root_device,r->root_inode,r->coordination_id,r->handoff_id))return -1;
   p7_checksum(r);
   return pwrite(fd,r,sizeof(*r),0)==(ssize_t)sizeof(*r)&&fcntl(fd,F_FULLFSYNC)==0?0:-1;
 }
@@ -149,10 +153,11 @@ P7_FN int p7_supervisor_deliver(p7_supervisor *s,pid_t child) {
   fresh.receiver_pid=child;fresh.receiver_start_sec=sec;fresh.receiver_start_usec=usec;
   fresh.stage=PS_HANDOFF_REGISTERED;
   if(p7_record_write(s->record_fd,&fresh))return -1;s->record=fresh;
-  if(p7_send(s->coordinator_fd,&fresh,P7_ARMED,-1))return -1;
+  if(sm_record_namespace(s->record_fd,fresh.marker,fresh.root_device,fresh.root_inode,fresh.coordination_id,fresh.handoff_id)||p7_send(s->coordinator_fd,&fresh,P7_ARMED,-1))return -1;
   int media=-1,unused=-1;
   if(p7_receive(s->coordinator_fd,&fresh,P7_MEDIA,1,&media,30000))return -1;
   if(p7_receive(s->coordinator_fd,&fresh,P7_SOURCE_RELEASED,0,&unused,30000)){close(media);return -1;}
+  if(sm_record_namespace(s->record_fd,fresh.marker,fresh.root_device,fresh.root_inode,fresh.coordination_id,fresh.handoff_id)){close(media);return -1;}
   s->source_released=1;
   int result=p7_send(s->consumer_fd,&fresh,P7_MEDIA,media);close(media);
   close(s->consumer_fd);s->consumer_fd=-1;close(s->coordinator_fd);s->coordinator_fd=-1;

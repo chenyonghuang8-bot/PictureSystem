@@ -1,9 +1,8 @@
+import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import {
   chmodSync,
   mkdirSync,
-  mkdtempSync,
-  realpathSync,
   rmSync,
   writeFileSync,
   existsSync,
@@ -12,7 +11,6 @@ import {
   renameSync,
   readdirSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect, afterAll } from "vitest";
 import {
@@ -82,9 +80,9 @@ afterAll(async () => {
 describe.sequential("Phase 7C pre-detach normalization live DEV", () => {
   it("requests irreversible manual purge with current ACL, retention and idempotent audit; scheduled loser cannot create another", async () => {
     const c = await acquireCheckedConnection(db.pool);
-    const dir = mkdtempSync(join(realpathSync(tmpdir()), "ps7c-request-"));
-    chmodSync(dir, 0o700);
+    const dir = freshStorageRootPath("ps7c-request-");
     const root = StorageRoot.open(dir, { initialize: true });
+    chmodSync(dir, 0o700);
     ownedRoots.add(root.canonicalPath);
     let f: Awaited<ReturnType<typeof createPhase6SchemaFixture>> | undefined;
     try {
@@ -246,10 +244,10 @@ describe.sequential("Phase 7C pre-detach normalization live DEV", () => {
     "normalizes %s %s without waiting for producer lease expiry",
     async (state, residue, mode) => {
       const c = await acquireCheckedConnection(db.pool);
-      const mediaRoot = mkdtempSync(join(realpathSync(tmpdir()), "ps7c-db-"));
+      const mediaRoot = freshStorageRootPath("ps7c-db-");
+      const root = StorageRoot.open(mediaRoot, { initialize: true });
       chmodSync(mediaRoot, 0o700);
       mkdirSync(join(mediaRoot, "derived"), { mode: 0o700 });
-      const root = StorageRoot.open(mediaRoot, { initialize: true });
       ownedRoots.add(root.canonicalPath);
       root.provisionDerivedWriterLockForDev();
       root.provisionSharedCapacityLockForDev();
@@ -552,6 +550,10 @@ describe.sequential("Phase 7C full purge live DEV", () => {
     "unsafe-ledger",
     "derived-replacement-before-claim",
     "derived-replacement-before-physical",
+    "coord-v1-before-claim",
+    "coord-parent-before-claim",
+    "coord-v1-before-physical",
+    "coord-parent-before-physical",
     "last-derived-removed",
     "last-derived-removed-original-blocked",
     "unreleased-original-quarantined",
@@ -599,10 +601,10 @@ describe.sequential("Phase 7C full purge live DEV", () => {
     "%s preserves durable state and converges without replay",
     async (scenario) => {
       const c = await acquireCheckedConnection(db.pool);
-      const dir = mkdtempSync(join(realpathSync(tmpdir()), "ps7c-execute-"));
+      const dir = freshStorageRootPath("ps7c-execute-");
+      let root = StorageRoot.open(dir, { initialize: true });
       chmodSync(dir, 0o700);
       mkdirSync(join(dir, "derived"), { mode: 0o700 });
-      let root = StorageRoot.open(dir, { initialize: true });
       ownedRoots.add(root.canonicalPath);
       root.provisionDerivedWriterLockForDev();
       root.provisionSharedCapacityLockForDev();
@@ -762,6 +764,14 @@ describe.sequential("Phase 7C full purge live DEV", () => {
           "preview.webp",
           derived,
         );
+        const replaceCoord = () => {
+          const target = join(
+            dir,
+            scenario.startsWith("coord-v1") ? ".coord/v1" : ".coord",
+          );
+          renameSync(target, `${target}-held`);
+          mkdirSync(target, { mode: 0o700 });
+        };
         const replaceDerived = () => {
           renameSync(join(dir, "derived"), join(dir, "moved-derived"));
           mkdirSync(join(dir, "derived"), { mode: 0o700 });
@@ -781,6 +791,8 @@ describe.sequential("Phase 7C full purge live DEV", () => {
             "reader-retry",
             "unsafe-ledger",
             "derived-replacement-before-claim",
+            "coord-v1-before-claim",
+            "coord-parent-before-claim",
           ].includes(scenario)
         ) {
           const [other] = await c.query<RowDataPacket[]>(
@@ -924,6 +936,15 @@ describe.sequential("Phase 7C full purge live DEV", () => {
             ) {
               injected = true;
               replaceDerived();
+            }
+            if (
+              name === "BEFORE_QUARANTINE" &&
+              seen.get(name) === 1 &&
+              scenario.startsWith("coord-") &&
+              scenario.endsWith("before-physical")
+            ) {
+              injected = true;
+              replaceCoord();
             }
             if (
               faultBinding &&
@@ -1095,6 +1116,54 @@ describe.sequential("Phase 7C full purge live DEV", () => {
             await connection.commit();
           },
         });
+        if (
+          scenario.startsWith("coord-") &&
+          scenario.endsWith("before-claim")
+        ) {
+          const reader = await new ContentCoordination(root, {
+            familyId: f.familyId,
+            sha256Hex: hex,
+            byteSize: "16",
+          }).acquireReadOnly(0);
+          try {
+            replaceCoord();
+            await expect(processor.runNext()).rejects.toThrow(
+              /COORD_NAMESPACE_UNCERTAIN/,
+            );
+            const [state] = await c.query<RowDataPacket[]>(
+              "SELECT progress,execution_state state,attempts,CAST(released_bytes AS CHAR) releasedBytes FROM purge_intents WHERE id=?",
+              [intent.id],
+            );
+            expect(state[0]).toMatchObject({
+              progress: "REQUESTED",
+              state: "QUEUED",
+              attempts: 0,
+              releasedBytes: "0",
+            });
+            const [files] = await c.query<RowDataPacket[]>(
+              "SELECT id FROM purge_files WHERE purge_intent_id=?",
+              [intent.id],
+            );
+            const [audit] = await c.query<RowDataPacket[]>(
+              "SELECT action FROM audit_logs WHERE purge_intent_id=?",
+              [intent.id],
+            );
+            expect(files).toHaveLength(0);
+            expect(audit).toHaveLength(0);
+            expect(
+              (await readDerivedCapacityInventory(c)).familyUsage.get(
+                f.familyId,
+              ),
+            ).toBe(BigInt(derived.length * 2));
+            expect(existsSync(original)).toBe(true);
+            expect(existsSync(final)).toBe(true);
+            expect(existsSync(preview)).toBe(true);
+            expect(existsSync(join(dir, ".purge"))).toBe(false);
+          } finally {
+            reader.close();
+          }
+          return;
+        }
         if (scenario === "derived-replacement-before-claim") {
           replaceDerived();
           await expect(processor.runNext()).rejects.toThrow(
@@ -1338,6 +1407,37 @@ describe.sequential("Phase 7C full purge live DEV", () => {
             new PurgeProcessor(db.pool, root, store, gate).run(lease),
           ).rejects.toThrow("PURGE_FILESYSTEM_UNCERTAIN");
           expect(existsSync(original)).toBe(true);
+          return;
+        }
+        if (
+          scenario.startsWith("coord-") &&
+          scenario.endsWith("before-physical")
+        ) {
+          const [files] = await c.query<RowDataPacket[]>(
+            "SELECT stage FROM purge_files WHERE purge_intent_id=?",
+            [intent.id],
+          );
+          expect(files.every((file) => file.stage === "CATALOGUED")).toBe(true);
+          const [state] = await c.query<RowDataPacket[]>(
+            "SELECT progress,CAST(released_bytes AS CHAR) releasedBytes FROM purge_intents WHERE id=?",
+            [intent.id],
+          );
+          expect(state[0]).toMatchObject({
+            progress: "DETACHED",
+            releasedBytes: "0",
+          });
+          expect(
+            (await readDerivedCapacityInventory(c)).familyUsage.get(f.familyId),
+          ).toBe(BigInt(derived.length * 2));
+          expect(existsSync(original)).toBe(true);
+          expect(existsSync(final)).toBe(true);
+          expect(existsSync(preview)).toBe(true);
+          expect(existsSync(join(dir, ".purge"))).toBe(false);
+          const [audits] = await c.query<RowDataPacket[]>(
+            "SELECT action FROM audit_logs WHERE purge_intent_id=?",
+            [intent.id],
+          );
+          expect(audits.map((a) => a.action)).toEqual(["PURGE_STARTED"]);
           return;
         }
         if (scenario === "derived-replacement-before-physical") {

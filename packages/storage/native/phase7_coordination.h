@@ -16,6 +16,7 @@ typedef struct {
   char family[21];
   char sha[65];
   char byte_size[21];
+  sm_marker binding;
   unsigned char coordination_id[CC_SHA256_DIGEST_LENGTH];
   int locked;
   int exclusive;
@@ -59,28 +60,15 @@ static int ps_coord_hex(const char *value, size_t count) {
   return 0;
 }
 
-static int ps_coord_directory(int root_fd, int create, dev_t device) {
-  int first = secure_open_child_directory(root_fd, ".coord", create, 1);
-  if (first < 0) return -1;
-  struct stat first_status;
-  if (fstat(first, &first_status) != 0 || first_status.st_dev != device ||
-      first_status.st_uid != geteuid() || (first_status.st_mode & 07777) != 0700) {
-    close(first); errno = EPERM; return -1;
-  }
-  int second = secure_open_child_directory(first, "v1", create, 1);
-  close(first);
-  if (second < 0) return -1;
-  struct stat second_status;
-  if (fstat(second, &second_status) != 0 || second_status.st_dev != device ||
-      second_status.st_uid != geteuid() || (second_status.st_mode & 07777) != 0700) {
-    close(second); errno = EPERM; return -1;
-  }
-  return second;
+static int ps_validate_coord_namespace(ps_coord_t *coord) {
+  int fd=sm_validate_namespace(coord->root_fd,coord->root_path,&coord->binding,coord->directory_fd);
+  if(fd<0)return -1;close(fd);return 0;
 }
 
 static int ps_coord_validate_file(ps_coord_t *coord, ino_t *inode) {
   struct stat open_status, named_status;
-  if (fstat(coord->lock_fd, &open_status) != 0 ||
+  if (ps_validate_coord_namespace(coord) != 0 ||
+      fstat(coord->lock_fd, &open_status) != 0 ||
       fstatat(coord->directory_fd, coord->basename, &named_status,
               AT_SYMLINK_NOFOLLOW) != 0 ||
       !S_ISREG(open_status.st_mode) || !S_ISREG(named_status.st_mode) ||
@@ -122,8 +110,13 @@ static napi_value ps_open_coordination(napi_env env, napi_callback_info info) {
       strcmp(marker,expected) != 0) {
     close(root_fd); throw_code(env,"COORD_ROOT_INVALID","Coordination root mismatch."); return NULL;
   }
-  int dir_fd = ps_coord_directory(root_fd,1,root_status.st_dev);
-  if (dir_fd < 0) { close(root_fd); throw_errno(env,"open coordination directory"); return NULL; }
+  sm_marker binding;char root_path[PATH_MAX];
+  if(sm_read(root_fd,&binding)||binding.version!=2) {
+    close(root_fd);throw_code(env,"COORD_ROOT_UPGRADE_REQUIRED","A controlled root upgrade is required.");return NULL;
+  }
+  if(fcntl(root_fd,F_GETPATH,root_path)) {close(root_fd);throw_code(env,"COORD_NAMESPACE_UNCERTAIN","Coordination namespace is unavailable.");return NULL;}
+  int dir_fd = sm_validate_namespace(root_fd,root_path,&binding,-1);
+  if (dir_fd < 0) { close(root_fd); throw_code(env,"COORD_NAMESPACE_UNCERTAIN","Coordination namespace is unavailable."); return NULL; }
   char material[256];
   int count = snprintf(material,sizeof(material),"%llu:%llu:%s:%s:%s:%s",
       (unsigned long long)root_status.st_dev,(unsigned long long)root_status.st_ino,
@@ -146,6 +139,7 @@ static napi_value ps_open_coordination(napi_env env, napi_callback_info info) {
   if (coord == NULL) { close(fd); close(dir_fd); close(root_fd); throw_code(env,"STORAGE_NATIVE_ERROR","Coordination allocation failed."); return NULL; }
   *coord = (ps_coord_t){.magic=PS_COORD_MAGIC,.root_fd=root_fd,.directory_fd=dir_fd,
       .lock_fd=fd,.root_device=root_status.st_dev,.root_inode=root_status.st_ino};
+  coord->binding=binding;strcpy(coord->root_path,root_path);
   strcpy(coord->marker,marker); strcpy(coord->basename,basename);
   strcpy(coord->family,family); strcpy(coord->sha,hash);
   strcpy(coord->byte_size,size);
@@ -171,6 +165,9 @@ static napi_value ps_try_coordination(napi_env env,napi_callback_info info) {
       !(mode[0]=='S'||mode[0]=='X') || coord->locked) {
     throw_code(env,"COORD_INVALID_MODE","Invalid or reentrant coordination mode."); return NULL;
   }
+  if(ps_validate_coord_namespace(coord)) {
+    throw_code(env,"COORD_NAMESPACE_UNCERTAIN","Coordination namespace changed.");return NULL;
+  }
   if (flock(coord->lock_fd,(mode[0]=='S'?LOCK_SH:LOCK_EX)|LOCK_NB)!=0) {
     if (errno!=EWOULDBLOCK && errno!=EAGAIN) { throw_errno(env,"acquire coordination lock"); return NULL; }
     napi_value no; napi_get_boolean(env,false,&no); return no;
@@ -187,7 +184,7 @@ static napi_value ps_try_coordination(napi_env env,napi_callback_info info) {
       strcmp(marker,coord->marker)!=0 ||
       ps_coord_validate_file(coord,&inode)!=0 || inode!=coord->lock_inode) {
     (void)flock(coord->lock_fd,LOCK_UN);
-    throw_code(env,"COORD_IDENTITY_CHANGED","Coordination identity changed."); return NULL;
+    throw_code(env,"COORD_NAMESPACE_UNCERTAIN","Coordination identity changed."); return NULL;
   }
   if (coord->basename[65]=='R' && mode[0]=='X') {
     int admission=ps_handoff_admit_exclusive(coord);
@@ -198,6 +195,10 @@ static napi_value ps_try_coordination(napi_env env,napi_callback_info info) {
       }
       napi_value no;napi_get_boolean(env,false,&no);return no;
     }
+  }
+  if(ps_validate_coord_namespace(coord)) {
+    (void)flock(coord->lock_fd,LOCK_UN);
+    throw_code(env,"COORD_NAMESPACE_UNCERTAIN","Coordination namespace changed.");return NULL;
   }
   coord->locked=1;
   coord->exclusive=mode[0]=='X';

@@ -1,20 +1,13 @@
+import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
 import { createHash } from "node:crypto";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
 import { CapacityGate, StorageRoot } from "./index.js";
 
-const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3c2-read-"));
+const rootPath = freshStorageRootPath("ps4d3c2-read-");
 const bytes = Buffer.from("synthetic-derived-webp");
 const digest = createHash("sha256").update(bytes).digest("hex");
 

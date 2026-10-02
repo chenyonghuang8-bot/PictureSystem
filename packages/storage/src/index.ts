@@ -230,6 +230,7 @@ type NativeBinding = {
   closeCapacityGate(handle: NativeCapacityGate): void;
   provisionDerivedWriterLock(handle: NativeRoot): void;
   openRoot(path: string, initialize: boolean): NativeOpenResult;
+  validateCoordinationRoot(handle: NativeRoot): void;
   closeRoot(handle: NativeRoot): void;
   ensureDirectory(handle: NativeRoot, relativePath: string): void;
   createExclusive(
@@ -1129,6 +1130,15 @@ export class StorageRoot {
     }
     if (marker !== this.markerId) {
       throw new StorageSafetyError("MEDIA_ROOT_MARKER_MISMATCH");
+    }
+  }
+
+  assertCoordinationNamespace() {
+    this.assertIdentity();
+    try {
+      this.#native.validateCoordinationRoot(this.#requiredHandle());
+    } catch (error) {
+      throw safetyError("COORD_NAMESPACE_UNAVAILABLE", error);
     }
   }
 

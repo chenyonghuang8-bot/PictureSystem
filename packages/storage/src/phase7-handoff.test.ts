@@ -1,13 +1,15 @@
+import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
 import {
   appendFileSync,
-  mkdtempSync,
-  realpathSync,
   rmSync,
   readdirSync,
   openSync,
   closeSync,
+  renameSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
@@ -53,6 +55,8 @@ const arm=()=>{
  else setImmediate(arm);
 };arm();
 createInterface({input:process.stdin}).on('line',line=>{
+ if(line==='DENY_DELIVER'){try{n.transferRegisteredOriginal(launch.handle,original);throw Error('UNEXPECTED_TRANSFER');}catch(error){if(error.message==='UNEXPECTED_TRANSFER')throw error;send('TRANSFER_DENIED');}}
+ if(line==='DENY_VERIFY'){try{n.verifyRegisteredSettlement(launch.handle);throw Error('UNEXPECTED_SETTLEMENT');}catch(error){if(error.message==='UNEXPECTED_SETTLEMENT')throw error;send('SETTLEMENT_DENIED');}}
  if(line==='DELIVER'){n.transferRegisteredOriginal(launch.handle,original);send('DELIVERED');}
  if(line==='DUPLICATE'){try{n.transferRegisteredOriginal(launch.handle,original);throw Error('DUPLICATE_TRANSFER');}catch(error){if(error.message==='DUPLICATE_TRANSFER')throw error;send('DUPLICATE_DENIED');}}
  if(line==='WITHHOLD'){n.phase7TestTransferNoRelease(launch.handle,original);send('WITHHELD');}
@@ -95,10 +99,11 @@ async function registeredFixture(
     event: ReturnType<typeof eventQueue>;
     content: ContentCoordination;
     consumerChannel: NodeJS.ReadWriteStream;
+    rootPath: string;
   }) => Promise<void>,
   holdSettlement = false,
 ) {
-  const dir = mkdtempSync(join(realpathSync(tmpdir()), "phase7-registered-"));
+  const dir = freshStorageRootPath("phase7-registered-");
   const root = StorageRoot.open(dir, { initialize: true });
   const bytes = Buffer.from("registered synthetic Original");
   const digest = createHash("sha256").update(bytes).digest("hex");
@@ -142,6 +147,7 @@ async function registeredFixture(
       event,
       content,
       consumerChannel: channel,
+      rootPath: dir,
     });
   } finally {
     if (!channel.destroyed) channel.write("E");
@@ -178,6 +184,122 @@ async function waitForExclusive(content: ContentCoordination) {
 }
 
 describe("registered production supervisor ownership", () => {
+  it.each(["v1", ".coord", "fence"])(
+    "refuses a registered transfer after %s replacement with source R released",
+    async (segment) => {
+      await registeredFixture(
+        async ({
+          processHandle,
+          event,
+          content,
+          consumerChannel,
+          rootPath,
+        }) => {
+          processHandle.stdin!.write("DROP_R\n");
+          await event("R_DROPPED");
+          const target = join(
+            rootPath,
+            segment === "fence"
+              ? ".storage-root.initializing"
+              : segment === "v1"
+                ? ".coord/v1"
+                : ".coord",
+          );
+          const moved = `${target}-held`;
+          const ledger = join(
+            rootPath,
+            ".coord/v1",
+            readdirSync(join(rootPath, ".coord/v1")).find((name) =>
+              name.endsWith(".h"),
+            )!,
+          );
+          const record = join(
+            ledger,
+            readdirSync(ledger).find((name) => name.endsWith(".rec"))!,
+          );
+          const before = readFileSync(record);
+          if (segment === "fence")
+            writeFileSync(target, "FAMILY_ALBUM_INIT1\n", { mode: 0o600 });
+          else {
+            renameSync(target, moved);
+            mkdirSync(target, { mode: 0o700 });
+          }
+          try {
+            processHandle.stdin!.write("DENY_DELIVER\nDENY_VERIFY\n");
+            await event("TRANSFER_DENIED");
+            await event("SETTLEMENT_DENIED");
+            await expect(
+              content.acquireLifecycle("X", 0),
+            ).rejects.toMatchObject({
+              code:
+                segment === "fence"
+                  ? "COORD_ROOT_INVALID"
+                  : "COORD_NAMESPACE_UNCERTAIN",
+            });
+            const movedRecord =
+              segment === "fence" ? record : record.replace(target, moved);
+            expect(readFileSync(movedRecord)).toEqual(before);
+            expect((consumerChannel as Duplex).readableLength).toBe(0);
+          } finally {
+            rmSync(target, { recursive: true, force: true });
+            if (segment !== "fence") renameSync(moved, target);
+          }
+          const live = once(consumerChannel, "data");
+          processHandle.stdin!.write("DELIVER\n");
+          expect(String((await live)[0])).toBe("LIVE\n");
+          consumerChannel.write("E");
+          await event("SUP_CLOSED");
+          processHandle.stdin!.write("VERIFY\n");
+          await event("SETTLED");
+          await waitForExclusive(content);
+        },
+      );
+    },
+    10000,
+  );
+
+  it("preserves unresolved receiver ledger when namespace moves after real media transfer", async () => {
+    await registeredFixture(
+      async ({ processHandle, event, content, consumerChannel, rootPath }) => {
+        const live = once(consumerChannel, "data");
+        processHandle.stdin!.write("DELIVER\n");
+        expect(String((await live)[0])).toBe("LIVE\n");
+        processHandle.stdin!.write("DROP_R\n");
+        await event("R_DROPPED");
+        const target = join(rootPath, ".coord/v1"),
+          moved = `${target}-held`;
+        const ledger = join(
+          target,
+          readdirSync(target).find((name) => name.endsWith(".h"))!,
+        );
+        const record = join(
+          ledger,
+          readdirSync(ledger).find((name) => name.endsWith(".rec"))!,
+        );
+        const before = readFileSync(record);
+        renameSync(target, moved);
+        mkdirSync(target, { mode: 0o700 });
+        try {
+          await expect(content.acquireLifecycle("X", 0)).rejects.toMatchObject({
+            code: "COORD_NAMESPACE_UNCERTAIN",
+          });
+          consumerChannel.write("E");
+          expect(await event("SUP_CLOSED")).toMatchObject({ code: 79 });
+          processHandle.stdin!.write("DENY_VERIFY\n");
+          await event("SETTLEMENT_DENIED");
+          expect(readFileSync(record.replace(target, moved))).toEqual(before);
+        } finally {
+          rmSync(target, { recursive: true, force: true });
+          renameSync(moved, target);
+        }
+        const exited = once(processHandle, "close");
+        processHandle.stdin!.write("EXIT\n");
+        await exited;
+        await waitForExclusive(content);
+      },
+    );
+  }, 10000);
+
   it("rejects inherited-media launch in every production metadata/renderer supervisor", () => {
     const fd = openSync("/dev/null", "r"),
       build = join(import.meta.dirname, "../build");
@@ -381,7 +503,7 @@ async function child(root: StorageRoot, stay: boolean) {
 
 describe("durable Phase 7 handoff ledger", () => {
   it("rejects cross-K Originals without sending an FD, then sends the registered K through SCM_RIGHTS", async () => {
-    const dir = mkdtempSync(join(realpathSync(tmpdir()), "phase7-fd-"));
+    const dir = freshStorageRootPath("phase7-fd-");
     const root = StorageRoot.open(dir, { initialize: true });
     const payload = Buffer.from("synthetic Phase 7A handoff bytes");
     const digest = createHash("sha256").update(payload).digest("hex");
@@ -554,7 +676,7 @@ print('OK',flush=True)
   });
 
   it("requires durable receiver registration before the transfer entry point", async () => {
-    const dir = mkdtempSync(join(realpathSync(tmpdir()), "phase7-register-"));
+    const dir = freshStorageRootPath("phase7-register-");
     const root = StorageRoot.open(dir, { initialize: true });
     const native = require(addon) as {
       openCoordination: (...args: string[]) => object;
@@ -600,7 +722,7 @@ print('OK',flush=True)
   });
 
   it("fails R-exclusive closed for live unresolved holder and recovers exact dead identity", async () => {
-    const dir = mkdtempSync(join(realpathSync(tmpdir()), "phase7-handoff-"));
+    const dir = freshStorageRootPath("phase7-handoff-");
     const root = StorageRoot.open(dir, { initialize: true });
     let processHandle: Awaited<ReturnType<typeof child>> | undefined;
     try {

@@ -1,18 +1,16 @@
+import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
 import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
   lstatSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
-  realpathSync,
   rmSync,
   symlinkSync,
   linkSync,
   truncateSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -78,10 +76,9 @@ async function withStore(
     store: DerivedStore;
   }) => Promise<void>,
 ) {
-  const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
-  privateDirectory(rootPath);
-  privateDirectory(join(rootPath, "derived"));
+  const rootPath = freshStorageRootPath("ps4d3b0-");
   const root = StorageRoot.open(rootPath, { initialize: true });
+  privateDirectory(join(rootPath, "derived"));
   let store: DerivedStore | undefined;
   let failure: unknown;
   try {
@@ -309,14 +306,12 @@ describe("sealed derived output", () => {
       closeWriter.cleanupOwnedFailure(capability);
     });
 
-    const firstRoot = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
-    const secondRoot = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
-    privateDirectory(firstRoot);
-    privateDirectory(secondRoot);
-    privateDirectory(join(firstRoot, "derived"));
-    privateDirectory(join(secondRoot, "derived"));
+    const firstRoot = freshStorageRootPath("ps4d3b0-");
+    const secondRoot = freshStorageRootPath("ps4d3b0-");
     const first = StorageRoot.open(firstRoot, { initialize: true });
     const second = StorageRoot.open(secondRoot, { initialize: true });
+    privateDirectory(join(firstRoot, "derived"));
+    privateDirectory(join(secondRoot, "derived"));
     let firstStore: DerivedStore | undefined;
     let secondStore: DerivedStore | undefined;
     let sealed: SealedDerivedOutput | undefined;

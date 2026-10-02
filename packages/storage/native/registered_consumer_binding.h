@@ -16,9 +16,9 @@ static napi_value p7_create_launch(napi_env env,napi_callback_info info) {
   ps_handoff_t *h=ps_handoff_get(env,rec);if(!h)return NULL;
   /* The launch owns the record; detach it from the temporary N-API finalizer. */
   ps_handoff_t *owned=malloc(sizeof(*h));if(!owned)return NULL;*owned=*h;
-  h->record_fd=h->directory_fd=-1;
+  h->record_fd=h->directory_fd=h->root_fd=h->v1_fd=-1;
   owned->record.supervisor_pid=0;owned->record.supervisor_start_sec=0;owned->record.supervisor_start_usec=0;
-  if(ps_handoff_write(owned->record_fd,&owned->record)!=0){ps_handoff_finalize(env,owned,NULL);throw_errno(env,"prepare registered launch");return NULL;}
+  if(ps_validate_handoff_namespace(owned)||ps_handoff_write(owned->record_fd,&owned->record)!=0){ps_handoff_finalize(env,owned,NULL);throw_errno(env,"prepare registered launch");return NULL;}
   int pair[2];if(socketpair(AF_UNIX,SOCK_DGRAM,0,pair)!=0){ps_handoff_finalize(env,owned,NULL);throw_errno(env,"registered channel");return NULL;}
   if(fcntl(pair[0],F_SETFD,FD_CLOEXEC)||fcntl(pair[1],F_SETFD,FD_CLOEXEC)){close(pair[0]);close(pair[1]);ps_handoff_finalize(env,owned,NULL);throw_errno(env,"registered channel flags");return NULL;}
   p7_launch *l=calloc(1,sizeof(*l));if(!l){close(pair[0]);close(pair[1]);ps_handoff_finalize(env,owned,NULL);return NULL;}
@@ -30,15 +30,15 @@ static napi_value p7_register_supervisor(napi_env env,napi_callback_info info) {
   napi_value args[2];size_t argc=2;napi_get_cb_info(env,info,&argc,args,NULL,NULL);
   p7_launch *l=p7_get_launch(env,args[0]);if(!l)return NULL;int32_t pid=0;uint64_t sec=0,usec=0;
   ps_handoff_record_t r;
-  if(argc!=2||napi_get_value_int32(env,args[1],&pid)!=napi_ok||pid<=0||
+  if(ps_validate_handoff_namespace(l->handoff)||argc!=2||napi_get_value_int32(env,args[1],&pid)!=napi_ok||pid<=0||
     p7_identity(pid,&sec,&usec)!=1||ps_handoff_read(l->handoff->record_fd,&r)||
     r.stage!=PS_HANDOFF_PREPARED||r.coordinator_pid!=getpid()||l->child<0){
     throw_code(env,"HANDOFF_SUPERVISOR_INVALID","Supervisor identity unavailable.");return NULL;
   }
   r.supervisor_pid=pid;r.supervisor_start_sec=sec;r.supervisor_start_usec=usec;r.stage=PS_HANDOFF_SUPERVISOR_REGISTERED;
-  if(ps_handoff_write(l->handoff->record_fd,&r)){throw_errno(env,"register supervisor");return NULL;}
+  if(ps_validate_handoff_namespace(l->handoff)||ps_handoff_write(l->handoff->record_fd,&r)){throw_errno(env,"register supervisor");return NULL;}
   l->handoff->record=r;close(l->child);l->child=-1;
-  if(p7_send(l->control,&r,P7_INIT,l->handoff->record_fd)){throw_errno(env,"delegate exact record");return NULL;}
+  if(ps_validate_handoff_namespace(l->handoff)||p7_send(l->control,&r,P7_INIT,l->handoff->record_fd)){throw_errno(env,"delegate exact record");return NULL;}
   return undefined_value(env);
 }
 static napi_value p7_poll_launch(napi_env env,napi_callback_info info) {
@@ -48,7 +48,7 @@ static napi_value p7_poll_launch(napi_env env,napi_callback_info info) {
   if(ready<0){throw_errno(env,"poll registered consumer");return NULL;}
   napi_value out;if(!ready){napi_get_boolean(env,false,&out);return out;}
   ps_handoff_record_t r;int unused=-1;
-  if(l->armed||p7_receive(l->control,&l->handoff->record,P7_ARMED,0,&unused,0)||
+  if(ps_validate_handoff_namespace(l->handoff)||l->armed||p7_receive(l->control,&l->handoff->record,P7_ARMED,0,&unused,0)||
     ps_handoff_read(l->handoff->record_fd,&r)||!p7_same(&r,&l->handoff->record)||
     r.stage!=PS_HANDOFF_REGISTERED||r.receiver_pid<=0){throw_code(env,"HANDOFF_PROTOCOL_INVALID","Consumer registration failed.");return NULL;}
   l->handoff->record=r;l->armed=1;napi_get_boolean(env,true,&out);return out;
@@ -58,7 +58,7 @@ static napi_value p7_transfer_original(napi_env env,napi_callback_info info) {
   p7_launch *l=p7_get_launch(env,args[0]);if(!l)return NULL;
   original_handle_t *o=get_original_handle(env,args[1]);if(!o)return NULL;
   ps_handoff_record_t r;struct stat st,named;
-  if(!l->armed||l->sent||ps_handoff_read(l->handoff->record_fd,&r)||
+  if(ps_validate_handoff_namespace(l->handoff)||!l->armed||l->sent||ps_handoff_read(l->handoff->record_fd,&r)||
     !ps_handoff_same_registration(&r,&l->handoff->record)||r.stage!=PS_HANDOFF_REGISTERED||
     r.coordinator_pid!=getpid()||r.input_type!=1||r.root_device!=(uint64_t)o->device||
     r.root_inode!=(uint64_t)o->root_inode||strcmp(r.marker,o->marker)||
@@ -76,17 +76,17 @@ static napi_value p7_transfer_original(napi_env env,napi_callback_info info) {
     throw_code(env,"HANDOFF_CONTENT_MISMATCH","Transfer root identity changed.");return NULL;
   }
   l->sent=1;
-  if(p7_send(l->control,&r,P7_MEDIA,o->file_fd)){throw_errno(env,"send registered media");return NULL;}
+  if(ps_validate_handoff_namespace(l->handoff)||p7_send(l->control,&r,P7_MEDIA,o->file_fd)){throw_errno(env,"send registered media");return NULL;}
   int file=o->file_fd,parent=o->parent_fd;o->file_fd=o->parent_fd=-1;o->consumed=1;
   int failed=close(file);if(close(parent)!=0)failed=-1;
   if(!failed&&l->test_withhold)return undefined_value(env);
-  if(failed||p7_send(l->control,&r,P7_SOURCE_RELEASED,-1)){throw_code(env,"HANDOFF_SOURCE_UNSETTLED","Source release failed.");return NULL;}
+  if(failed||ps_validate_handoff_namespace(l->handoff)||p7_send(l->control,&r,P7_SOURCE_RELEASED,-1)){throw_code(env,"HANDOFF_SOURCE_UNSETTLED","Source release failed.");return NULL;}
   close(l->control);l->control=-1;return undefined_value(env);
 }
 static napi_value p7_verify_settlement(napi_env env,napi_callback_info info) {
   napi_value arg;size_t argc=1;napi_get_cb_info(env,info,&argc,&arg,NULL,NULL);
   p7_launch *l=p7_get_launch(env,arg);if(!l)return NULL;ps_handoff_record_t r;
-  if(ps_handoff_named_identity(l->handoff->directory_fd,l->handoff->record_fd,l->handoff->name)||
+  if(ps_validate_handoff_namespace(l->handoff)||ps_handoff_named_identity(l->handoff->directory_fd,l->handoff->record_fd,l->handoff->name)||
     ps_handoff_read(l->handoff->record_fd,&r)||!ps_handoff_same_registration(&r,&l->handoff->record)||
     r.stage!=PS_HANDOFF_SETTLED||!l->sent){throw_code(env,"HANDOFF_UNSETTLED","Registered consumer is not durably settled.");return NULL;}
   return undefined_value(env);

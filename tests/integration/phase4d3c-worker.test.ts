@@ -1,14 +1,7 @@
+import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
@@ -91,7 +84,7 @@ describe.sequential("Phase 4D3c worker integration", () => {
   const assets = new MySqlDerivedAssetFence(database.pool);
   const mediaRepository = new MySqlMediaRepository(database.pool);
   const suffix = randomUUID().replaceAll("-", "");
-  const mediaRoot = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3c-"));
+  const mediaRoot = freshStorageRootPath("ps4d3c-");
   let storageRoot: StorageRoot;
   let gate: CapacityGate;
   let store: DerivedStore;
@@ -102,8 +95,6 @@ describe.sequential("Phase 4D3c worker integration", () => {
   const workerB = MySqlJobRepository.createWorkerIdentity();
 
   beforeAll(async () => {
-    privateDirectory(mediaRoot);
-    privateDirectory(join(mediaRoot, "derived"));
     const connection = await database.pool.getConnection();
     try {
       const [identity] = await connection.query<RowDataPacket[]>(
@@ -144,6 +135,7 @@ describe.sequential("Phase 4D3c worker integration", () => {
       connection.release();
     }
     storageRoot = StorageRoot.open(mediaRoot, { initialize: true });
+    privateDirectory(join(mediaRoot, "derived"));
     storageRoot.provisionDerivedWriterLockForDev();
     storageRoot.provisionSharedCapacityLockForDev();
     gate = CapacityGate.open({

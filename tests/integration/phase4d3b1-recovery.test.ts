@@ -1,14 +1,12 @@
+import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   chmodSync,
   lstatSync,
   mkdirSync,
-  mkdtempSync,
-  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { ContentCoordination } from "../../packages/storage/src/phase7-coordination.js";
 import { join } from "node:path";
 
@@ -49,7 +47,7 @@ describe.sequential("Phase 4D3b-1 derived publish recovery", () => {
   const repository = new MySqlDerivedAdmissionRepository(database.pool);
   const mediaRepository = new MySqlMediaRepository(database.pool);
   const suffix = randomUUID().replaceAll("-", "");
-  const mediaRoot = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b1r-"));
+  const mediaRoot = freshStorageRootPath("ps4d3b1r-");
   let storageRoot: StorageRoot;
   let gate: CapacityGate;
   let store: DerivedStore;
@@ -66,8 +64,6 @@ describe.sequential("Phase 4D3b-1 derived publish recovery", () => {
     );
 
   beforeAll(async () => {
-    privateDirectory(mediaRoot);
-    privateDirectory(join(mediaRoot, "derived"));
     const connection = await database.pool.getConnection();
     try {
       const [identity] = await connection.query<RowDataPacket[]>(
@@ -108,6 +104,7 @@ describe.sequential("Phase 4D3b-1 derived publish recovery", () => {
       connection.release();
     }
     storageRoot = StorageRoot.open(mediaRoot, { initialize: true });
+    privateDirectory(join(mediaRoot, "derived"));
     storageRoot.provisionDerivedWriterLockForDev();
     storageRoot.provisionSharedCapacityLockForDev();
     gate = CapacityGate.open({

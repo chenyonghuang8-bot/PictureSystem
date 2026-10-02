@@ -1,12 +1,5 @@
-import {
-  chmodSync,
-  mkdtempSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  symlinkSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
+import { chmodSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -15,9 +8,7 @@ import { CapacityGate, StorageRoot } from "./index.js";
 
 describe("shared root-bound capacity gate", () => {
   it("requires explicit provision and serializes independent handles", async () => {
-    const rootPath = mkdtempSync(
-      join(realpathSync(tmpdir()), "phase4d3b0-capacity-"),
-    );
+    const rootPath = freshStorageRootPath("phase4d3b0-capacity-");
     const root = StorageRoot.open(rootPath, { initialize: true });
     let first: CapacityGate | undefined;
     let second: CapacityGate | undefined;
@@ -60,9 +51,7 @@ describe("shared root-bound capacity gate", () => {
   });
 
   it("rejects a replaced lock inode and symlink without recreating it", async () => {
-    const rootPath = mkdtempSync(
-      join(realpathSync(tmpdir()), "phase4d3b0-capacity-"),
-    );
+    const rootPath = freshStorageRootPath("phase4d3b0-capacity-");
     const root = StorageRoot.open(rootPath, { initialize: true });
     let gate: CapacityGate | undefined;
     try {
@@ -91,9 +80,7 @@ describe("shared root-bound capacity gate", () => {
   });
 
   it("rejects non-0600 lock mode", () => {
-    const rootPath = mkdtempSync(
-      join(realpathSync(tmpdir()), "phase4d3b0-capacity-"),
-    );
+    const rootPath = freshStorageRootPath("phase4d3b0-capacity-");
     const root = StorageRoot.open(rootPath, { initialize: true });
     try {
       root.provisionSharedCapacityLockForDev();
@@ -111,9 +98,7 @@ describe("shared root-bound capacity gate", () => {
   });
 
   it("includes the local queue in the total two-second admission deadline", async () => {
-    const rootPath = mkdtempSync(
-      join(realpathSync(tmpdir()), "phase4d3b0-capacity-"),
-    );
+    const rootPath = freshStorageRootPath("phase4d3b0-capacity-");
     const root = StorageRoot.open(rootPath, { initialize: true });
     let first: CapacityGate | undefined;
     let second: CapacityGate | undefined;

@@ -1,3 +1,4 @@
+import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -133,10 +134,9 @@ async function withStore(
     store: DerivedStore;
   }) => Promise<void>,
 ) {
-  const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
-  privateDirectory(rootPath);
-  privateDirectory(join(rootPath, "derived"));
+  const rootPath = freshStorageRootPath("ps4d3b0-");
   const root = StorageRoot.open(rootPath, { initialize: true });
+  privateDirectory(join(rootPath, "derived"));
   let store: DerivedStore | undefined;
   let failure: unknown;
   try {
@@ -307,10 +307,9 @@ describe("isolated verify-output", () => {
       expect(() =>
         sealed.verify(store, { epoch: 5n, kind: "PREVIEW" }),
       ).toThrow(/DERIVED_PERMIT_IDENTITY/u);
-      const otherPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
-      privateDirectory(otherPath);
-      privateDirectory(join(otherPath, "derived"));
+      const otherPath = freshStorageRootPath("ps4d3b0-");
       const otherRoot = StorageRoot.open(otherPath, { initialize: true });
+      privateDirectory(join(otherPath, "derived"));
       otherRoot.provisionDerivedWriterLockForDev();
       const other = DerivedStore.open({
         state: "READ_WRITE",

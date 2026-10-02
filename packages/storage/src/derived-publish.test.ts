@@ -1,3 +1,4 @@
+import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -116,10 +117,9 @@ async function withStore(
     store: DerivedStore;
   }) => Promise<void>,
 ) {
-  const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b1-"));
-  privateDirectory(rootPath);
-  privateDirectory(join(rootPath, "derived"));
+  const rootPath = freshStorageRootPath("ps4d3b1-");
   const root = StorageRoot.open(rootPath, { initialize: true });
+  privateDirectory(join(rootPath, "derived"));
   let store: DerivedStore | undefined;
   let failure: unknown;
   try {

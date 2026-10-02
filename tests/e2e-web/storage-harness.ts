@@ -64,9 +64,8 @@ export function prepareWebAcceptanceStorage(): WebAcceptanceStorage {
     { flag: "wx", mode: 0o600 },
   );
   const mediaRoot = join(runRoot, "media");
-  mkdirSync(mediaRoot, { mode: 0o700 });
-  mkdirSync(join(mediaRoot, "derived"), { mode: 0o700 });
   const storage = StorageRoot.open(mediaRoot, { initialize: true });
+  mkdirSync(join(mediaRoot, "derived"), { mode: 0o700 });
   try {
     storage.provisionSharedCapacityLockForDev();
     const result: WebAcceptanceStorage = {

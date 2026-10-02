@@ -1,7 +1,7 @@
+import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
-  chmodSync,
   lstatSync,
   mkdtempSync,
   mkdirSync,
@@ -228,9 +228,7 @@ describe.sequential("Phase 4D3a-2b renderer qualification", () => {
   const repository = new MySqlDerivedAdmissionRepository(database.pool);
   const media = new MySqlMediaRepository(database.pool);
   const suffix = randomUUID().replaceAll("-", "");
-  const mediaRoot = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3a2b-"));
-  chmodSync(mediaRoot, 0o700);
-  mkdirSync(join(mediaRoot, "derived"), { mode: 0o700 });
+  const mediaRoot = freshStorageRootPath("ps4d3a2b-");
   let storageRoot: StorageRoot;
   let reader: OriginalReader;
   let gate: CapacityGate;
@@ -291,6 +289,7 @@ describe.sequential("Phase 4D3a-2b renderer qualification", () => {
       memberId = String(member.insertId);
       await connection.commit();
       storageRoot = StorageRoot.open(mediaRoot, { initialize: true });
+      mkdirSync(join(mediaRoot, "derived"), { mode: 0o700 });
       storageRoot.provisionSharedCapacityLockForDev();
       storageRoot.provisionDerivedWriterLockForDev();
       capability = { state: "READ_WRITE", root: storageRoot };

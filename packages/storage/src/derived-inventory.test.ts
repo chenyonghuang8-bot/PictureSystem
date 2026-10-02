@@ -1,24 +1,28 @@
+import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
 import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
-  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { CapacityGate, StorageRoot } from "./index.js";
+
+function inventoryRoot(prefix: string) {
+  const path = freshStorageRootPath(prefix);
+  StorageRoot.open(path, { initialize: true }).close();
+  return path;
+}
 
 function privateDirectory(path: string) {
   mkdirSync(path, { recursive: true });
@@ -58,7 +62,7 @@ async function withGate(
   rootPath: string,
   operation: (gate: CapacityGate) => Promise<void> | void,
 ) {
-  const root = StorageRoot.open(rootPath, { initialize: true });
+  const root = StorageRoot.open(rootPath, { initialize: false });
   let gate: CapacityGate | undefined;
   try {
     if (!existsSync(join(rootPath, ".capacity.lock"))) {
@@ -79,7 +83,7 @@ async function withGate(
 
 describe("derived known-file inventory", () => {
   it("treats an absent or empty derived namespace as complete", async () => {
-    const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
+    const rootPath = inventoryRoot("ps4d3b0-");
     try {
       await withGate(rootPath, (gate) => {
         const absent = gate.snapshotLocked();
@@ -99,7 +103,7 @@ describe("derived known-file inventory", () => {
   });
 
   it("accepts only the capacity lock and recognized temp parts", async () => {
-    const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
+    const rootPath = inventoryRoot("ps4d3b0-");
     try {
       privateDirectory(join(rootPath, "derived"));
       privateFile(join(rootPath, "derived", ".capacity.lock"), "");
@@ -150,7 +154,7 @@ describe("derived known-file inventory", () => {
   });
 
   it("pages across 1250 job directories without a 1000-entry hard failure", async () => {
-    const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
+    const rootPath = inventoryRoot("ps4d3b0-");
     try {
       for (let job = 1; job <= 1250; job += 1) {
         knownPart(rootPath, String(job), "1", "thumbnail.part", "x");
@@ -300,7 +304,7 @@ describe("derived known-file inventory", () => {
       },
     ],
   ])("fails closed for %s", async (_label, plant) => {
-    const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
+    const rootPath = inventoryRoot("ps4d3b0-");
     try {
       privateDirectory(join(rootPath, "derived"));
       plant(rootPath);
@@ -316,7 +320,7 @@ describe("derived known-file inventory", () => {
   });
 
   it("fails closed for a socket and a second hard link", async () => {
-    const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps-"));
+    const rootPath = inventoryRoot("ps-");
     const socketPath = join(
       rootPath,
       "derived",
@@ -361,7 +365,7 @@ describe("derived known-file inventory", () => {
   });
 
   it("fails closed for an extended ACL", async () => {
-    const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
+    const rootPath = inventoryRoot("ps4d3b0-");
     try {
       knownPart(rootPath, "42", "1", "thumbnail.part");
       const file = join(
@@ -384,7 +388,7 @@ describe("derived known-file inventory", () => {
   });
 
   it("fails closed when a later page contains an unsafe name", async () => {
-    const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
+    const rootPath = inventoryRoot("ps4d3b0-");
     try {
       for (let job = 1; job <= 60; job += 1) {
         knownPart(rootPath, String(job), "1", "thumbnail.part");
@@ -404,7 +408,7 @@ describe("derived known-file inventory", () => {
   });
 
   it("fails closed when a parent directory is replaced between pages", async () => {
-    const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
+    const rootPath = inventoryRoot("ps4d3b0-");
     try {
       for (let job = 1; job <= 60; job += 1) {
         knownPart(rootPath, String(job), "1", "thumbnail.part");
@@ -424,7 +428,7 @@ describe("derived known-file inventory", () => {
   });
 
   it("fails closed when another process mutates the namespace during the scan", async () => {
-    const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
+    const rootPath = inventoryRoot("ps4d3b0-");
     try {
       for (let job = 1; job <= 80; job += 1) {
         knownPart(rootPath, String(job), "1", "thumbnail.part");
@@ -462,7 +466,7 @@ describe("derived known-file inventory", () => {
   }, 30_000);
 
   it("fails closed when another process replaces the temp namespace between pages", async () => {
-    const rootPath = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b0-"));
+    const rootPath = inventoryRoot("ps4d3b0-");
     try {
       for (let job = 1; job <= 60; job += 1) {
         knownPart(rootPath, String(job), "1", "thumbnail.part");

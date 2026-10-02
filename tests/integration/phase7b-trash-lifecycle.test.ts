@@ -1,13 +1,6 @@
+import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import {
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  mkdirSync,
-  chmodSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync, mkdirSync, chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
   PoolConnection,
@@ -246,7 +239,7 @@ describe.sequential("Phase 7B live lifecycle authorization and fences", () => {
       await c.rollback();
       throw error;
     }
-    dir = mkdtempSync(join(realpathSync(tmpdir()), "phase7b-lifecycle-"));
+    dir = freshStorageRootPath("phase7b-lifecycle-");
     root = StorageRoot.open(dir, { initialize: true });
     root.createUploadPayload(f.familyId, "7".repeat(32), bytes);
     root.publishOriginal({

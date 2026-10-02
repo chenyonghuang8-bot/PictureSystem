@@ -1,13 +1,6 @@
+import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
@@ -54,10 +47,9 @@ function privateDirectory(path: string) {
 describe.sequential("Phase 4D3c-2 derived serving", () => {
   const database = createDatabase(databaseUrl!);
   const suffix = randomUUID().replaceAll("-", "");
-  const mediaRoot = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3c2-serve-"));
-  privateDirectory(mediaRoot);
-  privateDirectory(join(mediaRoot, "derived"));
+  const mediaRoot = freshStorageRootPath("ps4d3c2-serve-");
   const storageRoot = StorageRoot.open(mediaRoot, { initialize: true });
+  privateDirectory(join(mediaRoot, "derived"));
   storageRoot.provisionSharedCapacityLockForDev();
   const gate = CapacityGate.open({
     mediaRoot: storageRoot.canonicalPath,

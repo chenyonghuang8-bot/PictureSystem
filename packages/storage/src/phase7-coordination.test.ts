@@ -1,13 +1,5 @@
-import {
-  mkdtempSync,
-  readdirSync,
-  realpathSync,
-  statSync,
-  symlinkSync,
-  chmodSync,
-  rmSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
+import { readdirSync, statSync, symlinkSync, chmodSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
@@ -17,7 +9,7 @@ import { ContentCoordination } from "./phase7-coordination.js";
 const roots: string[] = [];
 const digest = "a".repeat(64);
 function setup() {
-  const dir = mkdtempSync(join(realpathSync(tmpdir()), "phase7-coord-"));
+  const dir = freshStorageRootPath("phase7-coord-");
   roots.push(dir);
   const root = StorageRoot.open(dir, { initialize: true });
   return { root, dir };

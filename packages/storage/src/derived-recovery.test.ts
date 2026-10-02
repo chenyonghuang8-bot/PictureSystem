@@ -1,16 +1,14 @@
+import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
   lstatSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
-  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -30,8 +28,8 @@ function privateDirectory(path: string) {
 }
 
 function rootPath() {
-  const path = mkdtempSync(join(realpathSync(tmpdir()), "ps4d3b1r-"));
-  privateDirectory(path);
+  const path = freshStorageRootPath("ps4d3b1r-");
+  StorageRoot.open(path, { initialize: true }).close();
   privateDirectory(join(path, "derived"));
   return path;
 }
@@ -46,7 +44,7 @@ describe("derived publish recovery filesystem", () => {
     chmodSync(part, 0o600);
     const before = lstatSync(part, { bigint: true });
     const sha = createHash("sha256").update(bytes).digest("hex");
-    const root = StorageRoot.open(media, { initialize: true });
+    const root = StorageRoot.open(media, { initialize: false });
     root.provisionDerivedWriterLockForDev();
     root.provisionSharedCapacityLockForDev();
     const gate = CapacityGate.open({
@@ -167,7 +165,7 @@ describe("derived publish recovery filesystem", () => {
     symlinkSync("/dev/null", join(epoch, "thumbnail.part"));
     writeFileSync(join(epoch, "note.txt"), Buffer.from("unknown"));
     chmodSync(join(epoch, "note.txt"), 0o600);
-    const root = StorageRoot.open(media, { initialize: true });
+    const root = StorageRoot.open(media, { initialize: false });
     root.provisionSharedCapacityLockForDev();
     const gate = CapacityGate.open({
       mediaRoot: media,

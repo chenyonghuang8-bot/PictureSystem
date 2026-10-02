@@ -19,6 +19,7 @@
 #include <stdatomic.h>
 #include <time.h>
 #include <CommonCrypto/CommonDigest.h>
+#include "storage_marker.h"
 
 typedef struct {
   int root_fd;
@@ -26,6 +27,7 @@ typedef struct {
   dev_t device;
   ino_t inode;
   char canonical_path[PATH_MAX];
+  sm_marker marker_binding;
 } storage_root_t;
 
 #define CAPACITY_GATE_MAGIC UINT64_C(0x4341504741544531)
@@ -592,77 +594,13 @@ static napi_value race_result(napi_env env, int successes, int already_exists) {
   return object;
 }
 
-static int read_marker(int root_fd, char *identifier, size_t capacity,
-                       int initialize) {
-  int fd = openat(root_fd, ".storage-root",
-                  O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-  if (fd < 0 && errno == ENOENT && initialize) {
-    fd = openat(root_fd, ".storage-root",
-                O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
-                    O_CLOEXEC,
-                0600);
-    if (fd < 0) return -1;
-    unsigned char random_bytes[16];
-    arc4random_buf(random_bytes, sizeof(random_bytes));
-    char content[64];
-    const char *prefix = "FAMILY_ALBUM_STORAGE_V1:";
-    size_t prefix_length = strlen(prefix);
-    memcpy(content, prefix, prefix_length);
-    for (size_t i = 0; i < sizeof(random_bytes); i += 1) {
-      (void)snprintf(content + prefix_length + i * 2, 3, "%02x",
-                     random_bytes[i]);
-    }
-    size_t content_length = prefix_length + 32;
-    content[content_length++] = '\n';
-    if (write_all(fd, (const unsigned char *)content, content_length) != 0 ||
-        fsync(fd) != 0) {
-      int saved = errno;
-      close(fd);
-      errno = saved;
-      return -1;
-    }
-    if (close(fd) != 0 || sync_directory_fd(root_fd) != 0) return -1;
-    fd = openat(root_fd, ".storage-root",
-                O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-  }
-  if (fd < 0) return -1;
+#include "storage_root_v2.h"
 
-  struct stat status;
-  char content[64];
-  ssize_t length = read(fd, content, sizeof(content) - 1);
-  int failure = length < 0 ? errno : 0;
-  if (failure == 0 && fstat(fd, &status) != 0) failure = errno;
-  if (failure == 0 && validate_no_extended_acl(fd) != 0) failure = errno;
-  if (close(fd) != 0 && failure == 0) failure = errno;
-  if (failure != 0) {
-    errno = failure;
-    return -1;
-  }
-  content[length] = '\0';
-  const char *prefix = "FAMILY_ALBUM_STORAGE_V1:";
-  size_t prefix_length = strlen(prefix);
-  if (!S_ISREG(status.st_mode) || status.st_uid != geteuid() ||
-      status.st_nlink != 1 || (status.st_mode & 077) != 0 ||
-      (size_t)length != prefix_length + 33 ||
-      memcmp(content, prefix, prefix_length) != 0 ||
-      content[prefix_length + 32] != '\n') {
-    errno = EPERM;
-    return -1;
-  }
-  for (size_t i = 0; i < 32; i += 1) {
-    char c = content[prefix_length + i];
-    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
-      errno = EPERM;
-      return -1;
-    }
-  }
-  if (capacity < 33) {
-    errno = ENOSPC;
-    return -1;
-  }
-  memcpy(identifier, content + prefix_length, 32);
-  identifier[32] = '\0';
-  return 0;
+static int read_marker(int root_fd, char *identifier, size_t capacity, int initialize) {
+  (void)initialize; // Reading never initializes, upgrades or repairs a marker.
+  sm_marker marker;
+  if(capacity<33 || sm_read(root_fd,&marker))return -1;
+  memcpy(identifier,marker.id,33);return 0;
 }
 
 static int validate_capacity_lock(int root_fd, int lock_fd,
@@ -923,7 +861,7 @@ static napi_value close_capacity_gate(napi_env env, napi_callback_info info) {
   return undefined_value(env);
 }
 
-static int probe_writable_root(int root_fd) {
+static int probe_writable_root(int root_fd,sm_init_context *initialization) {
   unsigned char random_bytes[8];
   arc4random_buf(random_bytes, sizeof(random_bytes));
   char name[64];
@@ -931,14 +869,16 @@ static int probe_writable_root(int root_fd) {
   for (size_t i = 0; i < sizeof(random_bytes); i += 1) {
     (void)snprintf(name + 12 + i * 2, 3, "%02x", random_bytes[i]);
   }
+  if(initialization&&sm_init_boundary("probe_create"))return -1;
   int fd = openat(root_fd, name,
                   O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
   if (fd < 0) return -1;
   int failure = 0;
-  if (fsync(fd) != 0) failure = errno;
-  if (close(fd) != 0 && failure == 0) failure = errno;
-  if (unlinkat(root_fd, name, 0) != 0 && failure == 0) failure = errno;
-  if (sync_directory_fd(root_fd) != 0 && failure == 0) failure = errno;
+  if ((initialization&&sm_init_boundary("probe_fsync"))||fsync(fd)) failure=errno;
+  int closed=close(fd);
+  if ((closed||(initialization&&sm_init_boundary("probe_close")))&&failure==0) failure=errno;
+  if (((initialization&&sm_init_boundary("probe_unlink"))||unlinkat(root_fd,name,0))&&failure==0)failure=errno;
+  if (((initialization&&sm_init_boundary("probe_root_sync"))||sync_directory_fd(root_fd))&&failure==0)failure=errno;
   if (failure != 0) {
     errno = failure;
     return -1;
@@ -970,113 +910,99 @@ static napi_value open_root(napi_env env, napi_callback_info info) {
       napi_get_value_bool(env, args[1], &initialize) != napi_ok) {
     return NULL;
   }
-  int root_fd = open_absolute_directory(path, initialize ? 1 : 0);
-  if (root_fd < 0) {
-    throw_errno(env, "open media root");
-    return NULL;
-  }
-  struct stat status;
-  if (validate_directory_fd(root_fd, &status) != 0 ||
-      status.st_uid != geteuid() || (status.st_mode & 077) != 0) {
-    int saved = errno == 0 ? EPERM : errno;
-    close(root_fd);
-    errno = saved;
-    throw_errno(env, "validate media root");
-    return NULL;
-  }
-
-  int lock_fd = openat(root_fd, ".writer.lock",
-                       O_RDWR | O_CREAT | O_NOFOLLOW |
-                           O_CLOEXEC,
-                       0600);
-  if (lock_fd < 0 || flock(lock_fd, LOCK_EX | LOCK_NB) != 0) {
-    int saved = errno;
-    if (lock_fd >= 0) close(lock_fd);
-    close(root_fd);
-    errno = saved;
-    throw_errno(env, "acquire storage writer lock");
-    return NULL;
-  }
-  struct stat lock_status;
-  if (fstat(lock_fd, &lock_status) != 0 || !S_ISREG(lock_status.st_mode) ||
-      lock_status.st_uid != geteuid() || lock_status.st_nlink != 1 ||
-      (lock_status.st_mode & 077) != 0 || validate_no_extended_acl(lock_fd) != 0) {
-    int saved = errno == 0 ? EPERM : errno;
-    close(lock_fd);
-    close(root_fd);
-    errno = saved;
-    throw_errno(env, "validate writer lock");
-    return NULL;
-  }
-
-  char marker[33];
-  if (read_marker(root_fd, marker, sizeof(marker), initialize ? 1 : 0) != 0) {
-    int saved = errno;
-    close(lock_fd);
-    close(root_fd);
-    errno = saved;
-    throw_errno(env, "validate storage marker");
-    return NULL;
-  }
-  const char *layouts[] = {"originals", "uploads", "temp"};
-  for (size_t i = 0; i < sizeof(layouts) / sizeof(layouts[0]); i += 1) {
-    int fd = secure_open_child_directory(root_fd, layouts[i],
-                                         initialize ? 1 : 0, 1);
-    int failure = fd < 0 ? errno : 0;
-    if (failure == 0 && sync_directory_fd(fd) != 0) failure = errno;
-    if (fd >= 0 && close(fd) != 0 && failure == 0) failure = errno;
-    if (failure != 0) {
-      close(lock_fd);
-      close(root_fd);
-      errno = failure;
-      throw_errno(env, "validate storage layout");
-      return NULL;
+  sm_init_context ctx={.root_fd=-1,.parent_fd=-1,.fence_fd=-1};
+  sm_marker binding;storage_root_t *root=NULL;int lock_fd=-1,root_fd=-1,external_created=0;
+  const char *operation="open media root",*error_code=NULL;
+  napi_value object=NULL,external,canonical,marker_value,device;
+  if(initialize) {
+    if(sm_init_prepare(path,&ctx,&binding))goto failed;
+    root_fd=ctx.root_fd;
+  } else {
+    root_fd=open_absolute_directory(path,0);if(root_fd<0)goto failed;
+    // Must precede writer creation and all other runtime mutations.
+    operation="validate storage marker";if(sm_read(root_fd,&binding)){
+      if(errno==EWOULDBLOCK||errno==EAGAIN)error_code="INIT_NOT_ADMISSIBLE";goto failed;
     }
   }
-  if (probe_writable_root(root_fd) != 0) {
-    int saved = errno;
-    close(lock_fd);
-    close(root_fd);
-    errno = saved;
-    throw_errno(env, "probe writable storage root");
-    return NULL;
+  struct stat status;
+  operation="validate media root";
+  if(validate_directory_fd(root_fd,&status)||status.st_uid!=geteuid()||(status.st_mode&077)!=0)goto failed;
+  if(binding.version==2) {
+    if(initialize) {
+      if(sm_init_validate(&ctx,&binding)){error_code="COORD_NAMESPACE_UNCERTAIN";goto failed;}
+    } else {
+      int namespace_fd=sm_validate_namespace(root_fd,path,&binding,-1);
+      if(namespace_fd<0){error_code="COORD_NAMESPACE_UNCERTAIN";goto failed;}close(namespace_fd);
+    }
   }
-
-  storage_root_t *root = calloc(1, sizeof(*root));
-  if (root == NULL) {
-    close(lock_fd);
-    close(root_fd);
-    throw_code(env, "STORAGE_NATIVE_ERROR", "Allocation failed.");
-    return NULL;
+  operation="acquire storage writer lock";
+  if(initialize&&sm_init_boundary("writer_create"))goto failed;
+  lock_fd=openat(root_fd,".writer.lock",O_RDWR|O_CREAT|O_NOFOLLOW|O_CLOEXEC|(initialize?O_EXCL:0),0600);
+  if(lock_fd<0||(initialize&&sm_init_boundary("writer_lock"))||flock(lock_fd,LOCK_EX|LOCK_NB))goto failed;
+  struct stat lock_status;
+  operation="validate writer lock";
+  if(fstat(lock_fd,&lock_status)||!S_ISREG(lock_status.st_mode)||lock_status.st_uid!=geteuid()||
+    lock_status.st_nlink!=1||(lock_status.st_mode&077)!=0||validate_no_extended_acl(lock_fd))goto failed;
+  if(initialize) {
+    ctx.writer_fd=lock_fd;
+    if(lock_status.st_gid!=getegid()||(lock_status.st_mode&07777)!=0600||lock_status.st_dev!=status.st_dev||
+      SM_INIT("writer_fsync",fsync(lock_fd))||SM_INIT("writer_fullsync",fcntl(lock_fd,F_FULLFSYNC,0))||
+      SM_INIT("writer_root_sync",sync_directory_fd(root_fd))||sm_init_boundary("writer_complete"))goto failed;
   }
-  root->root_fd = root_fd;
-  root->lock_fd = lock_fd;
-  root->device = status.st_dev;
-  root->inode = status.st_ino;
-  if (fcntl(root_fd, F_GETPATH, root->canonical_path) != 0) {
-    finalize_root(env, root, NULL);
-    throw_errno(env, "resolve media root");
-    return NULL;
+  const char *layouts[]={"originals","uploads","temp"};
+  operation="validate storage layout";
+  for(size_t i=0;i<sizeof(layouts)/sizeof(layouts[0]);i++) {
+    int fd=secure_open_child_directory(root_fd,layouts[i],0,1);
+    int failure=fd<0?errno:0;
+    if(!failure&&((initialize&&sm_init_boundary("layout_validation_sync"))||sync_directory_fd(fd)))failure=errno;
+    if(fd>=0&&close(fd)&&!failure)failure=errno;
+    if(failure){errno=failure;goto failed;}
   }
-
-  napi_value external;
-  napi_value object;
-  napi_value canonical;
-  napi_value marker_value;
-  napi_value device;
-  napi_create_external(env, root, finalize_root, NULL, &external);
-  napi_create_object(env, &object);
-  napi_create_string_utf8(env, root->canonical_path, NAPI_AUTO_LENGTH, &canonical);
-  napi_create_string_utf8(env, marker, NAPI_AUTO_LENGTH, &marker_value);
-  char device_string[32];
-  (void)snprintf(device_string, sizeof(device_string), "%llu",
-                 (unsigned long long)root->device);
-  napi_create_string_utf8(env, device_string, NAPI_AUTO_LENGTH, &device);
-  napi_set_named_property(env, object, "handle", external);
-  napi_set_named_property(env, object, "canonicalPath", canonical);
-  napi_set_named_property(env, object, "markerId", marker_value);
-  napi_set_named_property(env, object, "device", device);
+  operation="probe writable storage root";
+  if(probe_writable_root(root_fd,initialize?&ctx:NULL)||(initialize&&sm_init_boundary("probe_complete")))goto failed;
+  operation="prepare storage capability";
+  if(initialize&&sm_init_boundary("object_prepare"))goto failed;
+  root=calloc(1,sizeof(*root));if(!root){errno=ENOMEM;goto failed;}
+  root->root_fd=root_fd;root->lock_fd=lock_fd;root->device=status.st_dev;root->inode=status.st_ino;root->marker_binding=binding;
+  if(fcntl(root_fd,F_GETPATH,root->canonical_path))goto failed;
+  char device_string[32];snprintf(device_string,sizeof(device_string),"%llu",(unsigned long long)root->device);
+  // Construct every response value before the single publication commit.
+  if(napi_create_external(env,root,finalize_root,NULL,&external)!=napi_ok)goto failed;
+  external_created=1;
+  if(napi_create_object(env,&object)!=napi_ok||
+    napi_create_string_utf8(env,root->canonical_path,NAPI_AUTO_LENGTH,&canonical)!=napi_ok||
+    napi_create_string_utf8(env,binding.id,NAPI_AUTO_LENGTH,&marker_value)!=napi_ok||
+    napi_create_string_utf8(env,device_string,NAPI_AUTO_LENGTH,&device)!=napi_ok||
+    napi_set_named_property(env,object,"handle",external)!=napi_ok||
+    napi_set_named_property(env,object,"canonicalPath",canonical)!=napi_ok||
+    napi_set_named_property(env,object,"markerId",marker_value)!=napi_ok||
+    napi_set_named_property(env,object,"device",device)!=napi_ok)goto failed;
+  if(initialize) {
+    operation="commit fresh storage root";int committed=sm_init_commit(&ctx,&binding);
+    if(committed){if(committed==-2)error_code="INIT_COMMIT_UNKNOWN";goto failed;}
+    // Root FD ownership transfers to the prepared capability. No disk write,
+    // verification or required sync can fail and undo publication after here.
+    ctx.root_fd=-1;
+  }
   return object;
+failed:
+  {int saved=errno?errno:EIO;
+    if(root){root->root_fd=root->lock_fd=-1;if(!external_created)free(root);}
+    if(lock_fd>=0)close(lock_fd);
+    if(initialize)sm_init_abort(&ctx);else if(root_fd>=0)close(root_fd);
+    errno=saved;
+    if(error_code)throw_code(env,error_code,error_code);
+    else throw_errno(env,operation);
+    return NULL;}
+}
+
+static napi_value validate_coord_root(napi_env env,napi_callback_info info) {
+  napi_value arg;size_t argc=1;napi_get_cb_info(env,info,&argc,&arg,NULL,NULL);
+  storage_root_t *root=get_root(env,arg);if(!root)return NULL;
+  if(root->marker_binding.version!=2){throw_code(env,"COORD_ROOT_UPGRADE_REQUIRED","A controlled root upgrade is required.");return NULL;}
+  int fd=sm_validate_namespace(root->root_fd,root->canonical_path,&root->marker_binding,-1);
+  if(fd<0){throw_code(env,"COORD_NAMESPACE_UNCERTAIN","Coordination namespace is unavailable.");return NULL;}
+  close(fd);return undefined_value(env);
 }
 
 static napi_value close_root(napi_env env, napi_callback_info info) {
@@ -1801,6 +1727,11 @@ static napi_value verify_root_identity(napi_env env, napi_callback_info info) {
   napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
   storage_root_t *root = get_root(env, arg);
   if (root == NULL) return NULL;
+  if(root->marker_binding.version==2) {
+    int namespace_fd=sm_validate_namespace(root->root_fd,root->canonical_path,&root->marker_binding,-1);
+    if(namespace_fd<0){throw_code(env,"COORD_NAMESPACE_UNCERTAIN","Coordination namespace changed.");return NULL;}
+    close(namespace_fd);
+  }
   int current_fd = open_absolute_directory(root->canonical_path, 0);
   struct stat current, locked, on_disk_lock;
   char marker[33];
@@ -2515,6 +2446,15 @@ static napi_value init(napi_env env, napi_value exports) {
       {"closeHandoff", NULL, ps_close_handoff, NULL, NULL, NULL,
        napi_default, NULL},
 #ifdef PS_STORAGE_TEST_HOOKS
+      {"phase7TestMarkerParse",NULL,sm_test_parse,NULL,NULL,NULL,napi_default,NULL},
+      {"phase7TestLegacyMarkerParse",NULL,sm_test_legacy_parse,NULL,NULL,NULL,napi_default,NULL},
+      {"phase7TestNamespaceBinding",NULL,sm_test_binding,NULL,NULL,NULL,napi_default,NULL},
+      {"phase7TestDirectoryProperties",NULL,sm_test_properties,NULL,NULL,NULL,napi_default,NULL},
+      {"phase7TestInitBoundaries",NULL,sm_test_init_boundaries,NULL,NULL,NULL,napi_default,NULL},
+      {"phase7TestInitBoundary",NULL,sm_test_init_boundary,NULL,NULL,NULL,napi_default,NULL},
+      {"phase7TestPreInit1MarkerParse",NULL,sm_test_pre_init1_parse,NULL,NULL,NULL,napi_default,NULL},
+      {"phase7TestRootLock",NULL,sm_test_root_lock,NULL,NULL,NULL,napi_default,NULL},
+      {"phase7TestFenceStatError",NULL,sm_test_fence_error,NULL,NULL,NULL,napi_default,NULL},
       {"phase7TestTransferNoRelease", NULL, p7_test_withhold, NULL, NULL, NULL, napi_default, NULL},
       {"phase7TestSourceReleased", NULL, p7_test_release, NULL, NULL, NULL, napi_default, NULL},
       {"phase7TestLaunchSnapshot", NULL, p7_test_snapshot, NULL, NULL, NULL, napi_default, NULL},
@@ -2537,6 +2477,7 @@ static napi_value init(napi_env env, napi_value exports) {
       {"closeCapacityGate", NULL, close_capacity_gate, NULL, NULL, NULL,
        napi_default, NULL},
       {"openRoot", NULL, open_root, NULL, NULL, NULL, napi_default, NULL},
+      {"validateCoordinationRoot", NULL, validate_coord_root, NULL, NULL, NULL, napi_default, NULL},
       {"purgeOwners", NULL, pf_owners, NULL, NULL, NULL, napi_default, NULL},
       {"purgeFileExact", NULL, pf_execute, NULL, NULL, NULL, napi_default, NULL},
       {"purgeDerivedExact", NULL, pg_derived, NULL, NULL, NULL, napi_default, NULL},

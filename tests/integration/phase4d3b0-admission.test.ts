@@ -1,15 +1,13 @@
+import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { fork } from "node:child_process";
 import {
   chmodSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
-  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 
@@ -44,9 +42,7 @@ describe.sequential("Phase 4D3b-0 capacity admission transaction", () => {
   const uploads = new MySqlUploadRepository(database.pool);
   const media = new MySqlMediaRepository(database.pool);
   const suffix = randomUUID().replaceAll("-", "");
-  const mediaRoot = mkdtempSync(
-    join(realpathSync(tmpdir()), "phase4d3b0-admission-"),
-  );
+  const mediaRoot = freshStorageRootPath("phase4d3b0-admission-");
   let storageRoot: StorageRoot;
   let gate: CapacityGate;
   let firstFamily = "";

@@ -42,6 +42,7 @@ async function main() {
       initialize: false,
       expectedMarkerId: env.DEV_STORAGE_MARKER_ID,
     });
+    root.assertCoordinationNamespace();
     store = DerivedStore.open({ state: "READ_WRITE", root });
     gate = CapacityGate.open({
       mediaRoot: root.canonicalPath,
