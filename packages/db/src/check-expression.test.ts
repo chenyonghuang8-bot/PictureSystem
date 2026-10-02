@@ -93,7 +93,9 @@ describe("CHECK grouping and narrow aliases", () => {
     [
       "unsigned",
       (s: ReturnType<typeof buildExpectedSchemaSnapshot>) =>
-        (s.tables[0]!.columns[0]!.type = "bigint"),
+        (s.tables
+          .find((table) => table.name === "media_items")!
+          .columns.find((column) => column.name === "id")!.type = "bigint"),
     ],
     [
       "index order",

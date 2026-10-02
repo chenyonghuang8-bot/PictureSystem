@@ -462,7 +462,12 @@ export const storageObjects = mysqlTable(
     keyVersion: smallint("key_version", { unsigned: true })
       .notNull()
       .default(1),
-    state: mysqlEnum("state", ["AVAILABLE", "MISSING", "CORRUPT"]).notNull(),
+    state: mysqlEnum("state", [
+      "AVAILABLE",
+      "MISSING",
+      "CORRUPT",
+      "PURGING",
+    ]).notNull(),
     durableAt: timestamp("durable_at").notNull(),
     verifiedAt: timestamp("verified_at").notNull(),
     createdAt: timestamp("created_at")
@@ -525,6 +530,7 @@ export const uploadSessions = mysqlTable(
       "UPLOADING",
       "FINALIZING",
       "COMPLETE",
+      "RETIRED",
       "FAILED",
       "ABORTED",
       "EXPIRED",
@@ -534,6 +540,9 @@ export const uploadSessions = mysqlTable(
     computedSha256: sha256Digest("computed_sha256"),
     finalizeStartedAt: timestamp("finalize_started_at"),
     storageObjectId: foreignId("storage_object_id"),
+    retiredStorageObjectId: foreignId("retired_storage_object_id"),
+    retiredPurgeId: foreignId("retired_purge_id"),
+    retiredAt: timestamp("retired_at"),
     completedAt: timestamp("completed_at"),
     terminalAt: timestamp("terminal_at"),
     failureCode: varchar("failure_code", { length: 48 }),
@@ -595,6 +604,13 @@ export const uploadSessions = mysqlTable(
     })
       .onDelete("restrict")
       .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_upload_sessions_retired_purge",
+      columns: [table.familyId, table.retiredPurgeId],
+      foreignColumns: [purgeIntents.familyId, purgeIntents.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     check(
       "chk_upload_sessions_size_offset",
       sql`${table.declaredSize} > 0 AND ${table.committedOffset} <= ${table.declaredSize}`,
@@ -617,11 +633,11 @@ export const uploadSessions = mysqlTable(
     ),
     check(
       "chk_upload_sessions_finalize_state",
-      sql`(${table.state} IN ('FINALIZING','COMPLETE') AND ${table.computedSha256} IS NOT NULL AND ${table.finalizeStartedAt} IS NOT NULL AND ${table.committedOffset} = ${table.declaredSize}) OR (${table.state} IN ('CREATED','UPLOADING','ABORTED','EXPIRED') AND ${table.computedSha256} IS NULL AND ${table.finalizeStartedAt} IS NULL) OR (${table.state} = 'FAILED' AND ((${table.computedSha256} IS NULL AND ${table.finalizeStartedAt} IS NULL) OR (${table.computedSha256} IS NOT NULL AND ${table.finalizeStartedAt} IS NOT NULL AND ${table.committedOffset} = ${table.declaredSize})))`,
+      sql`(${table.state} IN ('FINALIZING','COMPLETE','RETIRED') AND ${table.computedSha256} IS NOT NULL AND ${table.finalizeStartedAt} IS NOT NULL AND ${table.committedOffset} = ${table.declaredSize}) OR (${table.state} IN ('CREATED','UPLOADING','ABORTED','EXPIRED') AND ${table.computedSha256} IS NULL AND ${table.finalizeStartedAt} IS NULL) OR (${table.state} = 'FAILED' AND ((${table.computedSha256} IS NULL AND ${table.finalizeStartedAt} IS NULL) OR (${table.computedSha256} IS NOT NULL AND ${table.finalizeStartedAt} IS NOT NULL AND ${table.committedOffset} = ${table.declaredSize})))`,
     ),
     check(
       "chk_upload_sessions_complete",
-      sql`(${table.state} = 'COMPLETE' AND ${table.storageObjectId} IS NOT NULL AND ${table.completedAt} IS NOT NULL AND ${table.terminalAt} IS NULL) OR (${table.state} <> 'COMPLETE' AND ${table.storageObjectId} IS NULL AND ${table.completedAt} IS NULL)`,
+      sql`(${table.state} = 'COMPLETE' AND ${table.storageObjectId} IS NOT NULL AND ${table.completedAt} IS NOT NULL AND ${table.terminalAt} IS NULL AND ${table.retiredStorageObjectId} IS NULL AND ${table.retiredPurgeId} IS NULL AND ${table.retiredAt} IS NULL) OR (${table.state} = 'RETIRED' AND ${table.storageObjectId} IS NULL AND ${table.completedAt} IS NOT NULL AND ${table.terminalAt} IS NULL AND ${table.retiredStorageObjectId} IS NOT NULL AND ${table.retiredPurgeId} IS NOT NULL AND ${table.retiredAt} IS NOT NULL) OR (${table.state} NOT IN ('COMPLETE','RETIRED') AND ${table.storageObjectId} IS NULL AND ${table.completedAt} IS NULL AND ${table.retiredStorageObjectId} IS NULL AND ${table.retiredPurgeId} IS NULL AND ${table.retiredAt} IS NULL)`,
     ),
     check(
       "chk_upload_sessions_terminal",
@@ -633,7 +649,7 @@ export const uploadSessions = mysqlTable(
     ),
     check(
       "chk_upload_sessions_times",
-      sql`(${table.finalizeStartedAt} IS NULL OR ${table.finalizeStartedAt} >= ${table.createdAt}) AND (${table.completedAt} IS NULL OR ${table.completedAt} >= ${table.createdAt}) AND (${table.terminalAt} IS NULL OR ${table.terminalAt} >= ${table.createdAt}) AND (${table.stagingCleanedAt} IS NULL OR ${table.stagingCleanedAt} >= ${table.createdAt}) AND (${table.completedAt} IS NULL OR (${table.finalizeStartedAt} IS NOT NULL AND ${table.completedAt} >= ${table.finalizeStartedAt})) AND (${table.stagingCleanedAt} IS NULL OR ${table.state} IN ('COMPLETE','FAILED','ABORTED','EXPIRED'))`,
+      sql`(${table.finalizeStartedAt} IS NULL OR ${table.finalizeStartedAt} >= ${table.createdAt}) AND (${table.completedAt} IS NULL OR ${table.completedAt} >= ${table.createdAt}) AND (${table.terminalAt} IS NULL OR ${table.terminalAt} >= ${table.createdAt}) AND (${table.stagingCleanedAt} IS NULL OR ${table.stagingCleanedAt} >= ${table.createdAt}) AND (${table.completedAt} IS NULL OR (${table.finalizeStartedAt} IS NOT NULL AND ${table.completedAt} >= ${table.finalizeStartedAt})) AND (${table.retiredAt} IS NULL OR (${table.completedAt} IS NOT NULL AND ${table.retiredAt} >= ${table.completedAt})) AND (${table.stagingCleanedAt} IS NULL OR ${table.state} IN ('COMPLETE','RETIRED','FAILED','ABORTED','EXPIRED'))`,
     ),
   ],
 );
@@ -705,6 +721,16 @@ export const mediaItems = mysqlTable(
     noteRevision: bigint("note_revision", { mode: "bigint", unsigned: true })
       .notNull()
       .default(sql`1`),
+    lifecycleRevision: bigint("lifecycle_revision", {
+      mode: "bigint",
+      unsigned: true,
+    })
+      .notNull()
+      .default(sql`1`),
+    trashedAt: timestamp("trashed_at"),
+    trashedByMemberId: foreignId("trashed_by_member_id"),
+    purgeAfter: timestamp("purge_after"),
+    purgeIntentId: foreignId("purge_intent_id"),
   },
   (table) => [
     uniqueIndex("uq_media_items_family_storage_object").on(
@@ -718,6 +744,26 @@ export const mediaItems = mysqlTable(
       table.id,
     ),
     index("idx_media_items_processing").on(table.processingState, table.id),
+    index("idx_media_items_trash_family").on(
+      table.familyId,
+      table.trashedAt,
+      table.id,
+    ),
+    index("idx_media_items_purge_after").on(table.purgeAfter, table.id),
+    foreignKey({
+      name: "fk_media_items_trashed_by",
+      columns: [table.familyId, table.trashedByMemberId],
+      foreignColumns: [familyMembers.familyId, familyMembers.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_media_items_purge_intent",
+      columns: [table.familyId, table.purgeIntentId],
+      foreignColumns: [purgeIntents.familyId, purgeIntents.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     foreignKey({
       name: "fk_media_items_storage_object",
       columns: [table.familyId, table.storageObjectId],
@@ -742,6 +788,14 @@ export const mediaItems = mysqlTable(
       sql`${table.description} IS NULL OR (CHAR_LENGTH(${table.description}) BETWEEN 1 AND 4000 AND OCTET_LENGTH(${table.description}) <= 16000)`,
     ),
     check("chk_media_items_note_revision", sql`${table.noteRevision} >= 1`),
+    check(
+      "chk_media_items_lifecycle_revision",
+      sql`${table.lifecycleRevision} >= 1`,
+    ),
+    check(
+      "chk_media_items_trash_state",
+      sql`(${table.trashedAt} IS NULL AND ${table.trashedByMemberId} IS NULL AND ${table.purgeAfter} IS NULL AND ${table.purgeIntentId} IS NULL) OR (${table.trashedAt} IS NOT NULL AND ${table.trashedByMemberId} IS NOT NULL AND ${table.purgeAfter} IS NOT NULL AND (${table.trashedAt} + INTERVAL 30 DAY) IS NOT NULL AND ${table.purgeAfter} = ${table.trashedAt} + INTERVAL 30 DAY)`,
+    ),
     check("chk_media_items_recipe", sql`${table.recipeId} >= 1`),
     check(
       "chk_media_items_metadata_generation",
@@ -796,6 +850,327 @@ export const mediaItems = mysqlTable(
       "chk_media_items_failure",
       sql`(${table.processingState} IN ('FAILED','BLOCKED') AND ${table.lastFailureCode} IS NOT NULL) OR (${table.processingState} NOT IN ('FAILED','BLOCKED') AND (${table.processingState} = 'PARTIAL' OR ${table.lastFailureCode} IS NULL))`,
     ),
+  ],
+);
+
+// Historical IDs deliberately have no FK to media_items/storage_objects: both
+// live rows must eventually be removable while the intent and audit survive.
+export const purgeIntents = mysqlTable(
+  "purge_intents",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    operationId: varchar("operation_id", { length: 36 }).notNull(),
+    mediaId: foreignId("media_id").notNull(),
+    storageObjectId: foreignId("storage_object_id").notNull(),
+    sourceUploadId: foreignId("source_upload_id").notNull(),
+    lifecycleRevision: bigint("lifecycle_revision", {
+      mode: "bigint",
+      unsigned: true,
+    }).notNull(),
+    trashedAt: timestamp("trashed_at").notNull(),
+    purgeAfter: timestamp("purge_after").notNull(),
+    requestedAt: timestamp("requested_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    requestSource: mysqlEnum("request_source", [
+      "MANUAL",
+      "SCHEDULED",
+    ]).notNull(),
+    actorMemberId: foreignId("actor_member_id"),
+    progress: mysqlEnum("progress", [
+      "REQUESTED",
+      "DETACHED",
+      "FILES_REMOVED",
+      "COMPLETED",
+    ])
+      .notNull()
+      .default("REQUESTED"),
+    executionState: mysqlEnum("execution_state", [
+      "QUEUED",
+      "RUNNING",
+      "RETRY_WAIT",
+      "BLOCKED",
+      "DONE",
+    ])
+      .notNull()
+      .default("QUEUED"),
+    workerId: customType<{
+      data: Buffer;
+      driverData: Buffer | Uint8Array | string;
+    }>({ dataType: () => "binary(16)", fromDriver: toBuffer })("worker_id"),
+    leaseEpoch: bigint("lease_epoch", { mode: "bigint", unsigned: true })
+      .notNull()
+      .default(sql`0`),
+    lockedAt: timestamp("locked_at"),
+    heartbeatAt: timestamp("heartbeat_at"),
+    lockedUntil: timestamp("locked_until"),
+    availableAt: timestamp("available_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    attempts: int("attempts", { unsigned: true }).notNull().default(0),
+    maxAttempts: int("max_attempts", { unsigned: true }).notNull().default(8),
+    failureCategory: mysqlEnum("failure_category", [
+      "REFERENCE_CONFLICT",
+      "FILESYSTEM_UNCERTAIN",
+      "CAPACITY_UNAVAILABLE",
+      "TRANSIENT_DB",
+      "INVARIANT_VIOLATION",
+    ]),
+    completedAt: timestamp("completed_at"),
+    originalBytes: bigint("original_bytes", {
+      mode: "bigint",
+      unsigned: true,
+    }).notNull(),
+    derivedBytes: bigint("derived_bytes", { mode: "bigint", unsigned: true })
+      .notNull()
+      .default(sql`0`),
+    releasedBytes: bigint("released_bytes", { mode: "bigint", unsigned: true })
+      .notNull()
+      .default(sql`0`),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`)
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("uq_purge_intents_family_id").on(table.familyId, table.id),
+    uniqueIndex("uq_purge_intents_operation").on(
+      table.familyId,
+      table.operationId,
+    ),
+    uniqueIndex("uq_purge_intents_lifecycle").on(
+      table.familyId,
+      table.mediaId,
+      table.lifecycleRevision,
+    ),
+    index("idx_purge_intents_claim").on(
+      table.executionState,
+      table.availableAt,
+      table.id,
+    ),
+    index("idx_purge_intents_lease").on(
+      table.executionState,
+      table.lockedUntil,
+      table.id,
+    ),
+    foreignKey({
+      name: "fk_purge_intents_family",
+      columns: [table.familyId],
+      foreignColumns: [families.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_purge_intents_actor",
+      columns: [table.familyId, table.actorMemberId],
+      foreignColumns: [familyMembers.familyId, familyMembers.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check("chk_purge_intents_revision", sql`${table.lifecycleRevision} >= 1`),
+    check(
+      "chk_purge_intents_retention",
+      sql`(${table.trashedAt} + INTERVAL 30 DAY) IS NOT NULL AND ${table.purgeAfter} = ${table.trashedAt} + INTERVAL 30 DAY`,
+    ),
+    check(
+      "chk_purge_intents_lease",
+      sql`(${table.executionState} = 'RUNNING' AND ${table.workerId} IS NOT NULL AND ${table.lockedAt} IS NOT NULL AND ${table.heartbeatAt} IS NOT NULL AND ${table.lockedUntil} IS NOT NULL AND ${table.leaseEpoch} >= 1) OR (${table.executionState} <> 'RUNNING' AND ${table.workerId} IS NULL AND ${table.lockedAt} IS NULL AND ${table.heartbeatAt} IS NULL AND ${table.lockedUntil} IS NULL)`,
+    ),
+    check(
+      "chk_purge_intents_progress",
+      sql`(${table.progress} = 'COMPLETED' AND ${table.executionState} = 'DONE' AND ${table.completedAt} IS NOT NULL) OR (${table.progress} <> 'COMPLETED' AND ${table.executionState} <> 'DONE' AND ${table.completedAt} IS NULL)`,
+    ),
+    check(
+      "chk_purge_intents_attempts",
+      sql`${table.maxAttempts} >= 1 AND ${table.attempts} <= ${table.maxAttempts}`,
+    ),
+    check(
+      "chk_purge_intents_bytes",
+      sql`${table.originalBytes} > 0 AND ${table.releasedBytes} <= ${table.originalBytes} + ${table.derivedBytes}`,
+    ),
+    check(
+      "chk_purge_intents_times",
+      sql`${table.requestedAt} >= ${table.trashedAt} AND ${table.availableAt} >= ${table.requestedAt}`,
+    ),
+  ],
+);
+
+export const purgeFiles = mysqlTable(
+  "purge_files",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    purgeIntentId: foreignId("purge_intent_id").notNull(),
+    fileKind: mysqlEnum("file_kind", ["ORIGINAL", "DERIVED"]).notNull(),
+    originalSingletonSlot: tinyint("original_singleton_slot", {
+      unsigned: true,
+    }),
+    // Required, internal canonical identity digest avoids MySQL NULL-unique gaps.
+    identityKey: sha256Digest("identity_key").notNull(),
+    storageObjectId: foreignId("storage_object_id"),
+    mediaId: foreignId("media_id"),
+    contentSha256: sha256Digest("content_sha256"),
+    byteSize: bigint("byte_size", { mode: "bigint", unsigned: true }).notNull(),
+    rootMarkerId: varchar("root_marker_id", { length: 32 }).notNull(),
+    rootDevice: bigint("root_device", {
+      mode: "bigint",
+      unsigned: true,
+    }).notNull(),
+    quarantineSlot: customType<{
+      data: Buffer;
+      driverData: Buffer | Uint8Array | string;
+    }>({ dataType: () => "binary(16)", fromDriver: toBuffer })(
+      "quarantine_slot",
+    ),
+    quarantineDevice: bigint("quarantine_device", {
+      mode: "bigint",
+      unsigned: true,
+    }),
+    quarantineInode: bigint("quarantine_inode", {
+      mode: "bigint",
+      unsigned: true,
+    }),
+    generation: bigint("generation", { mode: "bigint", unsigned: true }),
+    recipeId: smallint("recipe_id", { unsigned: true }),
+    derivedKind: mysqlEnum("derived_kind", phase4DerivedKinds),
+    producerJobId: foreignId("producer_job_id"),
+    producerEpoch: bigint("producer_epoch", { mode: "bigint", unsigned: true }),
+    stage: mysqlEnum("stage", [
+      "CATALOGUED",
+      "QUARANTINED",
+      "UNLINK_ARMED",
+      "REMOVED",
+      "ABSENT_DERIVED",
+    ])
+      .notNull()
+      .default("CATALOGUED"),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`)
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("uq_purge_files_identity").on(
+      table.familyId,
+      table.purgeIntentId,
+      table.identityKey,
+    ),
+    uniqueIndex("uq_purge_files_original_singleton").on(
+      table.familyId,
+      table.purgeIntentId,
+      table.originalSingletonSlot,
+    ),
+    index("idx_purge_files_progress").on(
+      table.familyId,
+      table.purgeIntentId,
+      table.stage,
+      table.id,
+    ),
+    foreignKey({
+      name: "fk_purge_files_intent",
+      columns: [table.familyId, table.purgeIntentId],
+      foreignColumns: [purgeIntents.familyId, purgeIntents.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check("chk_purge_files_size", sql`${table.byteSize} > 0`),
+    check(
+      "chk_purge_files_original_singleton",
+      sql`(${table.fileKind} = 'ORIGINAL' AND ${table.originalSingletonSlot} IS NOT NULL AND ${table.originalSingletonSlot} = 1) OR (${table.fileKind} = 'DERIVED' AND ${table.originalSingletonSlot} IS NULL)`,
+    ),
+    check(
+      "chk_purge_files_kind",
+      sql`(${table.fileKind} = 'ORIGINAL' AND ${table.storageObjectId} IS NOT NULL AND ${table.contentSha256} IS NOT NULL AND ${table.generation} IS NULL AND ${table.recipeId} IS NULL AND ${table.derivedKind} IS NULL AND ${table.producerJobId} IS NULL AND ${table.producerEpoch} IS NULL AND ${table.stage} <> 'ABSENT_DERIVED') OR (${table.fileKind} = 'DERIVED' AND ${table.mediaId} IS NOT NULL AND ${table.generation} IS NOT NULL AND ${table.recipeId} IS NOT NULL AND ${table.derivedKind} IS NOT NULL AND ${table.producerJobId} IS NOT NULL AND ${table.producerEpoch} IS NOT NULL AND ${table.contentSha256} IS NOT NULL AND ${table.storageObjectId} IS NULL)`,
+    ),
+    check(
+      "chk_purge_files_quarantine",
+      sql`(${table.stage} IN ('CATALOGUED','ABSENT_DERIVED') AND ${table.quarantineSlot} IS NULL AND ${table.quarantineDevice} IS NULL AND ${table.quarantineInode} IS NULL) OR (${table.stage} IN ('QUARANTINED','UNLINK_ARMED','REMOVED') AND ${table.quarantineSlot} IS NOT NULL AND ${table.quarantineDevice} IS NOT NULL AND ${table.quarantineInode} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export const auditLogs = mysqlTable(
+  "audit_logs",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    operationId: varchar("operation_id", { length: 36 }).notNull(),
+    purgeIntentId: foreignId("purge_intent_id"),
+    mediaId: foreignId("media_id").notNull(),
+    storageObjectId: foreignId("storage_object_id").notNull(),
+    actorKind: mysqlEnum("actor_kind", ["MEMBER", "SYSTEM"]).notNull(),
+    actorMemberId: foreignId("actor_member_id"),
+    action: mysqlEnum("action", [
+      "TRASH",
+      "RESTORE",
+      "PERMANENT_DELETE_REQUEST",
+      "PURGE_STARTED",
+      "PURGE_COMPLETED",
+      "PURGE_FAILED",
+    ]).notNull(),
+    lifecycleRevision: bigint("lifecycle_revision", {
+      mode: "bigint",
+      unsigned: true,
+    }).notNull(),
+    transitionId: varchar("transition_id", { length: 36 }).notNull(),
+    resultCategory: mysqlEnum("result_category", [
+      "SUCCESS",
+      "REFERENCE_CONFLICT",
+      "FILESYSTEM_UNCERTAIN",
+      "CAPACITY_UNAVAILABLE",
+      "TRANSIENT_DB",
+      "INVARIANT_VIOLATION",
+    ]).notNull(),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (table) => [
+    uniqueIndex("uq_audit_logs_transition").on(
+      table.familyId,
+      table.operationId,
+      table.action,
+      table.transitionId,
+    ),
+    index("idx_audit_logs_media_time").on(
+      table.familyId,
+      table.mediaId,
+      table.createdAt,
+      table.id,
+    ),
+    foreignKey({
+      name: "fk_audit_logs_family",
+      columns: [table.familyId],
+      foreignColumns: [families.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_audit_logs_purge",
+      columns: [table.familyId, table.purgeIntentId],
+      foreignColumns: [purgeIntents.familyId, purgeIntents.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_audit_logs_actor",
+      columns: [table.familyId, table.actorMemberId],
+      foreignColumns: [familyMembers.familyId, familyMembers.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check(
+      "chk_audit_logs_actor",
+      sql`(${table.actorKind} = 'MEMBER' AND ${table.actorMemberId} IS NOT NULL) OR (${table.actorKind} = 'SYSTEM' AND ${table.actorMemberId} IS NULL)`,
+    ),
+    check("chk_audit_logs_revision", sql`${table.lifecycleRevision} >= 1`),
   ],
 );
 

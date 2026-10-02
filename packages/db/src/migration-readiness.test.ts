@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { canonicalCheck } from "./check-expression.js";
 
 import {
   assertExactMigrationHistory,
@@ -33,6 +34,163 @@ const sqlByTag = new Map([
 ]);
 
 describe("bootstrap migration readiness", () => {
+  it("normalizes only identifier plus positive integer DAY intervals", () => {
+    const expected = buildExpectedSchemaSnapshot();
+    const actual = structuredClone(expected);
+    const retention = (snapshot: SchemaSnapshot) =>
+      snapshot.tables
+        .find((table) => table.name === "purge_intents")!
+        .checks.find((check) => check.name === "chk_purge_intents_retention")!;
+    retention(actual).expression =
+      "(((`trashed_at` + interval 30 day) is not null) and (`purge_after` = (`trashed_at` + interval 30 day)))";
+    expect(() => assertExactSchema(expected, actual)).not.toThrow();
+    retention(actual).expression = retention(actual).expression.replaceAll(
+      "30 day",
+      "29 day",
+    );
+    expect(() => assertExactSchema(expected, actual)).toThrow(
+      MigrationReadinessError,
+    );
+    expect(
+      canonicalCheck("(`media_items`.`trashed_at`) + INTERVAL 30 DAY"),
+    ).toBe(canonicalCheck("(`trashed_at` + interval 30 day)"));
+  });
+
+  it.each([
+    "trashed_at + INTERVAL 1 MONTH",
+    "trashed_at + INTERVAL 1 HOUR",
+    "trashed_at + INTERVAL 0 DAY",
+    "trashed_at + INTERVAL -1 DAY",
+    "trashed_at + INTERVAL lifecycle_revision DAY",
+    "trashed_at + 1",
+    "trashed_at - INTERVAL 30 DAY",
+    "date_add(trashed_at, INTERVAL 30 DAY)",
+    "(trashed_at + INTERVAL 30 DAY) + INTERVAL 1 DAY",
+  ])("preserves unsupported arithmetic literally: %s", (expression) => {
+    expect(canonicalCheck(expression)).toBe(expression);
+    const expected = buildExpectedSchemaSnapshot();
+    const actual = structuredClone(expected);
+    actual.tables
+      .find((table) => table.name === "purge_intents")!
+      .checks.find(
+        (check) => check.name === "chk_purge_intents_retention",
+      )!.expression = expression;
+    expect(() => assertExactSchema(expected, actual)).toThrow(
+      MigrationReadinessError,
+    );
+  });
+
+  it("matches only ordered identifier addition at scalar precedence", () => {
+    expect(canonicalCheck("original_bytes + derived_bytes")).toBe(
+      canonicalCheck("(`original_bytes` + `derived_bytes`)"),
+    );
+    const expected = buildExpectedSchemaSnapshot();
+    const actual = structuredClone(expected);
+    const bytes = (snapshot: SchemaSnapshot) =>
+      snapshot.tables
+        .find((table) => table.name === "purge_intents")!
+        .checks.find((check) => check.name === "chk_purge_intents_bytes")!;
+    bytes(actual).expression =
+      "((`original_bytes` > 0) and (`released_bytes` <= (`original_bytes` + `derived_bytes`)))";
+    expect(() => assertExactSchema(expected, actual)).not.toThrow();
+    for (const expression of [
+      "original_bytes > 0 AND released_bytes <= original_bytes + other_bytes",
+      "original_bytes > 0 AND released_bytes <= derived_bytes + original_bytes",
+      "original_bytes > 0 AND released_bytes < original_bytes + derived_bytes",
+    ]) {
+      bytes(actual).expression = expression;
+      expect(() => assertExactSchema(expected, actual)).toThrow(
+        MigrationReadinessError,
+      );
+    }
+  });
+
+  it.each([
+    "original_bytes + 1",
+    "1 + original_bytes",
+    "original_bytes - derived_bytes",
+    "original_bytes * derived_bytes",
+    "original_bytes / derived_bytes",
+    "original_bytes + derived_bytes + released_bytes",
+    "(original_bytes + derived_bytes) + released_bytes",
+    "abs(original_bytes) + derived_bytes",
+    "INTERVAL 30 DAY + original_bytes",
+  ])("keeps unapproved byte arithmetic literal: %s", (expression) => {
+    expect(canonicalCheck(expression)).toBe(expression);
+    const expected = buildExpectedSchemaSnapshot();
+    const actual = structuredClone(expected);
+    actual.tables
+      .find((table) => table.name === "purge_intents")!
+      .checks.find(
+        (check) => check.name === "chk_purge_intents_bytes",
+      )!.expression = expression;
+    expect(() => assertExactSchema(expected, actual)).toThrow(
+      MigrationReadinessError,
+    );
+  });
+
+  it("ignores ordinary column order while retaining composite index and FK order", () => {
+    const expected = buildExpectedSchemaSnapshot();
+    const reordered = structuredClone(expected);
+    for (const table of reordered.tables) table.columns.reverse();
+    expect(() => assertExactSchema(expected, reordered)).not.toThrow();
+    for (const kind of ["index", "primary", "foreign", "reference"] as const) {
+      const contract = structuredClone(expected);
+      if (kind === "primary") {
+        // Current tables have single-column PKs; exercise composite order synthetically.
+        contract.tables
+          .find((table) => table.name === "upload_sessions")!
+          .indexes.find((index) => index.name === "PRIMARY")!.columns = [
+          "id",
+          "family_id",
+        ];
+      }
+      const actual = structuredClone(contract);
+      if (kind === "index" || kind === "primary") {
+        actual.tables
+          .flatMap((table) => table.indexes)
+          .find(
+            (index) =>
+              index.columns.length > 1 &&
+              (kind === "primary"
+                ? index.name === "PRIMARY"
+                : index.name !== "PRIMARY"),
+          )!
+          .columns.reverse();
+      } else {
+        const fk = actual.tables
+          .flatMap((table) => table.foreignKeys)
+          .find((key) => key.columns.length > 1)!;
+        (kind === "foreign" ? fk.columns : fk.referencedColumns).reverse();
+      }
+      expect(() => assertExactSchema(contract, actual)).toThrow(
+        MigrationReadinessError,
+      );
+    }
+  });
+
+  it.each(["extra", "charset", "collation", "autoIncrement"] as const)(
+    "retains exact column properties: %s",
+    (kind) => {
+      const expected = buildExpectedSchemaSnapshot();
+      const actual = structuredClone(expected);
+      const table = actual.tables.find(
+        (item) => item.name === "upload_sessions",
+      )!;
+      const column = table.columns.find(
+        (item) => item.name === "original_filename",
+      )!;
+      if (kind === "extra")
+        table.columns.push({ ...column, name: "unexpected_column" });
+      if (kind === "charset") column.characterSet = "latin1";
+      if (kind === "collation") column.collation = "utf8mb4_bin";
+      if (kind === "autoIncrement")
+        column.autoIncrement = !column.autoIncrement;
+      expect(() => assertExactSchema(expected, actual)).toThrow(
+        MigrationReadinessError,
+      );
+    },
+  );
   it("builds ordered exact current and historical migration manifests", () => {
     const currentManifest = validateExpectedMigrationManifest(
       entries,
@@ -405,7 +563,8 @@ describe("bootstrap migration readiness", () => {
     [
       "wrong nullability",
       (schema: SchemaSnapshot) =>
-        (schema.tables[0]!.columns[0]!.nullable = true),
+        (schema.tables[0]!.columns[0]!.nullable =
+          !schema.tables[0]!.columns[0]!.nullable),
     ],
     [
       "wrong default",

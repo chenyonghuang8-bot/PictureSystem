@@ -14,6 +14,7 @@ import {
   assertExactSchema,
   buildExpectedSchemaSnapshot,
   buildPhase6PredecessorSchemaSnapshot,
+  buildPhase7PredecessorSchemaSnapshot,
   loadExpectedMigrationManifest,
 } from "./migration-readiness.js";
 
@@ -194,7 +195,9 @@ describe("Phase 6A additive migration and schema", () => {
     ).toEqual(newTables.map((t) => getTableConfig(t).name).sort());
   });
   it("keeps actual Drizzle types, indexes, FK targets and CHECK expressions aligned with SQL/snapshot", () => {
-    for (const table of [...newTables, mediaItems]) {
+    // media_items evolves again in 0007; its frozen 0006 shape is checked by
+    // the Phase 7 predecessor manifest and Phase 7 migration test.
+    for (const table of newTables) {
       const config = getTableConfig(table),
         snap = current.tables[config.name]!;
       expect(config.columns.map((c) => c.name).sort()).toEqual(
@@ -222,23 +225,16 @@ describe("Phase 6A additive migration and schema", () => {
           onDelete: "restrict",
           onUpdate: "restrict",
         });
-        if (table !== mediaItems)
-          expect(migration).toContain(
-            `CONSTRAINT \`${fk.getName()}\` FOREIGN KEY`,
-          );
+        expect(migration).toContain(
+          `CONSTRAINT \`${fk.getName()}\` FOREIGN KEY`,
+        );
       }
       for (const c of config.checks) {
         expect(snap.checkConstraint[c.name]?.value).toBe(
           dialect.sqlToQuery(c.value).sql,
         );
-        if (
-          table !== mediaItems ||
-          c.name === "chk_media_items_description" ||
-          c.name === "chk_media_items_note_revision"
-        ) {
-          expect(migration).toContain(`CONSTRAINT \`${c.name}\` CHECK`);
-          expect(migration).toContain(snap.checkConstraint[c.name]!.value);
-        }
+        expect(migration).toContain(`CONSTRAINT \`${c.name}\` CHECK`);
+        expect(migration).toContain(snap.checkConstraint[c.name]!.value);
       }
     }
   });
@@ -260,7 +256,7 @@ describe("Phase 6A additive migration and schema", () => {
     expect(comments.body.getSQLType()).toBe("varchar(2000)");
   });
   it("includes all Phase 6 tables in readiness and rejects predecessor/partial schema", () => {
-    const full = buildExpectedSchemaSnapshot();
+    const full = buildPhase7PredecessorSchemaSnapshot();
     const before = buildPhase6PredecessorSchemaSnapshot();
     expect(before.tables).toHaveLength(16);
     expect(full.tables).toHaveLength(21);

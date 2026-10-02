@@ -54,6 +54,7 @@ describe("Phase 3B Drizzle schema", () => {
       "AVAILABLE",
       "MISSING",
       "CORRUPT",
+      "PURGING",
     ]);
   });
 
@@ -71,6 +72,7 @@ describe("Phase 3B Drizzle schema", () => {
       "fk_upload_sessions_family",
       "fk_upload_sessions_creator_member",
       "fk_upload_sessions_storage_object",
+      "fk_upload_sessions_retired_purge",
     ]);
     expect(config.checks.map((item) => item.name)).toEqual([
       "chk_upload_sessions_size_offset",
@@ -89,6 +91,7 @@ describe("Phase 3B Drizzle schema", () => {
       "UPLOADING",
       "FINALIZING",
       "COMPLETE",
+      "RETIRED",
       "FAILED",
       "ABORTED",
       "EXPIRED",

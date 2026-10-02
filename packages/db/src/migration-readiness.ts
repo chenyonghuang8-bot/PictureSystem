@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { canonicalCheck } from "./check-expression.js";
 
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
@@ -30,6 +31,9 @@ import {
   tags,
   mediaTags,
   comments,
+  purgeIntents,
+  purgeFiles,
+  auditLogs,
 } from "./schema.js";
 
 const PROJECT_TABLES = [
@@ -53,6 +57,9 @@ const PROJECT_TABLES = [
   tags,
   mediaTags,
   comments,
+  purgeIntents,
+  purgeFiles,
+  auditLogs,
 ] as const;
 
 const PHASE_4_PREDECESSOR_TABLES = PROJECT_TABLES.slice(0, 9);
@@ -225,8 +232,19 @@ export function buildPhase4PredecessorSchemaSnapshot(): SchemaSnapshot {
 
 // 0006 is additive: five tables and exactly two note columns/checks.
 // Keep one authoritative schema, deriving only the reviewed predecessor delta.
+export function buildPhase7PredecessorSchemaSnapshot(): SchemaSnapshot {
+  // Frozen canonical 0006 readiness manifest, generated from the reviewed
+  // 0006 Drizzle schema before 7A edits. Do not derive it from mutable 0007.
+  return JSON.parse(
+    readFileSync(
+      new URL("../drizzle/phase6_readiness.json", import.meta.url),
+      "utf8",
+    ),
+  ) as SchemaSnapshot;
+}
+
 export function buildPhase6PredecessorSchemaSnapshot(): SchemaSnapshot {
-  const snapshot = buildExpectedSchemaSnapshot();
+  const snapshot = buildPhase7PredecessorSchemaSnapshot();
   const added = new Set([
     "user_favorites",
     "family_featured",
@@ -540,7 +558,8 @@ function canonicalizeSchema(snapshot: SchemaSnapshot): SchemaSnapshot {
         ...table,
         engine: table.engine.toUpperCase(),
         collation: table.collation.toLowerCase(),
-        columns: table.columns.map((item) => ({
+        // Ordinary column ordinal is not semantic; index and FK tuples retain order.
+        columns: [...table.columns].sort(byName).map((item) => ({
           ...item,
           type: normalizeType(item.type),
           defaultValue:

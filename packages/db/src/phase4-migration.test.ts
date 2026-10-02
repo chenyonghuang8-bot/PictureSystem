@@ -156,11 +156,11 @@ describe("Phase 4A versioned migration", () => {
       expect(config.columns.map((column) => column.name)).toEqual(
         expect.arrayContaining(Object.keys(snap.columns)),
       );
-      expect(Object.keys(snap.indexes).sort()).toEqual(
-        config.indexes.map((item) => item.config.name).sort(),
+      expect(config.indexes.map((item) => item.config.name)).toEqual(
+        expect.arrayContaining(Object.keys(snap.indexes)),
       );
-      expect(Object.keys(snap.foreignKeys).sort()).toEqual(
-        config.foreignKeys.map((key) => key.getName()).sort(),
+      expect(config.foreignKeys.map((key) => key.getName())).toEqual(
+        expect.arrayContaining(Object.keys(snap.foreignKeys)),
       );
       expect(config.checks.map((item) => item.name)).toEqual(
         expect.arrayContaining(Object.keys(snap.checkConstraint)),

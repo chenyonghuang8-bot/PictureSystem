@@ -51,10 +51,16 @@ describe("Phase 4A Drizzle schema", () => {
     expect(
       getTableConfig(mediaItems).foreignKeys.map((key) => key.getName()),
     ).toEqual([
+      "fk_media_items_trashed_by",
+      "fk_media_items_purge_intent",
       "fk_media_items_storage_object",
       "fk_media_items_source_upload",
     ]);
-    const source = getTableConfig(mediaItems).foreignKeys[1]!.reference();
+    const source = getTableConfig(mediaItems)
+      .foreignKeys.find(
+        (key) => key.getName() === "fk_media_items_source_upload",
+      )!
+      .reference();
     expect(source.columns.map((column) => column.name)).toEqual([
       "family_id",
       "source_upload_id",

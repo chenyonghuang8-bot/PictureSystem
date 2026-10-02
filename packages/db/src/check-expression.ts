@@ -77,6 +77,23 @@ export function canonicalCheck(value: string): string {
     }
     function scalar(): Node {
       const left = primary();
+      if (take("+")) {
+        if (left.atom !== "id") throw new Error("UNSUPPORTED_CHECK");
+        if (!take("interval")) {
+          const right = primary();
+          if (right.atom !== "id") throw new Error("UNSUPPORTED_CHECK");
+          return binary(left, "+", right);
+        }
+        const amount = primary();
+        if (
+          amount.atom !== "integer" ||
+          !/^\d+$/.test(amount.text) ||
+          BigInt(amount.text) <= 0n
+        )
+          throw new Error("UNSUPPORTED_CHECK");
+        requireToken("day");
+        return { text: `(${left.text}+interval ${amount.text} day)` };
+      }
       if (!take("%")) return left;
       const right = primary();
       if (left.atom !== "id" || right.atom !== "integer")
@@ -184,7 +201,7 @@ function tokenize(value: string): Token[] {
       offset += number[0].length;
       continue;
     }
-    const symbol = /^(?:<>|<=|>=|[()=<>%,.-])/.exec(rest);
+    const symbol = /^(?:<>|<=|>=|[()=<>%,.+-])/.exec(rest);
     if (!symbol) throw new Error("UNSUPPORTED_CHECK");
     result.push({ kind: "symbol", text: symbol[0] });
     offset += symbol[0].length;

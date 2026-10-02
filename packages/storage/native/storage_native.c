@@ -68,12 +68,17 @@ typedef struct {
   int parent_fd;
   int consumed;
   dev_t device;
+  ino_t root_inode;
   ino_t inode;
   off_t size;
   mode_t mode;
   struct timespec mtime;
   char base[NAME_MAX + 1];
   char root_path[PATH_MAX];
+  char marker[33];
+  char family[32];
+  char sha[65];
+  char byte_size[32];
 } original_handle_t;
 
 typedef struct {
@@ -2380,12 +2385,18 @@ static napi_value open_verified_original(napi_env env, napi_callback_info info) 
   handle->file_fd = file_fd;
   handle->parent_fd = parent_fd;
   handle->device = before.st_dev;
+  handle->root_inode = reader->root_inode;
   handle->inode = before.st_ino;
   handle->size = before.st_size;
   handle->mode = before.st_mode & 0777;
   handle->mtime = before.st_mtimespec;
   strcpy(handle->base, base);
   strcpy(handle->root_path, reader->canonical_path);
+  strcpy(handle->marker, reader->marker);
+  strcpy(handle->family, family);
+  strcpy(handle->sha, sha);
+  (void)snprintf(handle->byte_size, sizeof(handle->byte_size), "%lld",
+                 (long long)expected_size);
   napi_value external;
   napi_create_external(env, handle, finalize_original_handle, NULL, &external);
   return external;
@@ -2416,12 +2427,8 @@ static napi_value close_original_handle(napi_env env, napi_callback_info info) {
   return undefined_value(env);
 }
 
-static napi_value consume_original_handle(napi_env env, napi_callback_info info) {
-  size_t argc = 1;
-  napi_value arg;
-  napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
-  original_handle_t *handle = get_original_handle(env, arg);
-  if (handle == NULL) return NULL;
+static napi_value consume_original_handle_validated(napi_env env,
+                                                    original_handle_t *handle) {
   struct stat current, named;
   if (fstat(handle->file_fd, &current) != 0 ||
       fstatat(handle->parent_fd, handle->base, &named, AT_SYMLINK_NOFOLLOW) != 0 ||
@@ -2456,6 +2463,15 @@ static napi_value consume_original_handle(napi_env env, napi_callback_info info)
   return result;
 }
 
+static napi_value consume_original_handle(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value arg;
+  napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
+  original_handle_t *handle = get_original_handle(env, arg);
+  if (handle == NULL) return NULL;
+  return consume_original_handle_validated(env,handle);
+}
+
 #include "original_download.h"
 
 #include "derived_store.h"
@@ -2463,9 +2479,35 @@ static napi_value consume_original_handle(napi_env env, napi_callback_info info)
 #include "derived_publish.h"
 #include "derived_recovery.h"
 #include "derived_serve.h"
+#include "phase7_coordination.h"
+#include "phase7_handoff.h"
 
 static napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
+      {"openCoordination", NULL, ps_open_coordination, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"tryAcquireCoordination", NULL, ps_try_coordination, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"releaseCoordination", NULL, ps_release_coordination, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"closeCoordination", NULL, ps_close_coordination, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"createHandoff", NULL, ps_create_handoff, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"registerHandoffReceiver", NULL, ps_register_handoff_receiver, NULL,
+       NULL, NULL, napi_default, NULL},
+      {"requireRegisteredHandoff", NULL, ps_handoff_registered, NULL, NULL,
+       NULL, napi_default, NULL},
+      {"sendRegisteredOriginal", NULL, ps_send_registered_original,
+       NULL, NULL, NULL, napi_default, NULL},
+      {"settleHandoff", NULL, ps_settle_handoff, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"closeHandoff", NULL, ps_close_handoff, NULL, NULL, NULL,
+       napi_default, NULL},
+#ifdef PS_STORAGE_TEST_HOOKS
+      {"phase7TestExactProcessIdentity", NULL,
+       ps_test_exact_process_identity, NULL, NULL, NULL, napi_default, NULL},
+#endif
       {"provisionCapacityGate", NULL, provision_capacity_gate, NULL, NULL,
        NULL, napi_default, NULL},
       {"openCapacityGate", NULL, open_capacity_gate, NULL, NULL, NULL,

@@ -1,0 +1,3315 @@
+{
+  "tables": [
+    {
+      "name": "__drizzle_migrations",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "hash",
+          "type": "text",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "created_at",
+          "type": "bigint",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "id",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [],
+      "checks": []
+    },
+    {
+      "name": "album_media",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "album_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "media_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_album_media_media",
+          "unique": false,
+          "columns": ["family_id", "media_id", "album_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_album_media_placement",
+          "unique": true,
+          "columns": ["family_id", "album_id", "media_id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_album_media_album",
+          "columns": ["family_id", "album_id"],
+          "referencedTable": "albums",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_album_media_media",
+          "columns": ["family_id", "media_id"],
+          "referencedTable": "media_items",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": []
+    },
+    {
+      "name": "album_members",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "album_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "member_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "can_view",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "defaultValue": "0",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "can_upload",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "defaultValue": "0",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "can_edit",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "defaultValue": "0",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "can_delete",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "defaultValue": "0",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "can_manage_members",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "defaultValue": "0",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_album_members_family_album",
+          "unique": false,
+          "columns": ["family_id", "album_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_album_members_family_member",
+          "unique": false,
+          "columns": ["family_id", "member_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_album_members_album_member",
+          "unique": true,
+          "columns": ["album_id", "member_id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_album_members_album",
+          "columns": ["family_id", "album_id"],
+          "referencedTable": "albums",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_album_members_member",
+          "columns": ["family_id", "member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_album_members_delete_boolean",
+          "expression": "(can_delete in (0,1))"
+        },
+        {
+          "name": "chk_album_members_edit_boolean",
+          "expression": "(can_edit in (0,1))"
+        },
+        {
+          "name": "chk_album_members_manage_members_boolean",
+          "expression": "(can_manage_members in (0,1))"
+        },
+        {
+          "name": "chk_album_members_upload_boolean",
+          "expression": "(can_upload in (0,1))"
+        },
+        {
+          "name": "chk_album_members_view_boolean",
+          "expression": "(can_view in (0,1))"
+        },
+        {
+          "name": "chk_album_members_view_required",
+          "expression": "((can_view=1) or ((((can_upload=0) and (can_edit=0)) and (can_delete=0)) and (can_manage_members=0)))"
+        }
+      ]
+    },
+    {
+      "name": "albums",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "owner_member_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(128)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "description",
+          "type": "varchar(2000)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "visibility",
+          "type": "enum('family','custom')",
+          "nullable": false,
+          "defaultValue": "CUSTOM",
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "revision",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": "1",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "deleted_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_albums_family_deleted_id",
+          "unique": false,
+          "columns": ["family_id", "deleted_at", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_albums_family_owner",
+          "unique": false,
+          "columns": ["family_id", "owner_member_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_albums_family_id",
+          "unique": true,
+          "columns": ["family_id", "id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_albums_family",
+          "columns": ["family_id"],
+          "referencedTable": "families",
+          "referencedColumns": ["id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_albums_owner_member",
+          "columns": ["family_id", "owner_member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_albums_deleted_at",
+          "expression": "((deleted_at is null) or (deleted_at>=created_at))"
+        },
+        {
+          "name": "chk_albums_revision",
+          "expression": "(revision>=1)"
+        }
+      ]
+    },
+    {
+      "name": "background_jobs",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "media_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "generation",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "recipe_id",
+          "type": "smallint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "job_type",
+          "type": "enum('media_probe','image_derivatives','video_poster')",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "state",
+          "type": "enum('queued','running','retry_wait','succeeded','failed','cancelled')",
+          "nullable": false,
+          "defaultValue": "QUEUED",
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "attempts",
+          "type": "tinyint unsigned",
+          "nullable": false,
+          "defaultValue": "0",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "max_attempts",
+          "type": "tinyint unsigned",
+          "nullable": false,
+          "defaultValue": "3",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "available_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "locked_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "heartbeat_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "locked_until",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "worker_id",
+          "type": "binary(16)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "lease_epoch",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": "0",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "last_failure_code",
+          "type": "enum('unsupported_format','capability_unavailable','malformed_media','input_limit','output_limit','process_timeout','resource_limit','temporary_io','storage_unavailable','original_missing','original_corrupt','derived_integrity','worker_lost','db_unavailable','commit_outcome_unknown')",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "finished_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_background_jobs_claim",
+          "unique": false,
+          "columns": ["state", "available_at", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_background_jobs_lease",
+          "unique": false,
+          "columns": ["state", "locked_until", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_background_jobs_family_media_id",
+          "unique": true,
+          "columns": ["family_id", "media_id", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_background_jobs_identity",
+          "unique": true,
+          "columns": [
+            "family_id",
+            "media_id",
+            "generation",
+            "recipe_id",
+            "job_type"
+          ],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_background_jobs_media",
+          "columns": ["family_id", "media_id"],
+          "referencedTable": "media_items",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_background_jobs_attempts",
+          "expression": "((attempts<=max_attempts) and (max_attempts between 1 and 3))"
+        },
+        {
+          "name": "chk_background_jobs_failure",
+          "expression": "((((state in ('FAILED','RETRY_WAIT')) and (last_failure_code is not null)) or ((state in ('QUEUED','SUCCEEDED','CANCELLED')) and (last_failure_code is null))) or (state='RUNNING'))"
+        },
+        {
+          "name": "chk_background_jobs_generation",
+          "expression": "(generation>=1)"
+        },
+        {
+          "name": "chk_background_jobs_lease",
+          "expression": "(((((((((state='RUNNING') and (locked_at is not null)) and (heartbeat_at is not null)) and (locked_until is not null)) and (worker_id is not null)) and (lease_epoch>0)) and (locked_at<=heartbeat_at)) and (heartbeat_at<locked_until)) or (((((state<>'RUNNING') and (locked_at is null)) and (heartbeat_at is null)) and (locked_until is null)) and (worker_id is null)))"
+        },
+        {
+          "name": "chk_background_jobs_recipe",
+          "expression": "(recipe_id>=1)"
+        },
+        {
+          "name": "chk_background_jobs_terminal",
+          "expression": "((((state in ('SUCCEEDED','FAILED','CANCELLED')) and (finished_at is not null)) and (finished_at>=created_at)) or ((state not in ('SUCCEEDED','FAILED','CANCELLED')) and (finished_at is null)))"
+        }
+      ]
+    },
+    {
+      "name": "comments",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "media_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "author_member_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "body",
+          "type": "varchar(2000)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_comments_author",
+          "unique": false,
+          "columns": ["family_id", "author_member_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_comments_media_time",
+          "unique": false,
+          "columns": ["family_id", "media_id", "created_at", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_comments_author",
+          "columns": ["family_id", "author_member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_comments_media",
+          "columns": ["family_id", "media_id"],
+          "referencedTable": "media_items",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_comments_body",
+          "expression": "((char_length(body) between 1 and 2000) and (length(body)<=8000))"
+        }
+      ]
+    },
+    {
+      "name": "derived_assets",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "media_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "generation",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "recipe_id",
+          "type": "smallint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "kind",
+          "type": "enum('thumbnail','preview','video_poster')",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "state",
+          "type": "enum('reserved','publishing','ready','missing','failed')",
+          "nullable": false,
+          "defaultValue": "RESERVED",
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "reserved_bytes",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "byte_size",
+          "type": "bigint unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "sha256",
+          "type": "binary(32)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "width",
+          "type": "int unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "height",
+          "type": "int unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "output_mime",
+          "type": "varchar(127)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "producer_job_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "producer_lease_epoch",
+          "type": "bigint unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "failure_code",
+          "type": "enum('unsupported_format','capability_unavailable','malformed_media','input_limit','output_limit','process_timeout','resource_limit','temporary_io','storage_unavailable','original_missing','original_corrupt','derived_integrity','worker_lost','db_unavailable','commit_outcome_unknown')",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "published_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "cleaned_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_derived_assets_cleanup",
+          "unique": false,
+          "columns": ["family_id", "cleaned_at", "state", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_derived_assets_state",
+          "unique": false,
+          "columns": ["state", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_derived_assets_identity",
+          "unique": true,
+          "columns": [
+            "family_id",
+            "media_id",
+            "generation",
+            "recipe_id",
+            "kind"
+          ],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_derived_assets_media",
+          "columns": ["family_id", "media_id"],
+          "referencedTable": "media_items",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_derived_assets_producer_job",
+          "columns": ["family_id", "media_id", "producer_job_id"],
+          "referencedTable": "background_jobs",
+          "referencedColumns": ["family_id", "media_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_derived_assets_bytes_digest",
+          "expression": "(((byte_size is null) and (sha256 is null)) or ((((byte_size is not null) and (sha256 is not null)) and (byte_size>0)) and (byte_size<=reserved_bytes)))"
+        },
+        {
+          "name": "chk_derived_assets_dimensions",
+          "expression": "(((width is null) and (height is null)) or ((((width is not null) and (height is not null)) and (width>0)) and (height>0)))"
+        },
+        {
+          "name": "chk_derived_assets_failure",
+          "expression": "(((state in ('MISSING','FAILED')) and (failure_code is not null)) or ((state not in ('MISSING','FAILED')) and (failure_code is null)))"
+        },
+        {
+          "name": "chk_derived_assets_generation",
+          "expression": "(generation>=1)"
+        },
+        {
+          "name": "chk_derived_assets_published_payload",
+          "expression": "((state not in ('PUBLISHING','READY')) or (((((((byte_size is not null) and (sha256 is not null)) and (width is not null)) and (height is not null)) and (output_mime='image/webp')) and (producer_lease_epoch is not null)) and (producer_lease_epoch>0)))"
+        },
+        {
+          "name": "chk_derived_assets_ready",
+          "expression": "((state<>'READY') or (((published_at is not null) and (cleaned_at is null)) and (published_at>=created_at)))"
+        },
+        {
+          "name": "chk_derived_assets_recipe",
+          "expression": "(recipe_id>=1)"
+        },
+        {
+          "name": "chk_derived_assets_reservation",
+          "expression": "((((kind='THUMBNAIL') and (reserved_bytes between 1 and 524288)) or ((kind='PREVIEW') and (reserved_bytes between 1 and 4194304))) or ((kind='VIDEO_POSTER') and (reserved_bytes between 1 and 1048576)))"
+        },
+        {
+          "name": "chk_derived_assets_times",
+          "expression": "(((published_at is null) or (published_at>=created_at)) and ((cleaned_at is null) or (cleaned_at>=created_at)))"
+        }
+      ]
+    },
+    {
+      "name": "families",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(128)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [],
+      "checks": []
+    },
+    {
+      "name": "family_featured",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "media_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "featured_by_member_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_family_featured_actor",
+          "unique": false,
+          "columns": ["family_id", "featured_by_member_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_family_featured_time",
+          "unique": false,
+          "columns": ["family_id", "created_at", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_family_featured_identity",
+          "unique": true,
+          "columns": ["family_id", "media_id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_family_featured_actor",
+          "columns": ["family_id", "featured_by_member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_family_featured_media",
+          "columns": ["family_id", "media_id"],
+          "referencedTable": "media_items",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": []
+    },
+    {
+      "name": "family_members",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "user_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "role",
+          "type": "enum('super_admin','admin','member')",
+          "nullable": false,
+          "defaultValue": "MEMBER",
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "joined_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "disabled_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "left_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_family_members_user",
+          "unique": false,
+          "columns": ["user_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_family_members_family_id",
+          "unique": true,
+          "columns": ["family_id", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_family_members_family_user",
+          "unique": true,
+          "columns": ["family_id", "user_id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "family_members_family_id_families_id_fk",
+          "columns": ["family_id"],
+          "referencedTable": "families",
+          "referencedColumns": ["id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "family_members_user_id_users_id_fk",
+          "columns": ["user_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": []
+    },
+    {
+      "name": "invitations",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_by_member_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "role",
+          "type": "enum('admin','member')",
+          "nullable": false,
+          "defaultValue": "MEMBER",
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "token_hash",
+          "type": "binary(32)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "used_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "used_by_member_id",
+          "type": "bigint unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "revoked_by_member_id",
+          "type": "bigint unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_invitations_expires",
+          "unique": false,
+          "columns": ["expires_at"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_invitations_family_created",
+          "unique": false,
+          "columns": ["family_id", "created_at"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_invitations_family_creator",
+          "unique": false,
+          "columns": ["family_id", "created_by_member_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_invitations_family_revoked_by",
+          "unique": false,
+          "columns": ["family_id", "revoked_by_member_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_invitations_family_used_by",
+          "unique": false,
+          "columns": ["family_id", "used_by_member_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_invitations_token_hash",
+          "unique": true,
+          "columns": ["token_hash"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_invitations_creator_member",
+          "columns": ["family_id", "created_by_member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_invitations_revoked_by_member",
+          "columns": ["family_id", "revoked_by_member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_invitations_used_by_member",
+          "columns": ["family_id", "used_by_member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "invitations_family_id_families_id_fk",
+          "columns": ["family_id"],
+          "referencedTable": "families",
+          "referencedColumns": ["id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_invitations_expiry",
+          "expression": "(expires_at>created_at)"
+        },
+        {
+          "name": "chk_invitations_revoker_requires_revoked_at",
+          "expression": "((revoked_by_member_id is null) or (revoked_at is not null))"
+        },
+        {
+          "name": "chk_invitations_used_or_revoked",
+          "expression": "((used_at is null) or (revoked_at is null))"
+        },
+        {
+          "name": "chk_invitations_used_pair",
+          "expression": "(((used_at is null) and (used_by_member_id is null)) or ((used_at is not null) and (used_by_member_id is not null)))"
+        }
+      ]
+    },
+    {
+      "name": "media_items",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "storage_object_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "source_upload_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "uploaded_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "media_type",
+          "type": "enum('unknown','image','video','other')",
+          "nullable": false,
+          "defaultValue": "UNKNOWN",
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "detected_mime",
+          "type": "varchar(127)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "processing_state",
+          "type": "enum('pending','processing','ready','partial','failed','blocked')",
+          "nullable": false,
+          "defaultValue": "PENDING",
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "generation",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": "1",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "recipe_id",
+          "type": "smallint unsigned",
+          "nullable": false,
+          "defaultValue": "1",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "metadata_generation",
+          "type": "bigint unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "raw_width",
+          "type": "int unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "raw_height",
+          "type": "int unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "display_width",
+          "type": "int unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "display_height",
+          "type": "int unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "duration_ms",
+          "type": "bigint unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "orientation",
+          "type": "tinyint unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "video_rotation_degrees",
+          "type": "smallint",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "is_animated",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "defaultValue": "0",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "motion_hint",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "defaultValue": "0",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "captured_local_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "captured_at_utc",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "captured_offset_minutes",
+          "type": "smallint",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "captured_source",
+          "type": "enum('none','exif_original','exif_create','xmp_original','xmp_create','quicktime_creation','container_creation')",
+          "nullable": false,
+          "defaultValue": "NONE",
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "captured_time_status",
+          "type": "enum('absent','offset_known','offset_unknown')",
+          "nullable": false,
+          "defaultValue": "ABSENT",
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "timeline_key",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "timeline_basis",
+          "type": "enum('capture_local','upload_utc')",
+          "nullable": false,
+          "defaultValue": "UPLOAD_UTC",
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "gps_latitude",
+          "type": "decimal(9,6)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "gps_longitude",
+          "type": "decimal(10,6)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "camera_make",
+          "type": "varchar(128)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "camera_model",
+          "type": "varchar(128)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "video_codec",
+          "type": "varchar(32)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "video_container",
+          "type": "varchar(32)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "video_transfer",
+          "type": "varchar(32)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "warning_flags",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": "0",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "last_failure_code",
+          "type": "enum('unsupported_format','capability_unavailable','malformed_media','input_limit','output_limit','process_timeout','resource_limit','temporary_io','storage_unavailable','original_missing','original_corrupt','derived_integrity','worker_lost','db_unavailable','commit_outcome_unknown')",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "description",
+          "type": "varchar(4000)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "note_revision",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": "1",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_media_items_family_timeline",
+          "unique": false,
+          "columns": ["family_id", "timeline_key", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_media_items_processing",
+          "unique": false,
+          "columns": ["processing_state", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_media_items_family_id",
+          "unique": true,
+          "columns": ["family_id", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_media_items_family_storage_object",
+          "unique": true,
+          "columns": ["family_id", "storage_object_id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_media_items_source_upload",
+          "columns": ["family_id", "source_upload_id", "storage_object_id"],
+          "referencedTable": "upload_sessions",
+          "referencedColumns": ["family_id", "id", "storage_object_id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_media_items_storage_object",
+          "columns": ["family_id", "storage_object_id"],
+          "referencedTable": "storage_objects",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_media_items_animated_boolean",
+          "expression": "(is_animated in (0,1))"
+        },
+        {
+          "name": "chk_media_items_capture",
+          "expression": "(((((((captured_time_status='ABSENT') and (captured_source='NONE')) and (captured_local_at is null)) and (captured_at_utc is null)) and (captured_offset_minutes is null)) or (((((captured_time_status='OFFSET_UNKNOWN') and (captured_source<>'NONE')) and (captured_local_at is not null)) and (captured_at_utc is null)) and (captured_offset_minutes is null))) or (((((((captured_time_status='OFFSET_KNOWN') and (captured_source<>'NONE')) and (captured_local_at is not null)) and (captured_at_utc is not null)) and (captured_offset_minutes is not null)) and (captured_offset_minutes between -840 and 840)) and ((abs(captured_offset_minutes)<840) or ((captured_offset_minutes%60)=0))))"
+        },
+        {
+          "name": "chk_media_items_description",
+          "expression": "((description is null) or ((char_length(description) between 1 and 4000) and (length(description)<=16000)))"
+        },
+        {
+          "name": "chk_media_items_display_dimensions",
+          "expression": "(((display_width is null) and (display_height is null)) or ((((display_width is not null) and (display_height is not null)) and (display_width>0)) and (display_height>0)))"
+        },
+        {
+          "name": "chk_media_items_duration",
+          "expression": "((duration_ms is null) or (duration_ms<=86400000))"
+        },
+        {
+          "name": "chk_media_items_failure",
+          "expression": "(((processing_state in ('FAILED','BLOCKED')) and (last_failure_code is not null)) or ((processing_state not in ('FAILED','BLOCKED')) and ((processing_state='PARTIAL') or (last_failure_code is null))))"
+        },
+        {
+          "name": "chk_media_items_generation",
+          "expression": "(generation>=1)"
+        },
+        {
+          "name": "chk_media_items_gps",
+          "expression": "(((gps_latitude is null) and (gps_longitude is null)) or ((((gps_latitude is not null) and (gps_longitude is not null)) and (gps_latitude between -90 and 90)) and (gps_longitude between -180 and 180)))"
+        },
+        {
+          "name": "chk_media_items_metadata_generation",
+          "expression": "((metadata_generation is null) or ((metadata_generation>=1) and (metadata_generation<=generation)))"
+        },
+        {
+          "name": "chk_media_items_motion_boolean",
+          "expression": "(motion_hint in (0,1))"
+        },
+        {
+          "name": "chk_media_items_note_revision",
+          "expression": "(note_revision>=1)"
+        },
+        {
+          "name": "chk_media_items_orientation",
+          "expression": "((orientation is null) or (orientation between 1 and 8))"
+        },
+        {
+          "name": "chk_media_items_raw_dimensions",
+          "expression": "(((raw_width is null) and (raw_height is null)) or ((((raw_width is not null) and (raw_height is not null)) and (raw_width>0)) and (raw_height>0)))"
+        },
+        {
+          "name": "chk_media_items_ready_metadata",
+          "expression": "((processing_state<>'READY') or ((metadata_generation is not null) and (metadata_generation=generation)))"
+        },
+        {
+          "name": "chk_media_items_recipe",
+          "expression": "(recipe_id>=1)"
+        },
+        {
+          "name": "chk_media_items_timeline",
+          "expression": "((((timeline_basis='CAPTURE_LOCAL') and (captured_local_at is not null)) and (timeline_key=captured_local_at)) or ((timeline_basis='UPLOAD_UTC') and (timeline_key=uploaded_at)))"
+        },
+        {
+          "name": "chk_media_items_video_rotation",
+          "expression": "((video_rotation_degrees is null) or (video_rotation_degrees in (0,90,180,270)))"
+        },
+        {
+          "name": "chk_media_items_warning_flags",
+          "expression": "(warning_flags<=255)"
+        }
+      ]
+    },
+    {
+      "name": "media_tags",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "media_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "tag_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_media_tags_tag",
+          "unique": false,
+          "columns": ["family_id", "tag_id", "media_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_media_tags_identity",
+          "unique": true,
+          "columns": ["family_id", "media_id", "tag_id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_media_tags_media",
+          "columns": ["family_id", "media_id"],
+          "referencedTable": "media_items",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_media_tags_tag",
+          "columns": ["family_id", "tag_id"],
+          "referencedTable": "tags",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": []
+    },
+    {
+      "name": "sessions",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "user_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "token_hash",
+          "type": "binary(32)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "client_type",
+          "type": "enum('web','android')",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "device_label",
+          "type": "varchar(128)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "authenticated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "last_seen_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "revoke_reason",
+          "type": "enum('logout','user_revoke','logout_all','password_change','user_disabled')",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_sessions_expires",
+          "unique": false,
+          "columns": ["expires_at"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_sessions_user_revoked_created",
+          "unique": false,
+          "columns": ["user_id", "revoked_at", "created_at"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_sessions_token_hash",
+          "unique": true,
+          "columns": ["token_hash"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "sessions_user_id_users_id_fk",
+          "columns": ["user_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_sessions_expiry",
+          "expression": "(expires_at>created_at)"
+        },
+        {
+          "name": "chk_sessions_last_seen",
+          "expression": "(last_seen_at>=created_at)"
+        },
+        {
+          "name": "chk_sessions_revoked_pair",
+          "expression": "(((revoked_at is null) and (revoke_reason is null)) or ((revoked_at is not null) and (revoke_reason is not null)))"
+        }
+      ]
+    },
+    {
+      "name": "share_events",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "share_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "event_type",
+          "type": "enum('create','access','revoke')",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "actor_member_id",
+          "type": "bigint unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_share_events_share",
+          "unique": false,
+          "columns": ["family_id", "share_id", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_share_events_actor",
+          "columns": ["family_id", "actor_member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_share_events_share",
+          "columns": ["family_id", "share_id"],
+          "referencedTable": "shares",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_share_events_actor",
+          "expression": "(((event_type in ('CREATE','REVOKE')) and (actor_member_id is not null)) or ((event_type='ACCESS') and (actor_member_id is null)))"
+        }
+      ]
+    },
+    {
+      "name": "shares",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "album_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "token_hash",
+          "type": "binary(32)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_by_member_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "revoked_by_member_id",
+          "type": "bigint unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_shares_expires",
+          "unique": false,
+          "columns": ["expires_at", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_shares_family_album_id",
+          "unique": false,
+          "columns": ["family_id", "album_id", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_shares_family_id",
+          "unique": true,
+          "columns": ["family_id", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_shares_token_hash",
+          "unique": true,
+          "columns": ["token_hash"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_shares_album",
+          "columns": ["family_id", "album_id"],
+          "referencedTable": "albums",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_shares_creator",
+          "columns": ["family_id", "created_by_member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_shares_family",
+          "columns": ["family_id"],
+          "referencedTable": "families",
+          "referencedColumns": ["id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_shares_revoker",
+          "columns": ["family_id", "revoked_by_member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_shares_expiry",
+          "expression": "(expires_at>created_at)"
+        },
+        {
+          "name": "chk_shares_revoke_after_create",
+          "expression": "((revoked_at is null) or (revoked_at>=created_at))"
+        },
+        {
+          "name": "chk_shares_revoke_pair",
+          "expression": "(((revoked_at is null) and (revoked_by_member_id is null)) or ((revoked_at is not null) and (revoked_by_member_id is not null)))"
+        }
+      ]
+    },
+    {
+      "name": "storage_objects",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "sha256",
+          "type": "binary(32)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "byte_size",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "key_version",
+          "type": "smallint unsigned",
+          "nullable": false,
+          "defaultValue": "1",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "state",
+          "type": "enum('available','missing','corrupt')",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "durable_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "verified_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_storage_objects_state_verified",
+          "unique": false,
+          "columns": ["state", "verified_at", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_storage_objects_family_hash_size",
+          "unique": true,
+          "columns": ["family_id", "sha256", "byte_size"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_storage_objects_family_id",
+          "unique": true,
+          "columns": ["family_id", "id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_storage_objects_family",
+          "columns": ["family_id"],
+          "referencedTable": "families",
+          "referencedColumns": ["id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_storage_objects_key_version",
+          "expression": "(key_version=1)"
+        },
+        {
+          "name": "chk_storage_objects_size",
+          "expression": "(byte_size>0)"
+        },
+        {
+          "name": "chk_storage_objects_verified",
+          "expression": "(verified_at>=durable_at)"
+        }
+      ]
+    },
+    {
+      "name": "tags",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(64)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "name_normalized",
+          "type": "varbinary(256)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_tags_family_id",
+          "unique": true,
+          "columns": ["family_id", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_tags_identity",
+          "unique": true,
+          "columns": ["family_id", "name_normalized"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_tags_family",
+          "columns": ["family_id"],
+          "referencedTable": "families",
+          "referencedColumns": ["id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_tags_name",
+          "expression": "((char_length(name) between 1 and 64) and (length(name)<=256))"
+        },
+        {
+          "name": "chk_tags_normalized",
+          "expression": "(length(name_normalized) between 1 and 256)"
+        }
+      ]
+    },
+    {
+      "name": "upload_sessions",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "public_id",
+          "type": "binary(16)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_by_member_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "original_filename",
+          "type": "varchar(255)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "reported_mime",
+          "type": "varchar(127)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "declared_size",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "committed_offset",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": "0",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "state",
+          "type": "enum('created','uploading','finalizing','complete','failed','aborted','expired')",
+          "nullable": false,
+          "defaultValue": "CREATED",
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "computed_sha256",
+          "type": "binary(32)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "finalize_started_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "storage_object_id",
+          "type": "bigint unsigned",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "completed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "terminal_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "failure_code",
+          "type": "varchar(48)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "staging_cleaned_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_upload_sessions_cleanup",
+          "unique": false,
+          "columns": ["state", "staging_cleaned_at", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_upload_sessions_family_creator_state",
+          "unique": false,
+          "columns": ["family_id", "created_by_member_id", "state", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_upload_sessions_family_object",
+          "unique": false,
+          "columns": ["family_id", "storage_object_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_upload_sessions_state_expiry",
+          "unique": false,
+          "columns": ["state", "expires_at", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_upload_sessions_family_id_object",
+          "unique": true,
+          "columns": ["family_id", "id", "storage_object_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_upload_sessions_public_id",
+          "unique": true,
+          "columns": ["public_id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_upload_sessions_creator_member",
+          "columns": ["family_id", "created_by_member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_upload_sessions_family",
+          "columns": ["family_id"],
+          "referencedTable": "families",
+          "referencedColumns": ["id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_upload_sessions_storage_object",
+          "columns": ["family_id", "storage_object_id"],
+          "referencedTable": "storage_objects",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": [
+        {
+          "name": "chk_upload_sessions_complete",
+          "expression": "(((((state='COMPLETE') and (storage_object_id is not null)) and (completed_at is not null)) and (terminal_at is null)) or (((state<>'COMPLETE') and (storage_object_id is null)) and (completed_at is null)))"
+        },
+        {
+          "name": "chk_upload_sessions_created",
+          "expression": "((state<>'CREATED') or (committed_offset=0))"
+        },
+        {
+          "name": "chk_upload_sessions_expiry",
+          "expression": "(expires_at>created_at)"
+        },
+        {
+          "name": "chk_upload_sessions_failure",
+          "expression": "(((state='FAILED') and (failure_code is not null)) or ((state<>'FAILED') and (failure_code is null)))"
+        },
+        {
+          "name": "chk_upload_sessions_finalize_pair",
+          "expression": "(((computed_sha256 is null) and (finalize_started_at is null)) or ((computed_sha256 is not null) and (finalize_started_at is not null)))"
+        },
+        {
+          "name": "chk_upload_sessions_finalize_state",
+          "expression": "((((((state in ('FINALIZING','COMPLETE')) and (computed_sha256 is not null)) and (finalize_started_at is not null)) and (committed_offset=declared_size)) or (((state in ('CREATED','UPLOADING','ABORTED','EXPIRED')) and (computed_sha256 is null)) and (finalize_started_at is null))) or ((state='FAILED') and (((computed_sha256 is null) and (finalize_started_at is null)) or (((computed_sha256 is not null) and (finalize_started_at is not null)) and (committed_offset=declared_size)))))"
+        },
+        {
+          "name": "chk_upload_sessions_size_offset",
+          "expression": "((declared_size>0) and (committed_offset<=declared_size))"
+        },
+        {
+          "name": "chk_upload_sessions_terminal",
+          "expression": "(((state in ('FAILED','ABORTED','EXPIRED')) and (terminal_at is not null)) or ((state not in ('FAILED','ABORTED','EXPIRED')) and (terminal_at is null)))"
+        },
+        {
+          "name": "chk_upload_sessions_times",
+          "expression": "(((((((finalize_started_at is null) or (finalize_started_at>=created_at)) and ((completed_at is null) or (completed_at>=created_at))) and ((terminal_at is null) or (terminal_at>=created_at))) and ((staging_cleaned_at is null) or (staging_cleaned_at>=created_at))) and ((completed_at is null) or ((finalize_started_at is not null) and (completed_at>=finalize_started_at)))) and ((staging_cleaned_at is null) or (state in ('COMPLETE','FAILED','ABORTED','EXPIRED'))))"
+        },
+        {
+          "name": "chk_upload_sessions_uploading",
+          "expression": "((state<>'UPLOADING') or (committed_offset>0))"
+        }
+      ]
+    },
+    {
+      "name": "user_favorites",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "family_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "member_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "media_id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_user_favorites_media",
+          "unique": false,
+          "columns": ["family_id", "media_id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "idx_user_favorites_member_time",
+          "unique": false,
+          "columns": ["family_id", "member_id", "created_at", "id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_user_favorites_identity",
+          "unique": true,
+          "columns": ["family_id", "member_id", "media_id"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "fk_user_favorites_media",
+          "columns": ["family_id", "media_id"],
+          "referencedTable": "media_items",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        },
+        {
+          "name": "fk_user_favorites_member",
+          "columns": ["family_id", "member_id"],
+          "referencedTable": "family_members",
+          "referencedColumns": ["family_id", "id"],
+          "onDelete": "RESTRICT",
+          "onUpdate": "RESTRICT"
+        }
+      ],
+      "checks": []
+    },
+    {
+      "name": "users",
+      "engine": "INNODB",
+      "collation": "utf8mb4_0900_ai_ci",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": true,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(64)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "username_normalized",
+          "type": "varbinary(512)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "password_hash",
+          "type": "varchar(255)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "ascii",
+          "collation": "ascii_bin"
+        },
+        {
+          "name": "display_name",
+          "type": "varchar(128)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": "utf8mb4",
+          "collation": "utf8mb4_0900_ai_ci"
+        },
+        {
+          "name": "password_changed_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "disabled_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "defaultValue": null,
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "defaultValue": "CURRENT_TIMESTAMP(3)",
+          "autoIncrement": false,
+          "characterSet": null,
+          "collation": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "columns": ["id"],
+          "hasPartialOrExpression": false
+        },
+        {
+          "name": "uq_users_username_normalized",
+          "unique": true,
+          "columns": ["username_normalized"],
+          "hasPartialOrExpression": false
+        }
+      ],
+      "foreignKeys": [],
+      "checks": []
+    }
+  ]
+}
