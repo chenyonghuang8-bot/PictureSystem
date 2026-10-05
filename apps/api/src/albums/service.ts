@@ -1,4 +1,16 @@
 import {
+  memoriesCursorSchema,
+  type MemoriesQuery,
+  type MemoriesCursor,
+  type MemoriesItem,
+  type MemoriesPage,
+  type MemoriesPreview,
+} from "@family-album/contracts";
+import {
+  MemoriesAnchorExpiredError,
+  type MemoriesRecord,
+} from "@family-album/db";
+import {
   aggregateLocationMap,
   assertLocationFilter,
   type LocationProjector,
@@ -73,9 +85,86 @@ type LocationRepository = Partial<
 
 export class AlbumService {
   constructor(
-    private readonly repository: AlbumRepository & LocationRepository,
+    private readonly repository: AlbumRepository &
+      LocationRepository &
+      Partial<
+        Pick<
+          MySqlAlbumRepository,
+          "listFamilyMemories" | "listFamilyMemoriesPreview"
+        >
+      >,
     private readonly commentRateLimiter = new MediaCommentRateLimiter(),
   ) {}
+
+  async memories(
+    context: AuthContext,
+    familyId: string,
+    query: MemoriesQuery,
+  ): Promise<MemoriesPage> {
+    const cursor = query.cursor
+      ? decodeMemoriesCursor(
+          query.cursor,
+          context.identity.userId,
+          familyId,
+          query,
+        )
+      : undefined;
+    if (!this.repository.listFamilyMemories)
+      throw new PublicAuthError(503, "SERVICE_UNAVAILABLE");
+    const result = await this.database(() =>
+      this.repository.listFamilyMemories!({
+        actor: actor(context),
+        familyId,
+        kind: query.kind,
+        limit: query.limit + 1,
+        ...(cursor ? { cursor } : {}),
+      }),
+    );
+    const media = result.rows.slice(0, query.limit).map(memoryItem);
+    return {
+      context: result.context,
+      kind: query.kind,
+      media,
+      nextCursor:
+        result.rows.length > query.limit
+          ? encodeMemoriesCursor(
+              media.at(-1)!,
+              context.identity.userId,
+              familyId,
+              query,
+              result.context.anchorDate,
+            )
+          : null,
+    };
+  }
+  async memoriesPreview(
+    context: AuthContext,
+    familyId: string,
+  ): Promise<MemoriesPreview> {
+    if (!this.repository.listFamilyMemoriesPreview)
+      throw new PublicAuthError(503, "SERVICE_UNAVAILABLE");
+    const result = await this.database(() =>
+      this.repository.listFamilyMemoriesPreview!({
+        actor: actor(context),
+        familyId,
+      }),
+    );
+    return {
+      context: result.context,
+      cards: [
+        {
+          kind: "ON_THIS_DAY",
+          media: result.onThisDay.slice(0, 6).map(memoryItem),
+          hasMore: result.onThisDay.length > 6,
+        },
+        {
+          kind: "LAST_YEAR_WEEK",
+          media: result.lastYearWeek.slice(0, 6).map(memoryItem),
+          hasMore: result.lastYearWeek.length > 6,
+        },
+      ],
+    };
+  }
 
   async create(
     context: AuthContext,
@@ -664,6 +753,8 @@ export class AlbumService {
           "ROLLBACK_FAILED",
         );
       }
+      if (error instanceof MemoriesAnchorExpiredError)
+        throw new PublicAuthError(409, "MEMORIES_ANCHOR_EXPIRED");
       if (error instanceof AlbumRepositoryError) {
         if (error.reason === "UNAUTHENTICATED")
           throw new PublicAuthError(401, "UNAUTHENTICATED");
@@ -980,4 +1071,71 @@ function databaseSearchFilters(
     ...(query.tagId ? { tagId: query.tagId } : {}),
     ...(query.location ? { location: query.location } : {}),
   };
+}
+
+function memoryItem(row: MemoriesRecord): MemoriesItem {
+  return {
+    ...familyTimelineItem(row),
+    timelineDate: row.timelineDate,
+    dateBasis: row.dateBasis,
+  };
+}
+function memoriesScope(
+  userId: string,
+  familyId: string,
+  query: MemoriesQuery,
+  anchorDate: string,
+) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        "memories-v1",
+        userId,
+        familyId,
+        query.kind,
+        anchorDate,
+        "Asia/Shanghai",
+        "memories-v1",
+        query.limit,
+      ]),
+    )
+    .digest("hex");
+}
+export function decodeMemoriesCursor(
+  value: string,
+  userId: string,
+  familyId: string,
+  query: MemoriesQuery,
+): MemoriesCursor {
+  const parsed = memoriesCursorSchema.safeParse(
+    decodeCanonicalSearchCursor(value),
+  );
+  if (
+    !parsed.success ||
+    parsed.data.kind !== query.kind ||
+    parsed.data.scope !==
+      memoriesScope(userId, familyId, query, parsed.data.anchorDate)
+  )
+    throw new PublicAuthError(400, "INVALID_REQUEST");
+  return parsed.data;
+}
+export function encodeMemoriesCursor(
+  item: MemoriesItem,
+  userId: string,
+  familyId: string,
+  query: MemoriesQuery,
+  anchorDate: string,
+) {
+  return Buffer.from(
+    JSON.stringify({
+      version: 1,
+      kind: query.kind,
+      anchorDate,
+      zone: "Asia/Shanghai",
+      policy: "memories-v1",
+      timelineKey: item.timelineKey,
+      mediaId: item.mediaId,
+      scope: memoriesScope(userId, familyId, query, anchorDate),
+    }),
+  ).toString("base64url");
 }

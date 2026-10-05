@@ -167,7 +167,9 @@ function ViewerSession({
     setDetailMessage(viewerErrorMessage(error));
     if (
       error instanceof GalleryClientError &&
-      (error.code === "NOT_FOUND" || error.code === "UNAUTHENTICATED")
+      (error.code === "NOT_FOUND" ||
+        error.code === "FORBIDDEN" ||
+        error.code === "UNAUTHENTICATED")
     ) {
       detailRequest.current += 1;
       setDetail(null);

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-const LATER = ["回忆", "地图", "收藏", "家庭成员", "管理后台"] as const;
+const LATER = ["地图", "收藏", "家庭成员", "管理后台"] as const;
 
 export function GalleryShell({
   familyName,
@@ -9,7 +9,7 @@ export function GalleryShell({
   children,
 }: {
   familyName: string;
-  active: "photos" | "albums" | "trash";
+  active: "photos" | "albums" | "trash" | "memories";
   aside?: ReactNode;
   children: ReactNode;
 }) {
@@ -42,6 +42,14 @@ export function GalleryShell({
           >
             <span aria-hidden="true">♧</span>
             <span>回收站</span>
+          </a>
+          <a
+            className="gallery-nav-link"
+            href="/memories"
+            aria-current={active === "memories" ? "page" : undefined}
+          >
+            <span aria-hidden="true">✦</span>
+            <span>回忆</span>
           </a>
         </div>
         <p className="gallery-nav-label">更多</p>

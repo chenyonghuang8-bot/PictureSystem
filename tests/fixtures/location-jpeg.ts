@@ -153,3 +153,13 @@ function ifdSize(entries: number) {
 export function syntheticGpsJpeg(latitude = 37.78, longitude = -122.42) {
   return injectExif(JPEG, { latitude, longitude });
 }
+
+export function syntheticHistoryJpeg(
+  date: string,
+  identity = "synthetic-history",
+) {
+  return injectExif(JPEG, {
+    original: date.slice(0, 10).replaceAll("-", ":") + " 12:00:00",
+    make: identity,
+  });
+}

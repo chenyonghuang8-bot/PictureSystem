@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
+export type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 export { validateDatabaseHealth } from "./health.js";
 export * from "./connection.js";
 export * from "./auth-repository.js";
@@ -65,3 +66,9 @@ export * from "./trash-repository.js";
 
 export * from "./location-projection-repository.js";
 export * from "./upload-pipeline-reconciliation.js";
+
+export {
+  buildFamilyMemoriesQuery,
+  MemoriesAnchorExpiredError,
+  type MemoriesRecord,
+} from "./album-repository.js";

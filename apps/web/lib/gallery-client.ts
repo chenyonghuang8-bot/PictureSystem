@@ -6,6 +6,7 @@ export type GalleryErrorCode =
   | "NOT_FOUND"
   | "FORBIDDEN"
   | "CONFLICT"
+  | "MEMORIES_ANCHOR_EXPIRED"
   | "INVALID_REQUEST"
   | "UNAVAILABLE";
 
@@ -23,10 +24,25 @@ export async function readGalleryResponse<Schema extends z.ZodType>(
   response: Response,
   schema: Schema,
 ): Promise<z.output<Schema>> {
-  if (response.status === 401) throw new GalleryClientError("UNAUTHENTICATED");
+  if (response.status === 401) {
+    if (typeof window !== "undefined")
+      window.dispatchEvent(new Event("family-auth-lost"));
+    throw new GalleryClientError("UNAUTHENTICATED");
+  }
   if (response.status === 404) throw new GalleryClientError("NOT_FOUND");
   if (response.status === 403) throw new GalleryClientError("FORBIDDEN");
-  if (response.status === 409) throw new GalleryClientError("CONFLICT");
+  if (response.status === 409) {
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      /* Untrusted failure body. */
+    }
+    const parsed = authErrorResponseSchema.safeParse(body);
+    if (parsed.success && parsed.data.code === "MEMORIES_ANCHOR_EXPIRED")
+      throw new GalleryClientError("MEMORIES_ANCHOR_EXPIRED");
+    throw new GalleryClientError("CONFLICT");
+  }
   if (response.status === 400) {
     // Only the API's known invalid-request envelope permits cursor recovery.
     // A generic/proxy 400 must retain the normal unavailable behavior.

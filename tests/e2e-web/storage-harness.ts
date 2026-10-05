@@ -68,6 +68,8 @@ export function prepareWebAcceptanceStorage(): WebAcceptanceStorage {
   mkdirSync(join(mediaRoot, "derived"), { mode: 0o700 });
   try {
     storage.provisionSharedCapacityLockForDev();
+    if (process.env.DEV_MEDIA_PIPELINE_ENABLED === "1")
+      storage.provisionDerivedWriterLockForDev();
     const result: WebAcceptanceStorage = {
       runRoot,
       ownershipNonce,

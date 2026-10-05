@@ -1,3 +1,8 @@
+import {
+  memoriesQuerySchema,
+  memoriesPageSchema,
+  memoriesPreviewSchema,
+} from "@family-album/contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 
@@ -87,6 +92,12 @@ export function registerAlbumRoutes(
 
   app.addHook("onSend", async (request, reply) => {
     if (
+      /^\/api\/v1\/families\/[^/?]+\/memories(?:\/preview)?(?:\?|$)/u.test(
+        request.url,
+      )
+    ) {
+      void reply.header("cache-control", "private, no-store");
+    } else if (
       /^\/api\/v1\/families\/[^/?]+\/search(?:\/(?:options|map|locations))?(?:\?|$)/u.test(
         request.url,
       )
@@ -191,6 +202,37 @@ export function registerAlbumRoutes(
       );
     });
   });
+
+  app.get(
+    "/api/v1/families/:familyId/memories/preview",
+    async (request, reply) =>
+      handleAlbum(request, reply, "memories_preview", async () => {
+        const { familyId } = familyTimelineParamsSchema.parse(request.params);
+        emptyObjectRequestSchema.parse(request.query);
+        const context = await authenticate(request, authService);
+        return reply
+          .header("cache-control", "private, no-store")
+          .send(
+            memoriesPreviewSchema.parse(
+              await albumService.memoriesPreview(context, familyId),
+            ),
+          );
+      }),
+  );
+  app.get("/api/v1/families/:familyId/memories", async (request, reply) =>
+    handleAlbum(request, reply, "memories_page", async () => {
+      const { familyId } = familyTimelineParamsSchema.parse(request.params);
+      const query = memoriesQuerySchema.parse(request.query);
+      const context = await authenticate(request, authService);
+      return reply
+        .header("cache-control", "private, no-store")
+        .send(
+          memoriesPageSchema.parse(
+            await albumService.memories(context, familyId, query),
+          ),
+        );
+    }),
+  );
 
   app.get("/api/v1/families/:familyId/timeline", async (request, reply) =>
     handleAlbum(request, reply, "family_timeline", async () => {

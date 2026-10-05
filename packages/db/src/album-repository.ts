@@ -1,4 +1,10 @@
 import {
+  memoriesCalendar,
+  type MemoriesKind,
+  type MemoriesContext,
+  type MemoriesCursor,
+} from "@family-album/contracts";
+import {
   matchesLocation,
   type CoarseLocation,
   type LocationProjector,
@@ -229,11 +235,80 @@ export class MySqlAlbumRepository {
     private readonly pool: Pool,
     private readonly testOptions?: {
       readonly locationProjector?: LocationProjector;
+      /** Internal test clock; never wired to HTTP or environment. */
+      readonly memoriesClock?: (databaseNow: Date) => Date;
       readonly testHook?: AlbumRepositoryTestHook;
       /** Test-only seam for proving configured recipe drift; production omits it. */
       readonly getConfiguredPreviewRecipeId?: () => number;
     },
   ) {}
+
+  async listFamilyMemories(input: {
+    actor: Phase1CActor;
+    familyId: string;
+    kind: MemoriesKind;
+    limit: number;
+    cursor?: MemoriesCursor;
+  }): Promise<{ context: MemoriesContext; rows: MemoriesRecord[] }> {
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, input.familyId);
+      const locked = await lockActor(connection, input.familyId, input.actor);
+      const now = await readServerTime(connection);
+      assertActor(locked, input.actor, now);
+      const context = memoriesCalendar(
+        this.testOptions?.memoriesClock?.(now) ?? now,
+      );
+      if (input.cursor && input.cursor.anchorDate !== context.anchorDate)
+        throw new MemoriesAnchorExpiredError();
+      const query = buildFamilyMemoriesQuery(
+        input.familyId,
+        locked.member.id,
+        input.kind,
+        context,
+        input.limit,
+        input.cursor,
+      );
+      const [rows] = await connection.query<RowDataPacket[]>(
+        query.sql,
+        query.values,
+      );
+      return { context, rows: rows.map(memoryRecord) };
+    });
+  }
+
+  async listFamilyMemoriesPreview(input: {
+    actor: Phase1CActor;
+    familyId: string;
+  }) {
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, input.familyId);
+      const locked = await lockActor(connection, input.familyId, input.actor);
+      const now = await readServerTime(connection);
+      assertActor(locked, input.actor, now);
+      const context = memoriesCalendar(
+        this.testOptions?.memoriesClock?.(now) ?? now,
+      );
+      const read = async (kind: MemoriesKind) => {
+        const query = buildFamilyMemoriesQuery(
+          input.familyId,
+          locked.member.id,
+          kind,
+          context,
+          7,
+        );
+        const [rows] = await connection.query<RowDataPacket[]>(
+          query.sql,
+          query.values,
+        );
+        return rows.map(memoryRecord);
+      };
+      return {
+        context,
+        onThisDay: await read("ON_THIS_DAY"),
+        lastYearWeek: await read("LAST_YEAR_WEEK"),
+      };
+    });
+  }
 
   get locationProjector() {
     return this.testOptions?.locationProjector;
@@ -3427,4 +3502,97 @@ export function buildFamilyLocationQuery(
       ...base.values.slice(0, -1),
     ],
   };
+}
+
+export type MemoriesRecord = FamilyTimelineRecord & {
+  timelineDate: string;
+  dateBasis: "CAPTURE_LOCAL" | "UPLOAD_UTC";
+};
+function memoryRecord(row: RowDataPacket): MemoriesRecord {
+  return {
+    mediaId: String(row.mediaId),
+    albumId: String(row.albumId),
+    timelineKey: row.timelineKey as Date,
+    timelineBasis: row.timelineBasis as MemoriesRecord["timelineBasis"],
+    displayWidth: row.displayWidth as number | null,
+    displayHeight: row.displayHeight as number | null,
+    isFavorite: Boolean(row.isFavorite),
+    isFamilyFeatured: Boolean(row.isFamilyFeatured),
+    timelineDate: String(row.timelineDate),
+    dateBasis: row.dateBasis as MemoriesRecord["dateBasis"],
+  };
+}
+export function buildFamilyMemoriesQuery(
+  familyId: string,
+  memberId: string,
+  kind: MemoriesKind,
+  context: MemoriesContext,
+  limit: number,
+  cursor?: Pick<MemoriesCursor, "timelineKey" | "mediaId">,
+) {
+  const effective = "DATE(COALESCE(m.captured_local_at,m.uploaded_at))";
+  const datePredicate =
+    kind === "ON_THIS_DAY"
+      ? `YEAR(${effective}) < ? AND MONTH(${effective}) = ? AND DAYOFMONTH(${effective}) = ?`
+      : `${effective} >= ? AND ${effective} < ?`;
+  const dateValues =
+    kind === "ON_THIS_DAY"
+      ? context.anchorDate.split("-").map(Number)
+      : [context.weekStart, context.weekEnd];
+  const asset = (
+    kind: "PREVIEW" | "THUMBNAIL",
+    bytes: number,
+    dimension: number,
+  ) => `EXISTS (
+    SELECT 1 FROM derived_assets d WHERE d.family_id=m.family_id AND d.media_id=m.id
+      AND d.generation=m.generation AND d.recipe_id=m.recipe_id AND d.kind='${kind}'
+      AND d.state='READY' AND d.cleaned_at IS NULL AND d.published_at IS NOT NULL
+      AND d.output_mime='image/webp' AND d.byte_size>0 AND d.byte_size<=d.reserved_bytes
+      AND d.reserved_bytes<=${bytes} AND OCTET_LENGTH(d.sha256)=32
+      AND d.width BETWEEN 1 AND ${dimension} AND d.height BETWEEN 1 AND ${dimension}
+      AND d.producer_job_id>0 AND d.producer_lease_epoch>0)`;
+  return {
+    sql: `SELECT CAST(m.id AS CHAR) mediaId, CAST(MIN(a.id) AS CHAR) albumId,
+      m.timeline_key timelineKey, m.timeline_basis timelineBasis, m.display_width displayWidth, m.display_height displayHeight,
+      MAX(favorite.id IS NOT NULL) isFavorite, MAX(featured.id IS NOT NULL) isFamilyFeatured,
+      DATE_FORMAT(${effective},'%Y-%m-%d') timelineDate,
+      CASE WHEN m.captured_local_at IS NULL THEN 'UPLOAD_UTC' ELSE 'CAPTURE_LOCAL' END dateBasis
+    FROM media_items m
+    JOIN storage_objects so ON so.family_id=m.family_id AND so.id=m.storage_object_id AND so.state='AVAILABLE'
+    JOIN upload_sessions source ON source.family_id=m.family_id AND source.id=m.source_upload_id
+      AND source.storage_object_id=so.id AND source.state='COMPLETE'
+      AND source.committed_offset=source.declared_size AND source.declared_size=so.byte_size AND source.computed_sha256=so.sha256
+    JOIN album_media p ON p.family_id=m.family_id AND p.media_id=m.id
+    JOIN albums a ON a.family_id=p.family_id AND a.id=p.album_id AND a.deleted_at IS NULL
+    LEFT JOIN album_members g ON g.family_id=a.family_id AND g.album_id=a.id AND g.member_id=?
+    LEFT JOIN user_favorites favorite ON favorite.family_id=m.family_id AND favorite.media_id=m.id AND favorite.member_id=?
+    LEFT JOIN family_featured featured ON featured.family_id=m.family_id AND featured.media_id=m.id
+    WHERE m.family_id=? AND ${activeMediaSql("m")} AND m.media_type='IMAGE' AND m.processing_state='READY'
+      AND m.metadata_generation=m.generation AND m.recipe_id=1
+      AND (a.owner_member_id=? OR a.visibility='FAMILY' OR g.can_view=1)
+      AND ${asset("PREVIEW", 4194304, 2560)} AND ${asset("THUMBNAIL", 524288, 480)}
+      AND (${datePredicate})
+      AND (?=0 OR m.timeline_key<? OR (m.timeline_key=? AND m.id<?))
+    GROUP BY m.id,m.timeline_key,m.timeline_basis,m.display_width,m.display_height,m.captured_local_at,m.uploaded_at
+    ORDER BY m.timeline_key DESC,m.id DESC LIMIT ?`,
+    values: [
+      memberId,
+      memberId,
+      familyId,
+      memberId,
+      ...dateValues,
+      cursor ? 1 : 0,
+      cursor ? new Date(cursor.timelineKey) : new Date(0),
+      cursor ? new Date(cursor.timelineKey) : new Date(0),
+      cursor?.mediaId ?? "0",
+      limit,
+    ],
+  };
+}
+
+export class MemoriesAnchorExpiredError extends Error {
+  constructor() {
+    super("MEMORIES_ANCHOR_EXPIRED");
+    this.name = "MemoriesAnchorExpiredError";
+  }
 }

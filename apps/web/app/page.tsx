@@ -1,3 +1,4 @@
+import { Memories } from "../components/gallery/memories.js";
 import { familyTimelinePageSchema } from "@family-album/contracts";
 
 import { GalleryFallback } from "../components/gallery/fallback.js";
@@ -43,6 +44,7 @@ export default async function HomePage({
           familyName={family.familyName}
           displayName={family.displayName}
         />
+        <Memories userId={family.userId} familyId={family.familyId} />
         <SearchGallery
           key={`${family.userId}:${family.familyId}:${searchFilterQuery(filters)}`}
           userId={family.userId}

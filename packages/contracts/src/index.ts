@@ -10,6 +10,8 @@ export * from "./media-processing.js";
 export * from "./derived-serving.js";
 export * from "./gallery.js";
 export * from "./trash.js";
+export * from "./memories-calendar.js";
+export * from "./memories.js";
 
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),

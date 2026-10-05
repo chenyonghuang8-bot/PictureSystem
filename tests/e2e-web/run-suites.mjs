@@ -1,4 +1,5 @@
 import { readdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -23,7 +24,19 @@ for (const suite of suites) {
       `tests/e2e-web/${suite}`,
       ...process.argv.slice(2),
     ],
-    { cwd: root, stdio: "inherit" },
+    {
+      cwd: root,
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        ...(suite === "memories-validation.spec.ts"
+          ? {
+              DEV_MEDIA_PIPELINE_ENABLED: "1",
+              LOCATION_DATA_DIR: resolve(root, "resources/location/2026-10-03"),
+            }
+          : {}),
+      },
+    },
   );
   if (result.error || result.status !== 0) {
     process.exitCode = result.status ?? 1;

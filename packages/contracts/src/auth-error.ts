@@ -8,6 +8,7 @@ export const authErrorCodeSchema = z.enum([
   "FORBIDDEN",
   "NOT_FOUND",
   "CONFLICT",
+  "MEMORIES_ANCHOR_EXPIRED",
   "RATE_LIMITED",
   "SERVICE_UNAVAILABLE",
 ]);
@@ -32,6 +33,7 @@ const PUBLIC_MESSAGES: Readonly<Record<AuthErrorCode, string>> = {
   FORBIDDEN: "You do not have permission to perform this action.",
   NOT_FOUND: "The requested resource was not found.",
   CONFLICT: "The request conflicts with the current state.",
+  MEMORIES_ANCHOR_EXPIRED: "The memories date has expired. Please refresh.",
   RATE_LIMITED: "Too many attempts. Please try again later.",
   SERVICE_UNAVAILABLE: "The service is temporarily unavailable.",
 };
