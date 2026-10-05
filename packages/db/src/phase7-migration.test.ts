@@ -13,6 +13,7 @@ import {
   assertExactSchema,
   buildExpectedSchemaSnapshot,
   buildPhase7PredecessorSchemaSnapshot,
+  buildPhase8PredecessorSchemaSnapshot,
   loadExpectedMigrationManifest,
 } from "./migration-readiness.js";
 
@@ -45,7 +46,7 @@ describe("Phase 7A migration static safety", () => {
         .digest("hex"),
     ).toBe("533b8f57d98dd10251d770326cd7df1d22481b087eb23c46edd7ec2a493017e4");
     const manifest = await loadExpectedMigrationManifest();
-    expect(manifest).toHaveLength(8);
+    expect(manifest.slice(0, 8)).toHaveLength(8);
     expect(manifest[7]?.tag).toBe("0007_phase_07_trash");
     expect(next.prevId).toBe(prior.id);
   });
@@ -90,7 +91,7 @@ describe("Phase 7A migration static safety", () => {
 
   it("uses strict readiness for the post-0007 schema", () => {
     const before = buildPhase7PredecessorSchemaSnapshot();
-    const after = buildExpectedSchemaSnapshot();
+    const after = buildPhase8PredecessorSchemaSnapshot();
     expect(before.tables).toHaveLength(21);
     expect(after.tables).toHaveLength(24);
     expect(() => assertExactSchema(after, before)).toThrow();

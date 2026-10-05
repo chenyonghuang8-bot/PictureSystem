@@ -62,3 +62,6 @@ export function createDatabase(databaseUrl: string) {
 }
 
 export * from "./trash-repository.js";
+
+export * from "./location-projection-repository.js";
+export * from "./upload-pipeline-reconciliation.js";

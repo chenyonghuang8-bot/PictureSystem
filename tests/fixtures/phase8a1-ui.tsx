@@ -1,6 +1,14 @@
+import { Map as MapLibreMap, LngLatBounds } from "maplibre-gl";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SearchGallery } from "../../apps/web/components/gallery/search-gallery.js";
+// Synthetic viewport boundary injection exercises the real UI emit -> URL ->
+// API query contract around zero; remote hosted-load testing has no injection.
+if (new URLSearchParams(location.search).has("nearZeroBounds")) {
+  MapLibreMap.prototype.getBounds = function () {
+    return new LngLatBounds([-0.0000001, -0.0000001], [10, 10]);
+  };
+}
 const initialFilters = new URLSearchParams(location.search).has("favoritesOnly")
   ? { favoritesOnly: true }
   : { favoritesOnly: false };

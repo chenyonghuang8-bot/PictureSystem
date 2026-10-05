@@ -1,3 +1,8 @@
+import {
+  aggregateLocationMap,
+  assertLocationFilter,
+  type LocationProjector,
+} from "@family-album/media";
 import { createHash } from "node:crypto";
 import { countCodePoints, hasMalformedUnicode } from "@family-album/auth";
 import {
@@ -14,6 +19,8 @@ import {
   familySearchOptionsCursorSchema,
   type FamilySearchOptionsQuery,
   type FamilySearchQuery,
+  type FamilyMapQuery,
+  type FamilyLocationOptionsQuery,
   mediaCommentCursorSchema,
   type AlbumVisibility,
   type PutAlbumMemberRequest,
@@ -60,9 +67,13 @@ export type AlbumRepository = Pick<
   | "deleteMediaComment"
 >;
 
+type LocationRepository = Partial<
+  Pick<MySqlAlbumRepository, "locationFamilyMedia" | "locationProjector">
+>;
+
 export class AlbumService {
   constructor(
-    private readonly repository: AlbumRepository,
+    private readonly repository: AlbumRepository & LocationRepository,
     private readonly commentRateLimiter = new MediaCommentRateLimiter(),
   ) {}
 
@@ -110,39 +121,162 @@ export class AlbumService {
     familyId: string,
     query: FamilySearchQuery,
   ) {
-    const scope = familySearchScope(familyId, context.identity.userId, query);
+    try {
+      assertLocationFilter(query.location);
+    } catch {
+      throw new PublicAuthError(400, "INVALID_REQUEST");
+    }
+    if (query.location && !this.repository.locationProjector)
+      throw new PublicAuthError(503, "SERVICE_UNAVAILABLE");
+    const scope = familySearchScope(
+      familyId,
+      context.identity.userId,
+      query,
+      this.repository.locationProjector,
+    );
     const cursor = query.cursor
       ? decodeFamilySearchCursor(query.cursor, scope)
       : undefined;
-    const rows = await this.database(() =>
-      this.repository.searchFamilyMedia({
-        actor: actor(context),
-        familyId,
-        limit: query.limit + 1,
-        ...(cursor ? { cursor } : {}),
-        filters: {
-          ...(query.fromDate
-            ? { fromDate: new Date(`${query.fromDate}T00:00:00.000Z`) }
-            : {}),
-          ...(query.toDate
-            ? { toDate: new Date(`${query.toDate}T23:59:59.999Z`) }
-            : {}),
-          ...(query.albumId ? { albumId: query.albumId } : {}),
-          favoritesOnly: query.favoritesOnly,
-          ...(query.filename ? { filename: query.filename } : {}),
-          ...(query.uploaderMemberId
-            ? { uploaderMemberId: query.uploaderMemberId }
-            : {}),
-          ...(query.tagId ? { tagId: query.tagId } : {}),
-        },
-      }),
-    );
+    const filters = databaseSearchFilters(query);
+    const rows = query.location
+      ? (await this.locationRows(context, familyId, query))
+          .filter(
+            (row) =>
+              !cursor ||
+              row.timelineKey < cursor.timelineKey ||
+              (row.timelineKey.getTime() === cursor.timelineKey.getTime() &&
+                BigInt(row.mediaId) < BigInt(cursor.mediaId)),
+          )
+          .slice(0, query.limit + 1)
+      : await this.database(() =>
+          this.repository.searchFamilyMedia({
+            actor: actor(context),
+            familyId,
+            limit: query.limit + 1,
+            ...(cursor ? { cursor } : {}),
+            filters,
+          }),
+        );
     const media = rows.slice(0, query.limit).map(familyTimelineItem);
     return {
       media,
       nextCursor:
         rows.length > query.limit
           ? encodeFamilySearchCursor(media.at(-1)!, scope)
+          : null,
+    };
+  }
+
+  private async locationRows(
+    context: AuthContext,
+    familyId: string,
+    query: Pick<
+      FamilySearchQuery,
+      | "fromDate"
+      | "toDate"
+      | "albumId"
+      | "filename"
+      | "uploaderMemberId"
+      | "tagId"
+      | "favoritesOnly"
+      | "location"
+    >,
+  ) {
+    try {
+      assertLocationFilter(query.location);
+    } catch {
+      throw new PublicAuthError(400, "INVALID_REQUEST");
+    }
+    if (
+      !this.repository.locationFamilyMedia ||
+      !this.repository.locationProjector
+    )
+      throw new PublicAuthError(503, "SERVICE_UNAVAILABLE");
+    return this.database(() =>
+      this.repository.locationFamilyMedia!({
+        actor: actor(context),
+        familyId,
+        filters: databaseSearchFilters(query),
+      }),
+    );
+  }
+
+  async map(context: AuthContext, familyId: string, query: FamilyMapQuery) {
+    return aggregateLocationMap(
+      await this.locationRows(context, familyId, query),
+      query.bbox,
+      query.zoom,
+    );
+  }
+
+  async locationOptions(
+    context: AuthContext,
+    familyId: string,
+    query: FamilyLocationOptionsQuery,
+  ) {
+    const scope =
+      familySearchScope(
+        familyId,
+        context.identity.userId,
+        { ...query, limit: query.limit },
+        this.repository.locationProjector,
+      ) +
+      ":" +
+      query.kind;
+    let after = "";
+    if (query.cursor) {
+      const parsed = decodeCanonicalSearchCursor(query.cursor);
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        Object.keys(parsed).sort().join(",") !== "after,scope,version" ||
+        !("version" in parsed) ||
+        parsed.version !== 1 ||
+        !("scope" in parsed) ||
+        parsed.scope !== scope ||
+        !("after" in parsed) ||
+        typeof parsed.after !== "string"
+      )
+        throw new PublicAuthError(400, "INVALID_REQUEST");
+      after = parsed.after;
+    }
+    const rows = await this.locationRows(context, familyId, query),
+      projector = this.repository.locationProjector!;
+    const groups = new Map<
+      string,
+      { id: string; name: string; count: number }
+    >();
+    for (const row of rows) {
+      if (!row.h3Cell) continue;
+      const id =
+        query.kind === "country"
+          ? row.countryCode
+            ? "country:" + row.countryCode
+            : "unknown"
+          : row.cityGeonameId
+            ? "city:" + row.cityGeonameId
+            : "no-city";
+      const name =
+        query.kind === "country"
+          ? (projector.countryName(row.countryCode) ?? "未知国家 / 海洋")
+          : row.cityGeonameId
+            ? (projector.cityName(row.cityGeonameId) ?? "未知城市") + "附近"
+            : "无 50 公里内附近城市";
+      const previous = groups.get(id);
+      if (previous) ++previous.count;
+      else groups.set(id, { id, name: name.slice(0, 256), count: 1 });
+    }
+    const sorted = [...groups.values()]
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .filter((r) => r.id > after);
+    const options = sorted.slice(0, query.limit);
+    return {
+      options,
+      nextCursor:
+        sorted.length > query.limit
+          ? Buffer.from(
+              JSON.stringify({ version: 1, after: options.at(-1)!.id, scope }),
+            ).toString("base64url")
           : null,
     };
   }
@@ -747,6 +881,7 @@ export function familySearchScope(
   familyId: string,
   userId: string,
   query: FamilySearchQuery,
+  projector?: LocationProjector,
 ) {
   return createHash("sha256")
     .update(
@@ -762,6 +897,9 @@ export function familySearchScope(
         query.uploaderMemberId ?? null,
         query.tagId ?? null,
         query.limit,
+        query.location ?? null,
+        projector?.policyVersion ?? null,
+        projector?.datasetVersion ?? null,
       ]),
     )
     .digest("hex");
@@ -811,4 +949,35 @@ export function encodeFamilySearchCursor(
       scope,
     }),
   ).toString("base64url");
+}
+
+function databaseSearchFilters(
+  query: Pick<
+    FamilySearchQuery,
+    | "fromDate"
+    | "toDate"
+    | "albumId"
+    | "filename"
+    | "uploaderMemberId"
+    | "tagId"
+    | "favoritesOnly"
+    | "location"
+  >,
+) {
+  return {
+    ...(query.fromDate
+      ? { fromDate: new Date(`${query.fromDate}T00:00:00.000Z`) }
+      : {}),
+    ...(query.toDate
+      ? { toDate: new Date(`${query.toDate}T23:59:59.999Z`) }
+      : {}),
+    ...(query.albumId ? { albumId: query.albumId } : {}),
+    favoritesOnly: query.favoritesOnly,
+    ...(query.filename ? { filename: query.filename } : {}),
+    ...(query.uploaderMemberId
+      ? { uploaderMemberId: query.uploaderMemberId }
+      : {}),
+    ...(query.tagId ? { tagId: query.tagId } : {}),
+    ...(query.location ? { location: query.location } : {}),
+  };
 }

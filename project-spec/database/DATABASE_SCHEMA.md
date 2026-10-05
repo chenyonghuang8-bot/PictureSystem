@@ -122,6 +122,14 @@ family scope tag。
 ## background_jobs
 MySQL-backed queue。
 
+## media_location_projections (Phase 8 / migration 0008)
+
+地点投影独立于 original，保存 `family_id`、`media_id`、`generation`、固定 `policy_version`、64位 SHA-256 `dataset_version`、唯一 H3 resolution 6 `h3_cell`、可空 `country_code` / `city_geoname_id`。不保存 GPS、EXIF、路径或可漂移的中心坐标；标签和中心由当前本地数据包及 cell 派生。
+
+单列 unsigned BIGINT 自增 `id` 主键；唯一约束 `(family_id, media_id, policy_version, dataset_version)`；复合外键 `(family_id, media_id)` 指向 media_items，UPDATE/DELETE RESTRICT；cell 查询索引 `(family_id, policy_version, dataset_version, h3_cell, media_id)`。generation/policy >=1，dataset/cell/country SQL 形状 CHECK，city 非空要求 country 非空且 id>0；合法 H3/res6 由应用层进一步校验。
+
+查询只使用固定当前版本，且要求投影 generation 和 metadata_generation 均等于媒体当前 generation，GPS pair 有效，并在聚合前执行既有相册 ACL 和 active 筛选。metadata 快照替换与投影清除/插入同事务；DB-only 回填使用 family → storage → media → projection 锁序及精确 CAS；purge 在删除 media_items 前清除投影子行。0000–0007 不变，工程 schema/migration 为权威；当前数据版本及操作说明见 `docs/progress/PHASE-08-LOCATION-DATA-OPERATIONS.md`。
+
 ## audit_logs
 重要操作审计。
 

@@ -22,6 +22,8 @@ import {
 import { Timeline } from "./timeline.js";
 import { SignedOut, UnavailableState } from "./states.js";
 
+import { LocationMap } from "./location-map.js";
+
 const PAGE_SIZE = 24;
 
 export function SearchGallery({
@@ -35,6 +37,7 @@ export function SearchGallery({
   initial: FamilyTimelinePage;
   initialFilters: FamilySearchFilters;
 }) {
+  const [mapOpen, setMapOpen] = useState(false);
   const [filters, setFilters] = useState(initialFilters);
   const [page, setPage] = useState<FamilyTimelinePage | null>(initial);
   const [loading, setLoading] = useState(false),
@@ -146,6 +149,30 @@ export function SearchGallery({
           setLoading(false);
         }}
       />
+      {!signedOut ? (
+        <button
+          className="gallery-text-button"
+          onClick={() => setMapOpen((value) => !value)}
+        >
+          {mapOpen ? "关闭地图" : "地图与地区"}
+        </button>
+      ) : null}
+      {mapOpen && !signedOut ? (
+        <LocationMap
+          key={`${userId}:${familyId}:${searchFilterQuery(filters)}`}
+          familyId={familyId}
+          filters={filters}
+          onApply={apply}
+          onAuthLost={() => {
+            ++generation.current;
+            controller.current?.abort();
+            setPage(null);
+            setSignedOut(true);
+            setLoading(false);
+            setMapOpen(false);
+          }}
+        />
+      ) : null}
       {loading ? <p role="status">正在查找照片…</p> : null}
       {failed ? (
         <>
@@ -256,6 +283,9 @@ function SearchControls({
     try {
       onApply(
         searchFiltersFromUrl({
+          ...(values.get("location")
+            ? { location: String(values.get("location")) }
+            : {}),
           ...(values.get("fromDate")
             ? { fromDate: String(values.get("fromDate")) }
             : {}),
@@ -358,6 +388,24 @@ function SearchControls({
             disabled={disabled}
             onAuthLost={onAuthLost}
           />
+          <label>
+            地点
+            <select
+              name="location"
+              defaultValue={filters.location ?? ""}
+              disabled={disabled}
+            >
+              <option value="">全部照片（包括无地点）</option>
+              <option value="located">有当前粗略地点</option>
+              <option value="unknown">未知国家 / 海洋</option>
+              <option value="no-city">无附近城市</option>
+              {filters.location &&
+              !["located", "unknown", "no-city"].includes(filters.location) ? (
+                <option value={filters.location}>当前地区筛选</option>
+              ) : null}
+            </select>
+            <small>通过地图与地区选择国家、附近城市或粗略格网</small>
+          </label>
           <label className="gallery-search-favorite">
             <input
               type="checkbox"

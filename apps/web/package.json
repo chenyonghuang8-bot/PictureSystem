@@ -3,17 +3,18 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "next build --webpack",
-    "dev": "next dev --webpack --hostname 127.0.0.1 --port 3000",
+    "build": "node scripts/prepare-map-worker.mjs && next build --webpack",
+    "dev": "node scripts/prepare-map-worker.mjs && next dev --webpack --hostname 127.0.0.1 --port 3000",
     "start": "next start --hostname 127.0.0.1 --port 3000",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@family-album/contracts": "workspace:*",
     "@family-album/ui-tokens": "workspace:*",
+    "maplibre-gl": "6.11.2",
     "next": "16.3.3",
-    "zod": "4.6.5",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "zod": "4.6.5"
   }
 }

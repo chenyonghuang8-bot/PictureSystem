@@ -1494,6 +1494,17 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     let release!: () => void;
     try {
+      // Earlier serial cases include real login and reauth traffic against the
+      // same loopback IP. Respect its unchanged 10-attempt/60s window before
+      // selecting another credential request; never replay a failed login.
+      test.setTimeout(90_000); // includes fixture pacing; UI expectations stay bounded.
+      if (firstLoginCompletedAt !== undefined)
+        await new Promise<void>((done) =>
+          setTimeout(
+            done,
+            Math.max(0, 60_000 - (Date.now() - firstLoginCompletedAt!)),
+          ),
+        );
       await realLogin(context);
       const page = await context.newPage();
       let entered!: () => void;
@@ -1616,6 +1627,7 @@ async function clickUntilVisible(trigger: Locator, target: Locator) {
   }).toPass({ timeout: 10_000 });
 }
 
+let firstLoginCompletedAt: number | undefined;
 async function realLogin(context: BrowserContext, loginUsername = username) {
   const response = await context.request.post(
     "https://localhost:3443/api/v1/auth/login",
@@ -1628,6 +1640,7 @@ async function realLogin(context: BrowserContext, loginUsername = username) {
     },
   );
   expect(response.status()).toBe(204);
+  firstLoginCompletedAt ??= Date.now();
 }
 
 async function assertDevDatabase(connection: PoolConnection) {

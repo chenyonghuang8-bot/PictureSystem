@@ -14,6 +14,10 @@ import {
   albumsResponseSchema,
   familyTimelinePageSchema,
   familySearchQuerySchema,
+  familyMapQuerySchema,
+  familyMapPageSchema,
+  familyLocationOptionsQuerySchema,
+  familyLocationOptionsPageSchema,
   familySearchOptionsQuerySchema,
   familySearchOptionsPageSchema,
   favoriteStateSchema,
@@ -83,7 +87,7 @@ export function registerAlbumRoutes(
 
   app.addHook("onSend", async (request, reply) => {
     if (
-      /^\/api\/v1\/families\/[^/?]+\/search(?:\/options)?(?:\?|$)/u.test(
+      /^\/api\/v1\/families\/[^/?]+\/search(?:\/(?:options|map|locations))?(?:\?|$)/u.test(
         request.url,
       )
     ) {
@@ -143,6 +147,35 @@ export function registerAlbumRoutes(
         );
       });
     },
+  );
+
+  app.get("/api/v1/families/:familyId/search/map", async (request, reply) =>
+    handleAlbum(request, reply, "family_map", async () => {
+      void reply.header("cache-control", "private, no-store");
+      const { familyId } = familyTimelineParamsSchema.parse(request.params);
+      const query = familyMapQuerySchema.parse(request.query);
+      const context = await authenticate(request, authService);
+      return reply.send(
+        familyMapPageSchema.parse(
+          await albumService.map(context, familyId, query),
+        ),
+      );
+    }),
+  );
+  app.get(
+    "/api/v1/families/:familyId/search/locations",
+    async (request, reply) =>
+      handleAlbum(request, reply, "family_locations", async () => {
+        void reply.header("cache-control", "private, no-store");
+        const { familyId } = familyTimelineParamsSchema.parse(request.params);
+        const query = familyLocationOptionsQuerySchema.parse(request.query);
+        const context = await authenticate(request, authService);
+        return reply.send(
+          familyLocationOptionsPageSchema.parse(
+            await albumService.locationOptions(context, familyId, query),
+          ),
+        );
+      }),
   );
 
   app.get("/api/v1/families/:familyId/search", async (request, reply) => {

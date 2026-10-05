@@ -4,16 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsup src/index.ts --format esm --clean",
+    "build": "tsup src/index.ts src/metadata-main.ts --format esm --clean",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:metadata": "node --env-file=../../.env --import tsx src/metadata-main.ts",
+    "start:metadata": "node --import tsx --env-file=../../.env dist/metadata-main.js"
   },
   "dependencies": {
     "@family-album/config": "workspace:*",
     "@family-album/db": "workspace:*",
     "@family-album/media": "workspace:*",
     "@family-album/storage": "workspace:*",
-    "pino": "10.3.1"
+    "pino": "10.3.1",
+    "mysql2": "3.24.4"
   }
 }

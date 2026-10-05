@@ -7,7 +7,11 @@ import type {
   Phase4ProcessingState,
 } from "@family-album/contracts";
 import { phase4WarningFlags } from "@family-album/contracts";
-import type { NormalizedMetadataResult } from "@family-album/media";
+import type {
+  NormalizedMetadataResult,
+  LocationProjector,
+  LocationProjection,
+} from "@family-album/media";
 import type {
   Pool,
   PoolConnection,
@@ -18,6 +22,8 @@ import type {
 import { readServerTime, runCheckedTransaction } from "./connection.js";
 import type { LeaseFence } from "./job-repository.js";
 import { isJobIdentityDuplicate } from "./job-repository.js";
+
+import { insertLocationProjection } from "./location-projection-repository.js";
 
 const RETRY_RANGES_SECONDS = {
   1: [30, 45],
@@ -133,7 +139,11 @@ export class MySqlMetadataRepository {
 
   constructor(
     private readonly pool: Pool,
-    options: { random?: () => number } = {},
+    private readonly options: {
+      random?: () => number;
+      locationProjector?: LocationProjector;
+      onProjectionFailure?: () => void;
+    } = {},
   ) {
     this.random = options.random ?? Math.random;
   }
@@ -165,6 +175,21 @@ export class MySqlMetadataRepository {
     assertFence(fence);
     assertPreparation(fence, preparation);
     const mapped = mapParserResult(result, fence.generation);
+    let projection: LocationProjection | undefined;
+    if (
+      this.options.locationProjector &&
+      mapped.snapshot.gpsLatitude !== null &&
+      mapped.snapshot.gpsLongitude !== null
+    ) {
+      try {
+        projection = this.options.locationProjector.project(
+          mapped.snapshot.gpsLatitude,
+          mapped.snapshot.gpsLongitude,
+        );
+      } catch {
+        this.options.onProjectionFailure?.();
+      }
+    }
     return runCheckedTransaction(this.pool, async (connection) => {
       const context = await lockContext(connection, fence);
       if (!isCurrentProbeLease(context, fence, preparation)) {
@@ -180,6 +205,19 @@ export class MySqlMetadataRepository {
         mediaState,
         mapped.failureCode,
       );
+
+      await connection.execute(
+        "DELETE FROM media_location_projections WHERE family_id=? AND media_id=?",
+        [fence.familyId, fence.mediaId],
+      );
+      if (projection)
+        await insertLocationProjection(
+          connection,
+          fence.familyId,
+          fence.mediaId,
+          fence.generation.toString(),
+          projection,
+        );
 
       let downstreamJobType: "IMAGE_DERIVATIVES" | "VIDEO_POSTER" | undefined;
       if (
@@ -229,6 +267,10 @@ export class MySqlMetadataRepository {
           snapshot,
           "FAILED",
           failureCode,
+        );
+        await connection.execute(
+          "DELETE FROM media_location_projections WHERE family_id=? AND media_id=?",
+          [fence.familyId, fence.mediaId],
         );
         await finishProbeJob(connection, context, fence, "FAILED", failureCode);
         return { affectedRows: 1, mediaState: "FAILED", jobState: "FAILED" };

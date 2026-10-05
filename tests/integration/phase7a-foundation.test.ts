@@ -12,6 +12,7 @@ import {
 import {
   acquireCheckedConnection,
   assertMigrationReadiness,
+  loadExpectedMigrationManifest,
   AuditRepository,
   CommitOutcomeUnknownError,
   createDatabase,
@@ -94,7 +95,9 @@ describe.sequential(
         expect(
           String(identity[0]?.account).split("@")[0]?.toLowerCase(),
         ).not.toBe("root");
-        expect((await assertMigrationReadiness(conn)).migrationCount).toBe(8);
+        expect((await assertMigrationReadiness(conn)).migrationCount).toBe(
+          (await loadExpectedMigrationManifest()).length,
+        );
       } finally {
         conn.release();
       }

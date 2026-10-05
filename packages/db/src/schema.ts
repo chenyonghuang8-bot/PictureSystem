@@ -1697,3 +1697,65 @@ export const derivedAssets = mysqlTable(
     ),
   ],
 );
+
+const locationAscii = (length: number) =>
+  customType<{ data: string; driverData: string }>({
+    dataType: () => `varchar(${length}) CHARACTER SET ascii COLLATE ascii_bin`,
+  });
+export const mediaLocationProjections = mysqlTable(
+  "media_location_projections",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    mediaId: foreignId("media_id").notNull(),
+    generation: foreignId("generation").notNull(),
+    policyVersion: int("policy_version", { unsigned: true }).notNull(),
+    datasetVersion: locationAscii(64)("dataset_version").notNull(),
+    h3Cell: locationAscii(15)("h3_cell").notNull(),
+    countryCode: locationAscii(2)("country_code"),
+    cityGeonameId: foreignId("city_geoname_id"),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (t) => [
+    uniqueIndex("uq_location_media_version").on(
+      t.familyId,
+      t.mediaId,
+      t.policyVersion,
+      t.datasetVersion,
+    ),
+    index("idx_location_cell").on(
+      t.familyId,
+      t.policyVersion,
+      t.datasetVersion,
+      t.h3Cell,
+      t.mediaId,
+    ),
+    foreignKey({
+      name: "fk_location_media",
+      columns: [t.familyId, t.mediaId],
+      foreignColumns: [mediaItems.familyId, mediaItems.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check("chk_location_generation", sql`${t.generation} >= 1`),
+    check("chk_location_policy", sql`${t.policyVersion} >= 1`),
+    check(
+      "chk_location_dataset",
+      sql`${t.datasetVersion} REGEXP '^[0-9a-f]{64}$'`,
+    ),
+    check("chk_location_cell", sql`${t.h3Cell} REGEXP '^[0-9a-f]{15}$'`),
+    check(
+      "chk_location_country",
+      sql`${t.countryCode} IS NULL OR ${t.countryCode} REGEXP '^[A-Z]{2}$'`,
+    ),
+    check(
+      "chk_location_city",
+      sql`${t.cityGeonameId} IS NULL OR (${t.countryCode} IS NOT NULL AND ${t.cityGeonameId} > 0)`,
+    ),
+  ],
+);

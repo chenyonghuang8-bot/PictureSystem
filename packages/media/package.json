@@ -12,10 +12,15 @@
     }
   },
   "dependencies": {
-    "@family-album/storage": "workspace:*"
+    "@family-album/storage": "workspace:*",
+    "h3-js": "4.5.0",
+    "shapefile": "0.6.6"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/shapefile": "0.6.4"
   }
 }

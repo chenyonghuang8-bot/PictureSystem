@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "@family-album/ui-tokens/tokens.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles.css";
 
 export const metadata: Metadata = {

@@ -18,6 +18,7 @@ import {
   acquireCheckedConnection,
   PurgeIntentRepository,
   assertMigrationReadiness,
+  loadExpectedMigrationManifest,
 } from "../../packages/db/src/index.js";
 import {
   createPhase6SchemaFixture,
@@ -51,7 +52,9 @@ const ownedRoots = new Set<string>();
 afterAll(async () => {
   const c = await acquireCheckedConnection(db.pool);
   try {
-    expect((await assertMigrationReadiness(c)).migrationCount).toBe(8);
+    expect((await assertMigrationReadiness(c)).migrationCount).toBe(
+      (await loadExpectedMigrationManifest()).length,
+    );
     for (const familyId of ownedFamilies) {
       for (const table of [
         "families",

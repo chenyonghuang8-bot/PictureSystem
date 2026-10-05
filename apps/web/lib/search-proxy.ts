@@ -3,7 +3,7 @@
 export async function forwardFamilySearch(
   request: Request,
   context: { params: Promise<{ familyId: string }> },
-  resource: "search" | "search/options",
+  resource: "search" | "search/options" | "search/map" | "search/locations",
 ) {
   try {
     const { familyId } = await context.params;

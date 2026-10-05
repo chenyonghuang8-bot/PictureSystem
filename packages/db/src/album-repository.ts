@@ -1,3 +1,8 @@
+import {
+  matchesLocation,
+  type CoarseLocation,
+  type LocationProjector,
+} from "@family-album/media";
 import type {
   Pool,
   PoolConnection,
@@ -65,6 +70,7 @@ export type FamilyTimelineRecord = {
 };
 
 export type FamilySearchFilters = {
+  location?: string;
   filename?: string;
   uploaderMemberId?: string;
   tagId?: string;
@@ -222,11 +228,57 @@ export class MySqlAlbumRepository {
   constructor(
     private readonly pool: Pool,
     private readonly testOptions?: {
+      readonly locationProjector?: LocationProjector;
       readonly testHook?: AlbumRepositoryTestHook;
       /** Test-only seam for proving configured recipe drift; production omits it. */
       readonly getConfiguredPreviewRecipeId?: () => number;
     },
   ) {}
+
+  get locationProjector() {
+    return this.testOptions?.locationProjector;
+  }
+
+  async locationFamilyMedia(input: {
+    actor: Phase1CActor;
+    familyId: string;
+    filters: FamilySearchFilters;
+  }): Promise<(FamilyTimelineRecord & CoarseLocation)[]> {
+    const projector = this.locationProjector;
+    if (!projector) throw new AlbumRepositoryError("SERVICE_UNAVAILABLE");
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, input.familyId);
+      const locked = await lockActor(connection, input.familyId, input.actor);
+      assertActor(locked, input.actor, await readServerTime(connection));
+      const query = buildFamilyLocationQuery(
+        input.familyId,
+        locked.member.id,
+        input.filters,
+        projector,
+      );
+      const [rows] = await connection.query<RowDataPacket[]>(
+        query.sql,
+        query.values,
+      );
+      return rows
+        .map((row) => ({
+          mediaId: String(row.mediaId),
+          albumId: String(row.albumId),
+          timelineKey: row.timelineKey as Date,
+          timelineBasis:
+            row.timelineBasis as FamilyTimelineRecord["timelineBasis"],
+          displayWidth: nullableInteger(row.displayWidth),
+          displayHeight: nullableInteger(row.displayHeight),
+          isFavorite: Number(row.isFavorite) === 1,
+          isFamilyFeatured: Number(row.isFamilyFeatured) === 1,
+          h3Cell: row.h3Cell as string | null,
+          countryCode: row.countryCode as string | null,
+          cityGeonameId: row.cityGeonameId as string | null,
+          hasGps: Number(row.hasGps) === 1,
+        }))
+        .filter((row) => matchesLocation(row, input.filters.location));
+    });
+  }
 
   async createAlbum(input: {
     actor: Phase1CActor;
@@ -3341,5 +3393,38 @@ export function buildFamilySearchOptionsQuery(
   return {
     sql: `SELECT CAST(candidate.id AS CHAR) AS id, ${name} AS name ${visible.replace("WHERE m.family_id", joins + "WHERE m.family_id")} AND candidate.id > ? GROUP BY candidate.id, ${name} ORDER BY candidate.id ASC LIMIT ?`,
     values: [...base.values.slice(0, -1), afterId ?? "0", limit],
+  };
+}
+
+export function buildFamilyLocationQuery(
+  familyId: string,
+  memberId: string,
+  filters: FamilySearchFilters,
+  projector: LocationProjector,
+) {
+  const base = buildFamilySearchQuery(
+    familyId,
+    memberId,
+    1,
+    undefined,
+    filters,
+  );
+  const sql = base.sql
+    .replace(
+      "SELECT CAST(m.id",
+      `SELECT MAX(p.h3_cell) AS h3Cell,MAX(p.country_code) AS countryCode,CAST(MAX(p.city_geoname_id) AS CHAR) AS cityGeonameId,MAX(m.gps_latitude IS NOT NULL AND m.gps_longitude IS NOT NULL) AS hasGps, CAST(m.id`,
+    )
+    .replace(
+      "JOIN upload_sessions source",
+      `LEFT JOIN media_location_projections p ON p.family_id=m.family_id AND p.media_id=m.id AND p.generation=m.generation AND m.metadata_generation=m.generation AND m.gps_latitude IS NOT NULL AND m.gps_longitude IS NOT NULL AND p.policy_version=? AND p.dataset_version=? JOIN upload_sessions source`,
+    )
+    .replace("LIMIT ?", "");
+  return {
+    sql,
+    values: [
+      projector.policyVersion,
+      projector.datasetVersion,
+      ...base.values.slice(0, -1),
+    ],
   };
 }

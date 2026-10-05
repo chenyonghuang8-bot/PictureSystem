@@ -1,0 +1,26 @@
+{
+  "policy": "h3-js@4.5.0/res6/center-only/ambiguous-country-unknown/haversine-6371008.8/city<=50000m/numeric-id-tie/v1",
+  "normalization": "naturalearth-iso-a2-eh-geonames-cities1000-v2-dbf-null-padding",
+  "naturalEarthVersion": "5.1.1",
+  "importedAt": "2026-10-03T14:57:05.432Z",
+  "sources": {
+    "naturalEarth": "https://naturalearth.s3.amazonaws.com/10m_cultural/ne_10m_admin_0_countries.zip",
+    "geoNames": "https://download.geonames.org/export/dump/cities1000.zip",
+    "countryCodes": "https://download.geonames.org/export/dump/countryInfo.txt"
+  },
+  "licenses": {
+    "naturalEarth": "public-domain",
+    "geoNames": "CC-BY-4.0"
+  },
+  "files": {
+    "countries.zip": "ce1ac7036499a0edd641fbc093cd209a98f96a49d2eca8480aaacad35138a7f6",
+    "cities1000.zip": "bd324b6b115b55f6ac5294c7fab0e9b73af7b2ca085436344a2834bf1d4300fe",
+    "countryInfo.txt": "93bafc525813f22e4711ff9ed6d626343094ce48c26388dc7c49189b3d7d5512",
+    "countries.json": "a7e5413cede2d8b28cbc4821615457018bec1cbbd0c1c2700b46be241f8804f1",
+    "cities.json": "55e458a90afc5f39f08d7d5ec9e53cc5f9d82e624d9a6dfce943a0bc89e72bf9"
+  },
+  "counts": {
+    "countries": 258,
+    "cities": 171102
+  }
+}

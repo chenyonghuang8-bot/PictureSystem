@@ -49,3 +49,36 @@ it("round trips all confirmed filters and canonical trimmed filename", () => {
     searchFiltersFromUrl(Object.fromEntries(new URLSearchParams(url.slice(2)))),
   ).toEqual(filters);
 });
+
+it("serializes finite viewport bounds as bounded decimals accepted by the real map schema", async () => {
+  const { locationMapPath } = await import("./gallery-paths.js");
+  const { familyMapQuerySchema } = await import("@family-album/contracts");
+  for (const bbox of [
+    [-0.0000001, -10, 10, 10],
+    [0.0000001, -0.0000001, 10, 0.0000001],
+    [-180, -90, 180, 90],
+    [170, -10, -170, 10],
+    [-0, -0, 1e-12, 1e-12],
+    [-122.41, 37.7, -122.39, 37.8],
+  ]) {
+    const query = Object.fromEntries(
+      new URL(
+        locationMapPath("1", { favoritesOnly: false }, bbox, 10),
+        "http://local",
+      ).searchParams,
+    );
+    expect(query.bbox).not.toMatch(/e|(?:^|,)-0(?:,|$)/);
+    expect(query.bbox!.length).toBeLessThanOrEqual(100);
+    expect(familyMapQuerySchema.safeParse(query).success).toBe(true);
+  }
+  for (const bbox of [
+    [NaN, 0, 1, 1],
+    [0, 0, Infinity, 1],
+    [-181, 0, 1, 1],
+    [0, -91, 1, 1],
+    [0, 2, 1, 1],
+  ])
+    expect(() =>
+      locationMapPath("1", { favoritesOnly: false }, bbox, 1),
+    ).toThrow("INVALID_MAP_BBOX");
+});

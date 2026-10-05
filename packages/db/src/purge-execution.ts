@@ -153,6 +153,7 @@ export async function lockPurgeExecution(
   )
     throw new Error("PURGE_REFERENCE_CONFLICT");
   for (const table of [
+    "media_location_projections",
     "album_media",
     "user_favorites",
     "family_featured",
@@ -311,6 +312,7 @@ export async function detachPurge(
       ],
     );
   for (const table of [
+    "media_location_projections",
     "album_media",
     "user_favorites",
     "family_featured",

@@ -38,6 +38,7 @@ export function searchPath(
 ) {
   assertGalleryId(familyId);
   return galleryQuery(`/api/v1/families/${familyId}/search`, {
+    location: filters.location,
     filename: filters.filename,
     uploaderMemberId: filters.uploaderMemberId,
     tagId: filters.tagId,
@@ -57,6 +58,7 @@ export function searchFiltersFromUrl(
     Object.keys(values).some(
       (key) =>
         ![
+          "location",
           "fromDate",
           "toDate",
           "albumId",
@@ -70,6 +72,7 @@ export function searchFiltersFromUrl(
     throw new Error("SEARCH_FILTERS_INVALID");
   const query = familySearchQuerySchema.parse(values);
   return {
+    ...(query.location ? { location: query.location } : {}),
     ...(query.fromDate ? { fromDate: query.fromDate } : {}),
     ...(query.toDate ? { toDate: query.toDate } : {}),
     ...(query.albumId ? { albumId: query.albumId } : {}),
@@ -84,6 +87,7 @@ export function searchFiltersFromUrl(
 
 export function searchFilterQuery(filters: FamilySearchFilters) {
   return galleryQuery("/", {
+    location: filters.location,
     filename: filters.filename,
     uploaderMemberId: filters.uploaderMemberId,
     tagId: filters.tagId,
@@ -190,4 +194,57 @@ export function searchOptionsPath(
     limit: 50,
     cursor,
   });
+}
+
+export function locationMapPath(
+  familyId: string,
+  filters: FamilySearchFilters,
+  bbox: readonly number[],
+  zoom: number,
+) {
+  const url = new URL(
+    searchPath(familyId, filters, { limit: 24 }),
+    "http://local",
+  );
+  url.pathname += "/map";
+  url.searchParams.delete("limit");
+  if (
+    bbox.length !== 4 ||
+    bbox.some((n) => !Number.isFinite(n)) ||
+    Math.abs(bbox[0]!) > 180 ||
+    Math.abs(bbox[2]!) > 180 ||
+    Math.abs(bbox[1]!) > 90 ||
+    Math.abs(bbox[3]!) > 90 ||
+    bbox[1]! > bbox[3]!
+  )
+    throw new Error("INVALID_MAP_BBOX");
+  // Decimal-only API contract; bounded 10-place viewport precision (not media GPS).
+  // Number removes negative zero, fixed formatting avoids exponent notation.
+  url.searchParams.set(
+    "bbox",
+    bbox
+      .map((n) => {
+        const rounded = Number(n.toFixed(10));
+        return rounded === 0 ? "0" : rounded.toFixed(10).replace(/\.?0+$/, "");
+      })
+      .join(","),
+  );
+  url.searchParams.set("zoom", String(Math.round(zoom * 1000) / 1000));
+  return url.pathname + url.search;
+}
+export function locationOptionsPath(
+  familyId: string,
+  filters: FamilySearchFilters,
+  kind: "country" | "city",
+  cursor?: string,
+) {
+  const url = new URL(
+    searchPath(familyId, filters, { limit: 24 }),
+    "http://local",
+  );
+  url.pathname += "/locations";
+  url.searchParams.delete("limit");
+  url.searchParams.set("kind", kind);
+  if (cursor) url.searchParams.set("cursor", cursor);
+  return url.pathname + url.search;
 }

@@ -216,28 +216,50 @@ export class ImageDerivativeProcessor {
       if (!candidate || candidate.kind !== kind || candidate.recipe !== 1) {
         return await this.fail(fence, "DERIVED_INTEGRITY");
       }
-      const writer = await createOwnedDerivedTemp(
-        this.storage.capability,
-        this.storage.store,
-        this.admission,
-        admitted.permit,
-        candidate,
-      );
-      const output = writer.seal(this.storage.capability, this.storage.store);
-      sealed = output;
-      const verified = output.verify(this.storage.store, {
-        epoch: fence.leaseEpoch,
-        kind,
-        readGuard: read,
-      });
-      const identity = output.identity();
+      // createOwnedTemp calls currentLease: preserve DB failures explicitly
+      // across this storage API callback rather than classifying their messages.
+      let leaseReadFailed = false;
+      let writer;
+      try {
+        writer = await createOwnedDerivedTemp(
+          this.storage.capability,
+          this.storage.store,
+          {
+            currentLease: async (identity) => {
+              try {
+                return await this.admission.currentLease(identity);
+              } catch (error) {
+                leaseReadFailed = true;
+                throw error;
+              }
+            },
+          },
+          admitted.permit,
+          candidate,
+        );
+      } catch (error) {
+        if (leaseReadFailed) throw error;
+        return this.fail(fence, classifyDerivativeFailure(error));
+      }
+      let output, verified, identity;
+      try {
+        output = writer.seal(this.storage.capability, this.storage.store);
+        sealed = output;
+        verified = output.verify(this.storage.store, {
+          epoch: fence.leaseEpoch,
+          kind,
+          readGuard: read,
+        });
+        identity = output.identity();
+      } catch (error) {
+        return this.fail(fence, classifyDerivativeFailure(error));
+      }
       if (
         verified.sha256Hex !== identity.sha256Hex ||
         verified.sha256Hex !== candidate.sha256Hex ||
         !verified.staticImage
-      ) {
-        return await this.fail(fence, "DERIVED_INTEGRITY");
-      }
+      )
+        return this.fail(fence, "DERIVED_INTEGRITY");
       const publishing = await this.assets.markPublishing(fence, {
         kind,
         reservationId,
@@ -252,16 +274,20 @@ export class ImageDerivativeProcessor {
       const again = await this.assets.describe(fence);
       if (again === "UNKNOWN") return { outcome: "COMMIT_UNKNOWN" };
       if (!sameSource(again, described)) return { outcome: "STALE" };
-      output.publish(this.storage.store, this.storage.capability, {
-        familyId: fence.familyId,
-        mediaId: fence.mediaId,
-        generation: fence.generation,
-        recipeId: 1,
-        kind,
-        jobId: fence.jobId,
-        epoch: fence.leaseEpoch,
-        reservationId,
-      });
+      try {
+        output.publish(this.storage.store, this.storage.capability, {
+          familyId: fence.familyId,
+          mediaId: fence.mediaId,
+          generation: fence.generation,
+          recipeId: 1,
+          kind,
+          jobId: fence.jobId,
+          epoch: fence.leaseEpoch,
+          reservationId,
+        });
+      } catch (error) {
+        return this.fail(fence, classifyDerivativeFailure(error));
+      }
       sealed = null;
       const confirmed = await this.assets.confirmPublishing(fence, {
         kind,
@@ -271,8 +297,6 @@ export class ImageDerivativeProcessor {
       if (confirmed === "UNKNOWN") return { outcome: "COMMIT_UNKNOWN" };
       if (confirmed !== "COMMITTED") return { outcome: "STALE" };
       return "PUBLISHED";
-    } catch (error) {
-      return await this.fail(fence, classifyDerivativeFailure(error));
     } finally {
       if (sealed && isSealedDerivedOutput(sealed)) {
         sealed.consume(this.storage.store);

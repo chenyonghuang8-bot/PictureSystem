@@ -4,6 +4,7 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   {
     ignores: [
+      ".cache/**",
       "**/.expo/**",
       "**/.next/**",
       "**/coverage/**",
@@ -15,6 +16,7 @@ export default tseslint.config(
       "skills/**",
       "project-spec/**",
       "vendor/**",
+      "apps/web/public/vendor/**",
       "packages/storage/vendor/**",
     ],
   },
@@ -25,6 +27,7 @@ export default tseslint.config(
       "packages/**/scripts/**/*.mjs",
       "tests/integration/fixtures/**/*.mjs",
       "tests/e2e-web/**/*.mjs",
+      "apps/web/scripts/**/*.mjs",
     ],
     languageOptions: {
       globals: {

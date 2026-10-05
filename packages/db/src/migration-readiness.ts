@@ -34,6 +34,7 @@ import {
   purgeIntents,
   purgeFiles,
   auditLogs,
+  mediaLocationProjections,
 } from "./schema.js";
 
 const PROJECT_TABLES = [
@@ -60,6 +61,7 @@ const PROJECT_TABLES = [
   purgeIntents,
   purgeFiles,
   auditLogs,
+  mediaLocationProjections,
 ] as const;
 
 const PHASE_4_PREDECESSOR_TABLES = PROJECT_TABLES.slice(0, 9);
@@ -684,4 +686,13 @@ function isJournalDocument(value: unknown): value is {
         typeof (entry as Record<string, unknown>).when === "number",
     )
   );
+}
+
+export function buildPhase8PredecessorSchemaSnapshot(): SchemaSnapshot {
+  return JSON.parse(
+    readFileSync(
+      new URL("../drizzle/phase7_readiness.json", import.meta.url),
+      "utf8",
+    ),
+  ) as SchemaSnapshot;
 }

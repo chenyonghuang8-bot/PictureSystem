@@ -19,6 +19,7 @@ import {
 import {
   acquireCheckedConnection,
   assertMigrationReadiness,
+  loadExpectedMigrationManifest,
   createDatabase,
   MySqlTrashRepository,
   MySqlAlbumRepository,
@@ -223,7 +224,7 @@ describe.sequential("Phase 7B live lifecycle authorization and fences", () => {
       expect(rows[0]?.db).toBe("family_album_dev");
       expect(String(rows[0]?.account).split("@")[0]).not.toBe("root");
       expect((await assertMigrationReadiness(connection)).migrationCount).toBe(
-        8,
+        (await loadExpectedMigrationManifest()).length,
       );
     } finally {
       connection.release();

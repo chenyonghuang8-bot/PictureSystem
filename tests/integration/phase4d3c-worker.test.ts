@@ -365,6 +365,34 @@ describe.sequential("Phase 4D3c worker integration", () => {
     expect(residue).toHaveLength(0);
   });
 
+  it("propagates a thrown publishing DB failure without compensating media failure writes", async () => {
+    const fixture = await mediaFixture();
+    const fence = new MySqlDerivedAssetFence(database.pool);
+    let failureWrites = 0;
+    const attempt = fence.commitAttempt.bind(fence);
+    fence.commitAttempt = async (...args) => {
+      failureWrites++;
+      return attempt(...args);
+    };
+    const error = new Error("SYNTHETIC_DATABASE_FAILURE");
+    fence.markPublishing = async () => {
+      throw error;
+    };
+    const worker = MySqlJobRepository.createWorkerIdentity();
+    const claim = await jobs.claimNext(worker, {
+      jobType: "IMAGE_DERIVATIVES",
+    });
+    expect(claim?.id).toBe(fixture.jobId);
+    await expect(
+      processor(realRender, fence).runClaimed(claim!, worker),
+    ).rejects.toBe(error);
+    expect(failureWrites).toBe(0);
+    const [rows] = await database.pool.query<RowDataPacket[]>(
+      "SELECT state FROM background_jobs WHERE id=?",
+      [fixture.jobId],
+    );
+    expect(rows[0]!.state).toBe("RUNNING");
+  });
   it("claims only image jobs, heartbeats, and completes both kinds", async () => {
     const probeMedia = await mediaFixture(syntheticPng(8, 4, 41));
     await database.pool.query("DELETE FROM background_jobs WHERE id=?", [

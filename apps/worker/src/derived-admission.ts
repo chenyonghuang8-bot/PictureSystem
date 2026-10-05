@@ -75,7 +75,7 @@ export async function admitDerivedReservation(
 export async function createOwnedDerivedTemp(
   capability: StorageCapability,
   store: DerivedStore,
-  repository: MySqlDerivedAdmissionRepository,
+  repository: Pick<MySqlDerivedAdmissionRepository, "currentLease">,
   permit: DerivedTempAdmissionPermit,
   candidate: UnverifiedRenderedCandidate,
 ) {

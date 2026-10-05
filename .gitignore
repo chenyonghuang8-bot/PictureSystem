@@ -56,3 +56,6 @@ staging/
 *.sqlite
 *.sqlite3
 mysql-data/
+
+# Generated from the pinned official MapLibre npm dependency at dev/build.
+apps/web/public/vendor/maplibre-*/

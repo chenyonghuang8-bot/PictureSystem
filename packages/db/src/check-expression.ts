@@ -58,6 +58,19 @@ export function canonicalCheck(value: string): string {
         // Aliases accept only the observed identifier / integer arguments.
         const arg = primary();
         if (arg.atom !== "id") throw new Error("UNSUPPORTED_CHECK");
+        if (name === "regexp_like") {
+          requireToken(",");
+          const pattern = primary();
+          if (
+            !["h3_cell", "dataset_version", "country_code"].includes(
+              arg.text,
+            ) ||
+            !/^'\^\[.*\]\{[0-9]+\}\$'$/.test(pattern.text)
+          )
+            throw new Error("UNSUPPORTED_CHECK");
+          requireToken(")");
+          return { text: `regexp_like(${arg.text},${pattern.text})` };
+        }
         if (name === "mod") {
           requireToken(",");
           const divisor = primary();
@@ -112,6 +125,16 @@ export function canonicalCheck(value: string): string {
         requireToken("and");
         const high = scalar();
         return { text: `(${left.text} between ${low.text} and ${high.text})` };
+      }
+      if (take("regexp")) {
+        const pattern = scalar();
+        if (
+          left.atom !== "id" ||
+          !["h3_cell", "dataset_version", "country_code"].includes(left.text) ||
+          !/^'\^\[.*\]\{[0-9]+\}\$'$/.test(pattern.text)
+        )
+          throw new Error("UNSUPPORTED_CHECK");
+        return { text: `regexp_like(${left.text},${pattern.text})` };
       }
       const negative = take("not");
       if (take("in")) {
@@ -169,7 +192,8 @@ function tokenize(value: string): Token[] {
       continue;
     }
     // Only this known charset, and only simple literals with no escape payload.
-    const introduced = /^_utf8mb4(?:'([^'\\]*)'|\\'([^'\\]*)\\')/i.exec(rest);
+    const introduced =
+      /^_(?:utf8mb4|ascii)(?:'([^'\\]*)'|\\'([^'\\]*)\\')/i.exec(rest);
     if (introduced) {
       result.push({
         kind: "string",

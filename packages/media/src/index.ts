@@ -569,3 +569,6 @@ function normalizeSignedZero(value: number) {
 function protocolError(): never {
   throw new StorageSafetyError("METADATA_PROTOCOL_INVALID");
 }
+
+export * from "./location-projection.js";
+export * from "./location-map.js";

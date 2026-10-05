@@ -36,8 +36,15 @@ export const familySearchFilenameSchema = z
       ),
   );
 
+export const familyLocationFilterSchema = z
+  .string()
+  .max(64)
+  .regex(
+    /^(located|unknown|no-city|country:[A-Z]{2}|city:[1-9][0-9]{0,19}|cell:[0-6]:[0-9a-f]{15})$/,
+  );
 export const familySearchQuerySchema = z
   .object({
+    location: familyLocationFilterSchema.optional(),
     fromDate: familySearchDateSchema.optional(),
     toDate: familySearchDateSchema.optional(),
     albumId: unsignedBigIntStringSchema.optional(),
@@ -94,6 +101,7 @@ export type FamilySearchFilters = Pick<
   | "filename"
   | "uploaderMemberId"
   | "tagId"
+  | "location"
 >;
 
 export const familySearchOptionsQuerySchema = z
@@ -323,3 +331,111 @@ export type GalleryMediaQuery = z.infer<typeof galleryMediaQuerySchema>;
 export type FamilyTimelinePage = z.infer<typeof familyTimelinePageSchema>;
 export type GalleryMediaPage = z.infer<typeof galleryMediaPageSchema>;
 export type GalleryMediaDetail = z.infer<typeof galleryMediaDetailSchema>;
+
+// A bbox addresses fixed res6 cell centers only. It never addresses source GPS.
+export const locationBboxSchema = z
+  .string()
+  .max(100)
+  .transform((value, ctx) => {
+    if (!/^-?\d+(?:\.\d+)?(?:,-?\d+(?:\.\d+)?){3}$/.test(value)) {
+      ctx.addIssue({ code: "custom", message: "Invalid bbox" });
+      return z.NEVER;
+    }
+    const coordinates = value.split(",").map(Number);
+    const [west, south, east, north] = coordinates as [
+      number,
+      number,
+      number,
+      number,
+    ];
+    if (
+      coordinates.some((n) => !Number.isFinite(n)) ||
+      Math.abs(west) > 180 ||
+      Math.abs(east) > 180 ||
+      south < -90 ||
+      north > 90 ||
+      south > north
+    ) {
+      ctx.addIssue({ code: "custom", message: "Invalid bbox" });
+      return z.NEVER;
+    }
+    return [west, south, east, north] as [number, number, number, number];
+  });
+const locationFilterShape = z
+  .object(familySearchQuerySchema.shape)
+  .omit({ cursor: true, limit: true });
+export const familyMapQuerySchema = locationFilterShape
+  .extend({
+    bbox: locationBboxSchema.default([-180, -90, 180, 90]),
+    zoom: z
+      .string()
+      .regex(/^(0|[1-9][0-9]?)(?:\.[0-9]{1,4})?$/)
+      .transform(Number)
+      .pipe(z.number().min(0).max(22))
+      .default(1),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      !value.fromDate || !value.toDate || value.fromDate <= value.toDate,
+  );
+export const familyLocationOptionsQuerySchema = locationFilterShape
+  .extend({
+    kind: z.enum(["country", "city"]),
+    limit: z
+      .string()
+      .regex(/^[1-9][0-9]?$/)
+      .transform(Number)
+      .pipe(z.number().min(1).max(50))
+      .default(50),
+    cursor: z
+      .string()
+      .min(1)
+      .max(1024)
+      .regex(/^[A-Za-z0-9_-]+$/)
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      !value.fromDate || !value.toDate || value.fromDate <= value.toDate,
+  );
+const locationRegionSchema = z
+  .object({
+    id: familyLocationFilterSchema,
+    name: z.string().min(1).max(256),
+    count: z.number().int().nonnegative(),
+  })
+  .strict();
+export const familyLocationOptionsPageSchema = z
+  .object({
+    options: z.array(locationRegionSchema).max(50),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+export const familyMapPageSchema = z
+  .object({
+    resolution: z.number().int().min(0).max(6),
+    clusters: z
+      .array(
+        z
+          .object({
+            cell: z.string().regex(/^[0-9a-f]{15}$/),
+            latitude: z.number().min(-90).max(90),
+            longitude: z.number().min(-180).max(180),
+            count: z.number().int().positive(),
+          })
+          .strict(),
+      )
+      .max(500),
+    locatedCount: z.number().int().nonnegative(),
+    pendingCount: z.number().int().nonnegative(),
+    noGpsCount: z.number().int().nonnegative(),
+    polarCount: z.number().int().nonnegative(),
+  })
+  .strict();
+export type FamilyMapQuery = z.output<typeof familyMapQuerySchema>;
+export type FamilyMapPage = z.output<typeof familyMapPageSchema>;
+export type FamilyLocationOptionsQuery = z.output<
+  typeof familyLocationOptionsQuerySchema
+>;
