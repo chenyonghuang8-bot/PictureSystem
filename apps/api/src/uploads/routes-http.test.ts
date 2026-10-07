@@ -26,6 +26,21 @@ describe("Phase 3C Fastify PATCH adapter", () => {
     root.createUploadPayload("1", uploadId, Buffer.from("data"));
     current = record();
     const repository: UploadRepository = {
+      findOperation: vi.fn(async () => {
+        throw new Error("UNEXPECTED_OPERATION_LOOKUP");
+      }),
+      discoverPlacementKey: vi.fn(async () => {
+        throw new Error("UNEXPECTED_PLACEMENT");
+      }),
+      result: vi.fn(async () => {
+        throw new Error("UNEXPECTED_RESULT");
+      }),
+      replaceTargets: vi.fn(async () => {
+        throw new Error("UNEXPECTED_TARGETS");
+      }),
+      place: vi.fn(async () => {
+        throw new Error("UNEXPECTED_PLACEMENT");
+      }),
       admissionUsage: vi.fn(async () => ({
         reservedFutureBytes: 0n,
         retainedStagingBytes: 0n,

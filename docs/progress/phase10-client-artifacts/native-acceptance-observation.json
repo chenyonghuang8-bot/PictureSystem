@@ -1,0 +1,25 @@
+{
+  "nativeUI": "actual SDK Instrumentation/UiAutomation, no mocked app methods",
+  "device": "existing Pixel_8_Pro AVD emulator-5554, Android API37.1 arm64",
+  "transport": "Expo fetch / RN OkHttp, strict certificate+hostname validation; debug-only exact10.0.2.2 CA",
+  "mainUpload": {
+    "bytes": "9437555",
+    "receiptId": "667772",
+    "state": "COMPLETE",
+    "ui": "READY/APPLIED confirmed"
+  },
+  "partial": {
+    "receiptId": "667773",
+    "killOffset": "4194304",
+    "size": "33554803",
+    "restartObservedOffset": "8388608",
+    "finalOffset": "33554803",
+    "finalState": "COMPLETE",
+    "specificTaskUI": "READY/APPLIED confirmed"
+  },
+  "invitation": "real server issuance/preview, real cold/warm Android VIEW, new-account consume, no automatic login",
+  "logout": "real UI logout; cold login page; strict anonymous me401",
+  "cleanup": "owned family/upload/targets/invitations0; owned external files/test APK removed; original emulator proxy10.0.2.2:7890 restored; task-started emulator stopped",
+  "releaseSigning": "not performed",
+  "familyDeviceAcceptance": "pending"
+}

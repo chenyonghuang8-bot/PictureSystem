@@ -209,7 +209,9 @@ V1：
 
 ---
 
-## Phase 10 — Android App
+## Phase 10 — Android App + 手机 H5
+
+2026-10-06 用户范围调整：vivo Y35 Android13 / HarmonyOS4.2 使用 Android APK；HarmonyOS6.1 使用同服务端手机 H5 + 桌面快捷方式。通知、FCM/device registration 本期排除，Firebase不再是本期门槛。前台上传持久队列可重新打开恢复，不承诺杀进程后后台传输。正式签名材料由用户安全提供，家人实机验收仍待。
 
 严格按 `ui/app-preview.png`。
 
@@ -225,11 +227,11 @@ V1：
 - upload progress
 - retry
 - choose albums
-- push registration
+- notifications / FCM: excluded from this delivery by user (2026-10-06)
 - deep links for invitation
 
 ### 交付
-签名 APK。
+签名 APK + 手机 H5。本地 debug APK用于开发验收，不能代替正式签名交付或家人实机/HarmonyOS6.1验收。
 
 ---
 

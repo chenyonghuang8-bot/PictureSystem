@@ -178,7 +178,19 @@ describe("Phase 4A versioned migration", () => {
       columns: ["family_id", "id", "storage_object_id"],
       isUnique: true,
     });
-    expect(getTableConfig(uploadSessions).indexes).toHaveLength(6);
+    // 0009 adds exactly the reviewed operation and receipt-family indexes.
+    expect(
+      getTableConfig(uploadSessions).indexes.map((index) => index.config.name),
+    ).toEqual([
+      "uq_upload_sessions_public_id",
+      "uq_upload_sessions_operation",
+      "uq_upload_sessions_family_id",
+      "uq_upload_sessions_family_id_object",
+      "idx_upload_sessions_family_creator_state",
+      "idx_upload_sessions_state_expiry",
+      "idx_upload_sessions_family_object",
+      "idx_upload_sessions_cleanup",
+    ]);
     expect(snapshot.prevId).toBe(previous.id);
     expect(journal.entries.slice(0, 5).map((entry) => entry.idx)).toEqual([
       0, 1, 2, 3, 4,

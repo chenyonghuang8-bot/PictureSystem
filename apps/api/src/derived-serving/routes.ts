@@ -6,7 +6,7 @@ import {
   derivedParamsSchema,
 } from "@family-album/contracts";
 
-import { readWebSessionCookie } from "../auth/http.js";
+import { readSessionCredential } from "../auth/http.js";
 import { PublicAuthError, type AuthService } from "../auth/service.js";
 import type { DerivedReadService } from "./service.js";
 
@@ -22,9 +22,12 @@ export function registerDerivedRoutes(
   app.get("/api/v1/media/:mediaId/derived/:kind", async (request, reply) =>
     handleDerived(request, reply, async () => {
       const { mediaId, kind } = derivedParamsSchema.parse(request.params);
-      const token = readWebSessionCookie(request);
-      if (!token) throw new PublicAuthError(401, "UNAUTHENTICATED");
-      const context = await authService.authenticate(token);
+      const credential = readSessionCredential(request);
+      if (!credential) throw new PublicAuthError(401, "UNAUTHENTICATED");
+      const context = await authService.authenticate(
+        credential.token,
+        credential.expectedClientType,
+      );
       const served = await derivedService.serve(context, mediaId, kind);
       request.log.info(
         {

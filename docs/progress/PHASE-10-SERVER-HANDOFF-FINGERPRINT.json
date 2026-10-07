@@ -1,0 +1,218 @@
+{
+  "head": "6510261f920b5ebe6d98d1cefa3227fb221bbd5f",
+  "createdUTC": "2026-10-06T10:29:23.222497+00:00",
+  "sourceSetSha256": "12b696d7609c933b471843b7f9637339abe90731dc86e4adbcbf20e35e9cccd6",
+  "definition": "SHA256 of sorted path/sha256 array serialized with sort_keys=True,separators=(comma,colon); excludes updated handoff/checkpoint reports and this manifest to avoid a self-reference",
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "d76fc08892cfaad631ac93abf4947a08f24f1b895bac409917f305010835c8c8"
+    },
+    {
+      "path": "apps/api/src/albums/routes.ts",
+      "sha256": "c77f80b6c73c15a4592ada9f01cd85a79dd93199af0c890590b486ebb0bbae66"
+    },
+    {
+      "path": "apps/api/src/albums/service.test.ts",
+      "sha256": "c092a7d088a32b50b0dbc2fb43705309144e22d941f90d2c7b684bc83666caee"
+    },
+    {
+      "path": "apps/api/src/albums/service.ts",
+      "sha256": "ff674b64a9ac4e3c9d61d649a7290ed05033bf0d501a9ceb4be0c2800767446a"
+    },
+    {
+      "path": "apps/api/src/auth/http.ts",
+      "sha256": "427c47d4325039e39325eef1da02bd24bd47d92bb57513cc65684abe9f08252e"
+    },
+    {
+      "path": "apps/api/src/auth/native-http.test.ts",
+      "sha256": "fa09ebc12d96867e26466870d9f86590d3ad484bd2e9b877a94be578b11ef02c"
+    },
+    {
+      "path": "apps/api/src/auth/routes.ts",
+      "sha256": "74b7bae5c5b3a54c4a41511fd54f11637acd6fb40b7ed40873278f3ff24bc837"
+    },
+    {
+      "path": "apps/api/src/auth/service.ts",
+      "sha256": "aa8f8adbb63388158ff7d4618664a65d44b33d523c17750af1d214b9331a83db"
+    },
+    {
+      "path": "apps/api/src/derived-serving/routes.ts",
+      "sha256": "3b3ae80fb2e9e14356d88e5d5bd2fa761d266b565539db05a428407f4850c1d4"
+    },
+    {
+      "path": "apps/api/src/derived-serving/service.ts",
+      "sha256": "dd6d23e66d0ae0db6d2a7cf7f3844d2d08f9596f4f010695c88ad0d67f404ade"
+    },
+    {
+      "path": "apps/api/src/original-download/service.ts",
+      "sha256": "52b8233a0c604749826d240387a6e8efa5e976f34aaf5056b749790fe9ada55d"
+    },
+    {
+      "path": "apps/api/src/phase1c/routes.ts",
+      "sha256": "38cef94923818d3a68d1bdf6dcea57b4f19744d8d91284ad07a5ab29bfca66b5"
+    },
+    {
+      "path": "apps/api/src/phase1c/service.ts",
+      "sha256": "d2aa3f47a894c0ee0694520c2fb750e66daf8abc5f808db3261511e5e6506ca0"
+    },
+    {
+      "path": "apps/api/src/preview-download/service.ts",
+      "sha256": "5771c0d8aa82be49070421de01fe12920d1e5329359bcc4f0d97614e2899a6e8"
+    },
+    {
+      "path": "apps/api/src/shares/routes.ts",
+      "sha256": "0bd39fac026088a8d9abeab1f89f991253831b7e7ff7122171d2a5fd4cbad8f7"
+    },
+    {
+      "path": "apps/api/src/shares/service.ts",
+      "sha256": "9fc64acc58f0d692d69977fb6d5f58920f77d67a06856326d97f939b07a0b8ad"
+    },
+    {
+      "path": "apps/api/src/trash/routes.ts",
+      "sha256": "1add31bd9da86eace2925323cf6fec0953865f2466e6aded8d3912f457ae5498"
+    },
+    {
+      "path": "apps/api/src/trash/service.ts",
+      "sha256": "8d5b7105ee84d017ff4caa2430f2cd584345d84d425061b91c9216a1ee643061"
+    },
+    {
+      "path": "apps/api/src/uploads/api.test.ts",
+      "sha256": "0e023f8bc192bc86bb6d8c8c1a7a162b4ad71a0bf83c0bf049cf36216fc038db"
+    },
+    {
+      "path": "apps/api/src/uploads/protocol.ts",
+      "sha256": "9ec188d0dbeb552dd26235e1a912dc5b1619c691f4506e4ee8c0c63dc7f631af"
+    },
+    {
+      "path": "apps/api/src/uploads/routes-http.test.ts",
+      "sha256": "8157d70a9e7656940c32fcb80759fb28b32a2375ed03dcfc22a28a131d6fe69c"
+    },
+    {
+      "path": "apps/api/src/uploads/routes.ts",
+      "sha256": "9e1a500b4231b15c103d61bb0c27ae0f67b93eacc667bcd9121e37b704ce35f4"
+    },
+    {
+      "path": "apps/api/src/uploads/service.test.ts",
+      "sha256": "5c53d80f6cb5029eca5389f8cb5a27060e8f0666dd75dfa712c208a1caf39764"
+    },
+    {
+      "path": "apps/api/src/uploads/service.ts",
+      "sha256": "2c6a3b072f1a83585fbef1e8f904d6437ed8d4a952a941b5f8e3d8f88b973e2b"
+    },
+    {
+      "path": "apps/web/AGENTS.md",
+      "sha256": "63f2c50380ed6303237cce215ce27af1d620d094c215e28d1b1538a3c070e3bb"
+    },
+    {
+      "path": "apps/web/CLAUDE.md",
+      "sha256": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49"
+    },
+    {
+      "path": "apps/web/next-env.d.ts",
+      "sha256": "0f70629890b72a0a82e91972cc032c04b658b26c265373cb711cf576bfbf8fcc"
+    },
+    {
+      "path": "docs/progress/PHASE-10-ANDROID-IMPLEMENTATION-GUARDRAILS.md",
+      "sha256": "8788ec3a4780b0ba1e02a8355fed89dd9074d50196a7e88acd21f139eb7b6275"
+    },
+    {
+      "path": "docs/progress/PHASE-10-SERVER-INDEPENDENT-REVIEW.md",
+      "sha256": "7262172c910fdaa51a9dd16b055e099fb80793180e3808599e1e69e068f71851"
+    },
+    {
+      "path": "packages/contracts/src/auth.ts",
+      "sha256": "9a9554b9040f7784a868612092bd68a8d6874e7dfc8cf248759457f359cbddfc"
+    },
+    {
+      "path": "packages/contracts/src/uploads.ts",
+      "sha256": "9a1db6da6d4c892ed1bc0e09436c133ded13cc5f32034258a5a366ccede15c38"
+    },
+    {
+      "path": "packages/db/drizzle/0009_phase_10_android.sql",
+      "sha256": "e749f32760f0f0bcd643e674fd62365c8ca716f8acf793314fbd3e465b910939"
+    },
+    {
+      "path": "packages/db/drizzle/meta/0009_snapshot.json",
+      "sha256": "ed56ff89c6699d21d99c02765e7d6a97b5f572166c1ec864732f87138ff12a6a"
+    },
+    {
+      "path": "packages/db/drizzle/meta/_journal.json",
+      "sha256": "fbb6f8930dd88225ff953c0815a0355541d65bdbf519ba467849aa54bd46bb67"
+    },
+    {
+      "path": "packages/db/drizzle/phase8_readiness.json",
+      "sha256": "3ce182122c9530e0de0c57f43dbc04deb66df24f9b0f09c6a9c44472dce2fc1b"
+    },
+    {
+      "path": "packages/db/scripts/migrate-phase-10.ts",
+      "sha256": "94703c8f87e000a5f0c2c43efabc770f50d0e4477edc0c9e7a8623dc036051a3"
+    },
+    {
+      "path": "packages/db/src/album-repository.ts",
+      "sha256": "6c17859f47302bcf9664cddb6af3b9e2e8673bd9908bcfc873d634fba1394bb3"
+    },
+    {
+      "path": "packages/db/src/auth-repository.ts",
+      "sha256": "299595db009196510d9bedc70373f017b7b9815668ad0d338feb576d16c17966"
+    },
+    {
+      "path": "packages/db/src/index.ts",
+      "sha256": "014b79f9f4580d690ec83595daa98b74b37d9d3cb5531e7fded83111b98bf5f8"
+    },
+    {
+      "path": "packages/db/src/migration-readiness.ts",
+      "sha256": "6bb208404cf4b7ff0cb0b5f082d8c7b790f3af612d7f6623a0b978cccea1b481"
+    },
+    {
+      "path": "packages/db/src/phase10-migration.test.ts",
+      "sha256": "412bf9c4596bdecab147452cd3f80019f5a5762081aac5b3f22bbfcc22da364c"
+    },
+    {
+      "path": "packages/db/src/phase1c-repository.ts",
+      "sha256": "efc26ea219a5c33ec0590b48b4b8cab2d655db95aa41b8ae2febacb6a9bd2c30"
+    },
+    {
+      "path": "packages/db/src/phase3-schema.test.ts",
+      "sha256": "ac3633bbb81f7a336128cfe9fa479aa85aede4877bf367bac5ed29edc8aed20c"
+    },
+    {
+      "path": "packages/db/src/phase4-migration.test.ts",
+      "sha256": "cc1aed5c63792b2957c9a1340cb77ea03607213789b0b6f31fc387e5baa88806"
+    },
+    {
+      "path": "packages/db/src/phase7-migration.test.ts",
+      "sha256": "1888d73b85f8a8b35e4f16f76be7d980f53dd6f9dc65bd73d01879d0d4cd859c"
+    },
+    {
+      "path": "packages/db/src/schema.ts",
+      "sha256": "1c277f6632e4c0527d72ebe6f6c2d3dcc855cc7d0059a51b3acb441e0b86be3e"
+    },
+    {
+      "path": "packages/db/src/upload-completion.ts",
+      "sha256": "c25334aaf0807bb5939b3f122718e92441dec1fb008f16b3f777602c48848d8f"
+    },
+    {
+      "path": "packages/db/src/upload-repository.ts",
+      "sha256": "e6a932922ada228c19d1e6310834d4419ffa1854a1aabea98ffcf3369361203a"
+    },
+    {
+      "path": "project-spec/ROADMAP.md",
+      "sha256": "b4a977826e5fd1fd42651f8b7ea9532d6c60140bc2eab2c87fd8fafee7b49842"
+    },
+    {
+      "path": "tests/e2e-web/memories-validation.spec.ts",
+      "sha256": "10dbd340633c3cb7a42930c01dff449742d9c8fddc833ba3299472053b71cc77"
+    },
+    {
+      "path": "tests/integration/phase10-server.test.ts",
+      "sha256": "8280f6c9ec7126db06739ee72f5d8a167201b3f6d494917020b59870277fc9af"
+    }
+  ],
+  "priorCheckpoint": {
+    "path": "docs/progress/PHASE-10-SERVER-CHECKPOINT-FINGERPRINT.json",
+    "sha256": "a27fbb9a8269dc0b4080431dc06cb59ea82178b243c648280407427a79992193",
+    "sourceSetSha256": "7b1df51fb8cc3ac8f65b544c2813749356f50c881c7a0cd422d567e12b547582",
+    "changedPaths": ["docs/progress/PHASE-10-SERVER-INDEPENDENT-REVIEW.md"]
+  }
+}

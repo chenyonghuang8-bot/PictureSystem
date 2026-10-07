@@ -30,29 +30,39 @@ const standaloneCertificateDirectory = !configuredCertificateDirectory;
 if (configuredCertificateDirectory) {
   mkdirSync(certificateDirectory, { mode: 0o700 });
 }
-const key = join(certificateDirectory, "localhost-key.pem");
-const certificate = join(certificateDirectory, "localhost-cert.pem");
-const generated = spawnSync(
-  "/usr/bin/openssl",
-  [
-    "req",
-    "-x509",
-    "-newkey",
-    "rsa:2048",
-    "-nodes",
-    "-keyout",
-    key,
-    "-out",
-    certificate,
-    "-days",
-    "1",
-    "-subj",
-    "/CN=localhost",
-    "-addext",
-    "subjectAltName=DNS:localhost,IP:127.0.0.1",
-  ],
-  { stdio: "ignore" },
-);
+const providedCert = process.env.PHASE10_CLIENT_TLS_CERT_FILE;
+const providedKey = process.env.PHASE10_CLIENT_TLS_KEY_FILE;
+if (Boolean(providedCert) !== Boolean(providedKey))
+  throw new Error("CLIENT_TLS_PAIR_REQUIRED");
+const key = providedKey
+  ? resolve(providedKey)
+  : join(certificateDirectory, "localhost-key.pem");
+const certificate = providedCert
+  ? resolve(providedCert)
+  : join(certificateDirectory, "localhost-cert.pem");
+const generated = providedCert
+  ? { status: 0 }
+  : spawnSync(
+      "/usr/bin/openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        key,
+        "-out",
+        certificate,
+        "-days",
+        "1",
+        "-subj",
+        "/CN=localhost",
+        "-addext",
+        "subjectAltName=DNS:localhost,IP:127.0.0.1",
+      ],
+      { stdio: "ignore" },
+    );
 
 if (generated.status !== 0) {
   if (standaloneCertificateDirectory) {
@@ -86,7 +96,7 @@ const child = spawn(
     "--experimental-https-cert",
     certificate,
     "--hostname",
-    "localhost",
+    providedCert ? "127.0.0.1" : "localhost",
     "--port",
     "3443",
   ],

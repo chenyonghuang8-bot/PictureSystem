@@ -3,6 +3,9 @@ export function SignedOut() {
     <section className="gallery-state" role="status">
       <h1>需要登录</h1>
       <p>登录后才能查看家庭相册。</p>
+      <a className="gallery-text-button" href="/login">
+        登录
+      </a>
     </section>
   );
 }

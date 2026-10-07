@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 
 import {
   createAuthErrorResponse,
+  androidSessionResponseSchema,
   emptyObjectRequestSchema,
   loginRequestSchema,
   meResponseSchema,
@@ -15,6 +16,9 @@ import {
 import {
   clearSessionCookie,
   readWebSessionCookie,
+  readSessionCredential,
+  requireSessionJsonMutation,
+  requireNativeJson,
   requireTrustedJsonOrigin,
   sessionCookie,
 } from "./http.js";
@@ -62,6 +66,69 @@ export function registerAuthRoutes(
       }),
   );
 
+  app.post(
+    "/api/v1/auth/android/login",
+    { bodyLimit: 16_384 },
+    async (request, reply) =>
+      handle(request, reply, "auth.android_login", async () => {
+        requireNativeJson(request);
+        const body = loginRequestSchema.parse(request.body);
+        const issued = await service.login({
+          ...body,
+          deviceLabel: body.deviceLabel ?? null,
+          ip: request.ip,
+          expectedClientType: "ANDROID",
+        });
+        return reply.send(
+          androidSessionResponseSchema.parse({
+            token: issued.token,
+            expiresAt: issued.expiresAt.toISOString(),
+            serverNow: issued.serverNow.toISOString(),
+          }),
+        );
+      }),
+  );
+  for (const operation of ["reauth", "password", "logout"] as const) {
+    app.post(
+      `/api/v1/auth/android/${operation}`,
+      { bodyLimit: 16_384 },
+      async (request, reply) =>
+        handle(request, reply, `auth.android_${operation}`, async () => {
+          const credential = readSessionCredential(request);
+          if (!credential || credential.expectedClientType !== "ANDROID")
+            throw new PublicAuthError(401, "UNAUTHENTICATED");
+          requireSessionJsonMutation(request, trustedOrigins);
+          if (operation === "logout") {
+            emptyObjectRequestSchema.parse(request.body);
+            await service.logout(credential.token, "ANDROID");
+            return reply.status(204).send();
+          }
+          const context = await service.authenticate(
+            credential.token,
+            "ANDROID",
+          );
+          const issued =
+            operation === "reauth"
+              ? await service.reauthenticate(
+                  context,
+                  passwordProofRequestSchema.parse(request.body).password,
+                  request.ip,
+                )
+              : await service.changePassword(context, {
+                  ...passwordChangeRequestSchema.parse(request.body),
+                  ip: request.ip,
+                });
+          return reply.send(
+            androidSessionResponseSchema.parse({
+              token: issued.token,
+              expiresAt: issued.expiresAt.toISOString(),
+              serverNow: issued.serverNow.toISOString(),
+            }),
+          );
+        }),
+    );
+  }
+
   app.get("/api/v1/auth/me", async (request, reply) =>
     handle(request, reply, "auth.me", async () => {
       const context = await authenticate(request, service);
@@ -93,11 +160,12 @@ export function registerAuthRoutes(
 
   app.post("/api/v1/auth/logout-all", async (request, reply) =>
     handle(request, reply, "auth.logout_all", async () => {
-      requireTrustedJsonOrigin(request, trustedOrigins);
+      requireSessionJsonMutation(request, trustedOrigins);
       emptyObjectRequestSchema.parse(request.body);
       const context = await authenticate(request, service);
       await service.logoutAll(context);
-      reply.header("set-cookie", clearSessionCookie());
+      if (context.expectedClientType !== "ANDROID")
+        reply.header("set-cookie", clearSessionCookie());
       logAuthSuccess(request, "auth.logout_all", {
         userId: context.identity.userId,
         sessionId: context.identity.sessionId,
@@ -114,6 +182,8 @@ export function registerAuthRoutes(
         requireTrustedJsonOrigin(request, trustedOrigins);
         const body = passwordProofRequestSchema.parse(request.body);
         const context = await authenticate(request, service);
+        if ((context.expectedClientType ?? "WEB") !== "WEB")
+          throw new PublicAuthError(401, "UNAUTHENTICATED");
         const issued = await service.reauthenticate(
           context,
           body.password,
@@ -139,6 +209,8 @@ export function registerAuthRoutes(
         requireTrustedJsonOrigin(request, trustedOrigins);
         const body = passwordChangeRequestSchema.parse(request.body);
         const context = await authenticate(request, service);
+        if ((context.expectedClientType ?? "WEB") !== "WEB")
+          throw new PublicAuthError(401, "UNAUTHENTICATED");
         const issued = await service.changePassword(context, {
           currentPassword: body.currentPassword,
           newPassword: body.newPassword,
@@ -179,12 +251,12 @@ export function registerAuthRoutes(
 
   app.delete("/api/v1/auth/sessions/:sessionId", async (request, reply) =>
     handle(request, reply, "auth.session_revoke", async () => {
-      requireTrustedJsonOrigin(request, trustedOrigins);
+      requireSessionJsonMutation(request, trustedOrigins);
       emptyObjectRequestSchema.parse(request.body);
       const { sessionId } = sessionParamsSchema.parse(request.params);
       const context = await authenticate(request, service);
       const result = await service.revokeSession(context, sessionId);
-      if (result.revokedCurrent)
+      if (result.revokedCurrent && context.expectedClientType !== "ANDROID")
         reply.header("set-cookie", clearSessionCookie());
       logAuthSuccess(request, "auth.session_revoke", {
         userId: context.identity.userId,
@@ -204,6 +276,7 @@ export function handleAuthFrameworkError(
     !request.url.startsWith("/api/v1/auth/") &&
     !request.url.startsWith("/api/v1/families/") &&
     !request.url.startsWith("/api/v1/invitations/") &&
+    !request.url.startsWith("/api/v1/android/invitations/") &&
     !request.url.startsWith("/api/v1/albums")
   )
     throw error;
@@ -232,9 +305,9 @@ export function handleAuthFrameworkError(
 }
 
 async function authenticate(request: FastifyRequest, service: AuthService) {
-  const token = readWebSessionCookie(request);
-  if (!token) throw new PublicAuthError(401, "UNAUTHENTICATED");
-  return service.authenticate(token);
+  const credential = readSessionCredential(request);
+  if (!credential) throw new PublicAuthError(401, "UNAUTHENTICATED");
+  return service.authenticate(credential.token, credential.expectedClientType);
 }
 
 async function handle(

@@ -1,0 +1,119 @@
+{
+  "scope": "DISPLAY_BRANDING_ONLY",
+  "name": "嘟嘟家庭相册",
+  "utc": "2026-10-06T17:59:06.306969+00:00",
+  "files": [
+    {
+      "path": "apps/mobile/app.json",
+      "bytes": 488,
+      "sha256": "73b7a45e8caede5c38af4364c27bc0c2ec89f2371ae97de96a9b3edb596a0a89",
+      "beforeSHA256": "6c563b92d5c098440d6e98587ac7bf7f165fee3bee78c5b5122aa06ec74e116c"
+    },
+    {
+      "path": "apps/mobile/app/index.tsx",
+      "bytes": 35031,
+      "sha256": "2b2a3c9a78b854a05b9f92d6959036b3ee40ede9a6a021d6564dc4ea7b71eba8",
+      "beforeSHA256": "dfe9acd36f9c937c89c704a06b16b1310d15760a6e0282a9dbaf17e5ebaa2186"
+    },
+    {
+      "path": "apps/mobile/android/app/src/main/res/values/strings.xml",
+      "bytes": 78,
+      "sha256": "35ef850b4adb47bf22e1b3df456a679897528c06a1f844bec56fac940ddc9cd0",
+      "beforeSHA256": "f478e78fcebf737a30e5da3946a3941766670b42f6de56308671c22bb3c291fa"
+    },
+    {
+      "path": "apps/mobile/android/settings.gradle",
+      "bytes": 1271,
+      "sha256": "33b4d438c0a9741fd6a4f5a8068c93e8b93041f8309cefb274a1ec27956f8a4c",
+      "beforeSHA256": "c6b3099c01a720a59fa4a03d44393bf874285108d15304e67b9969fc1f93b41c"
+    },
+    {
+      "path": "apps/mobile/android/.idea/.name",
+      "bytes": 18,
+      "sha256": "3e8e6603bbf3f4fb34dc7188e5b501e719dacef6e5af6eb3370ac37b463ee1ef",
+      "beforeSHA256": "8bb566aef38fe57033450bb04c6108ee94ac2c1a2e6f8e957d2ee0d40ba2dffb"
+    },
+    {
+      "path": "apps/web/app/layout.tsx",
+      "bytes": 460,
+      "sha256": "b52eb95fc99b2919668e79d87db4d9ed644d9d5d7d3c8d22dbfcb560ef92f1db",
+      "beforeSHA256": "e70cab2297e58b11319a2b45fe4918632eda3429b2efe39dc3010df2819e690c"
+    },
+    {
+      "path": "apps/web/app/login/page.tsx",
+      "bytes": 302,
+      "sha256": "b8947d78a93266c13a20174043dce3a1e4853563da5e526fa07de58c77e17d5b",
+      "beforeSHA256": "6d0f97928e1cc369d5107e854b215795744185d6f432a821eaa0a4315df88d1e"
+    },
+    {
+      "path": "project-spec/README.md",
+      "bytes": 3447,
+      "sha256": "378d3dbbc00611401ea7d470ef3cce8b3fc19dd5877a8e3185a64378792c95d4",
+      "beforeSHA256": "f1f0b7e9fa0deafd2e97dc6f8487dc981a6698b30ca070ee7c9df9620bbcabb4"
+    },
+    {
+      "path": "project-spec/PROJECT.md",
+      "bytes": 6706,
+      "sha256": "13ee436597d4a3b9d70684a52fef2a2757afb21ffb0c2eb7f40d0cbbb0c4a651",
+      "beforeSHA256": "8aba088cbc33e6415d5ecbbd4d271678c1328eac728faf4186003225209b4744"
+    }
+  ],
+  "logs": [
+    {
+      "path": "docs/progress/phase10-branding-artifacts/phase10-branding-web-build.log",
+      "bytes": 1094,
+      "sha256": "ce1669977c79896adc1193da0eeebfaa1459b25b29a5bbd8d9d29ac6a4293b52",
+      "originalPath": "/tmp/phase10-branding-web-build.log",
+      "exitCode": 0,
+      "mtimeUTC": "2026-10-06T17:56:18.827336+00:00"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/phase10-branding-android-build.log",
+      "bytes": 33296,
+      "sha256": "21e567036b444e7e053b9c8f3a1f9326194ce046f513f7376314d096f64a50d0",
+      "originalPath": "/tmp/phase10-branding-android-build.log",
+      "exitCode": 0,
+      "mtimeUTC": "2026-10-06T17:57:06.803983+00:00"
+    }
+  ],
+  "apk": {
+    "path": ".cache/phase10-branding/family-album-dev-arm64.apk",
+    "bytes": 85204648,
+    "sha256": "3e15988b972fb5d8f43df27b4d4d36e6e69ea9c9f27a73e4e5f2196a1e6694c9",
+    "debugOnly": true,
+    "formalSigning": false,
+    "aaptApplicationLabel": "嘟嘟家庭相册",
+    "apksignerVerify": "PASS",
+    "newAPKInstalled": false
+  },
+  "report": {
+    "path": "docs/progress/PHASE-10-BRANDING-UPDATE.md",
+    "bytes": 3744,
+    "sha256": "fbef823323b29ff224788379616c6ec6db6f98528af5839cd49d7a03446dd92a"
+  },
+  "priorAcceptedEvidenceSHA256": "7b43a4fffa769f794256b2fc0e2e5ebdd6039496ebd60d289b21d0a7ad7b1b2d",
+  "checks": {
+    "mobileTypecheck": "PASS",
+    "webTypecheck": "PASS",
+    "tsxESLint": "PASS",
+    "targetedFormat": "PASS",
+    "diffCheck": "PASS",
+    "webBuild": "PASS",
+    "androidDebugBuild": "PASS",
+    "builtLoginH1AndTitle": "嘟嘟家庭相册",
+    "oldBrandTestExpectations": "NONE_FOUND",
+    "fullGateRerun": false
+  },
+  "technicalIdentifiersChanged": false,
+  "familyDatabaseNamesChanged": false,
+  "externalIDERecentCacheChanged": false,
+  "IDERecentCardScreenshot": "PENDING_REOPEN_REFRESH",
+  "keystorePermission": {
+    "regularFile": true,
+    "currentUserOwned": true,
+    "symlink": false,
+    "mode": "0600",
+    "contentsRead": false
+  },
+  "phase10Complete": false
+}

@@ -128,6 +128,7 @@ export class TrashService {
       userId: context.identity.userId,
       sessionId: context.identity.sessionId,
       tokenHash: context.tokenHash,
+      expectedClientType: context.expectedClientType ?? "WEB",
     };
   }
   private encodeCursor(input: { trashedAt: Date; mediaId: string }) {

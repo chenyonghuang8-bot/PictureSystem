@@ -1,14 +1,20 @@
+import { ZodError } from "zod";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   createUploadErrorResponse,
+  emptyObjectRequestSchema,
   uploadFinalizeResponseSchema,
   uploadStatusResponseSchema,
+  uploadOperationIdSchema,
+  uploadTargetIdsSchema,
+  uploadTargetsRequestSchema,
+  uploadResultResponseSchema,
 } from "@family-album/contracts";
 
 import {
-  readWebSessionCookie,
-  requireTrustedJsonOrigin,
+  readSessionCredential,
+  requireSessionJsonMutation,
 } from "../auth/http.js";
 import { PublicAuthError, type AuthService } from "../auth/service.js";
 import { createTusProtocol } from "./protocol.js";
@@ -51,7 +57,10 @@ export function registerUploadRoutes(
 
   app.addHook("onSend", async (request, reply) => {
     if (request.url.startsWith("/api/v1/uploads")) {
-      void reply.header("cache-control", "no-store");
+      void reply.header(
+        "cache-control",
+        reply.getHeader("cache-control") ?? "no-store",
+      );
     }
   });
 
@@ -97,10 +106,38 @@ export function registerUploadRoutes(
           (request.params as { familyId?: unknown }).familyId,
         );
         const auth = await authenticate(request, options.authService);
+        const operationHeader = singleHeader(
+          request.headers["upload-client-id"],
+        );
+        const targetHeader = singleHeader(
+          request.headers["upload-target-albums"],
+        );
+        if (
+          (operationHeader === undefined) !== (targetHeader === undefined) ||
+          (auth.expectedClientType === "ANDROID" &&
+            operationHeader === undefined)
+        )
+          throw new UploadServiceError(400, "INVALID_REQUEST");
+        let clientOperationId: Buffer | undefined;
+        let targetAlbumIds: string[] | undefined;
+        if (operationHeader !== undefined) {
+          clientOperationId = Buffer.from(
+            uploadOperationIdSchema.parse(operationHeader).replaceAll("-", ""),
+            "hex",
+          );
+          if (targetHeader!.length > 420)
+            throw new UploadServiceError(400, "INVALID_REQUEST");
+          targetAlbumIds = uploadTargetIdsSchema.parse(
+            targetHeader!.split(","),
+          );
+        }
         rateLimiter.create(auth.identity.userId, request.ip);
         return handoff(request, reply, protocol.server, protocol.contexts, {
           auth,
           familyId,
+          ...(clientOperationId
+            ? { clientOperationId, targetAlbumIds: targetAlbumIds! }
+            : {}),
         });
       } catch (error) {
         return sendUploadError(request, reply, error);
@@ -186,12 +223,82 @@ export function registerUploadRoutes(
     }
   });
 
+  app.get(
+    "/api/v1/families/:familyId/uploads/operations/:operationId",
+    async (request, reply) => {
+      try {
+        const params = request.params as {
+          familyId: string;
+          operationId: string;
+        };
+        const auth = await authenticate(request, options.authService);
+        const upload = await options.uploadService.operation(
+          auth,
+          parseDecimalId(params.familyId),
+          Buffer.from(
+            uploadOperationIdSchema
+              .parse(params.operationId)
+              .replaceAll("-", ""),
+            "hex",
+          ),
+        );
+        return reply.header("cache-control", "private, no-store").send(
+          uploadStatusResponseSchema.parse({
+            uploadId: upload.publicId,
+            state: upload.state,
+            declaredSize: upload.declaredSize.toString(),
+            committedOffset: upload.committedOffset.toString(),
+            expiresAt: upload.expiresAt.toISOString(),
+            completedAt: upload.completedAt?.toISOString() ?? null,
+            failureCode: upload.failureCode,
+          }),
+        );
+      } catch (error) {
+        return sendUploadError(request, reply, error);
+      }
+    },
+  );
+  for (const action of ["result", "targets", "placement"] as const) {
+    app.route({
+      method:
+        action === "result" ? "GET" : action === "targets" ? "PUT" : "POST",
+      url: `/api/v1/uploads/:uploadId/${action}`,
+      bodyLimit: 16_384,
+      handler: async (request, reply) => {
+        try {
+          if (action !== "result")
+            requireSessionJsonMutation(request, options.trustedOrigins);
+          const auth = await authenticate(request, options.authService);
+          const id = parseUploadPublicId(
+            (request.params as { uploadId: string }).uploadId,
+          );
+          const result =
+            action === "result"
+              ? await options.uploadService.result(auth, id)
+              : action === "targets"
+                ? await options.uploadService.targets(
+                    auth,
+                    id,
+                    uploadTargetsRequestSchema.parse(request.body).albumIds,
+                  )
+                : (emptyObjectRequestSchema.parse(request.body),
+                  await options.uploadService.placement(auth, id));
+          return reply
+            .header("cache-control", "private, no-store")
+            .send(uploadResultResponseSchema.parse(result));
+        } catch (error) {
+          return sendUploadError(request, reply, error);
+        }
+      },
+    });
+  }
+
   app.post(
     "/api/v1/uploads/:uploadId/finalize",
     { bodyLimit: 64 },
     async (request, reply) => {
       try {
-        requireTrustedJsonOrigin(request, options.trustedOrigins);
+        requireSessionJsonMutation(request, options.trustedOrigins);
         if (!isEmptyObject(request.body)) {
           throw new UploadServiceError(400, "INVALID_REQUEST");
         }
@@ -237,7 +344,7 @@ export function registerUploadRoutes(
     { bodyLimit: 64 },
     async (request, reply) => {
       try {
-        requireTrustedJsonOrigin(request, options.trustedOrigins);
+        requireSessionJsonMutation(request, options.trustedOrigins);
         if (!isEmptyObject(request.body)) {
           throw new UploadServiceError(400, "INVALID_REQUEST");
         }
@@ -283,9 +390,9 @@ async function handoff(
 }
 
 async function authenticate(request: FastifyRequest, service: AuthService) {
-  const token = readWebSessionCookie(request);
-  if (!token) throw new PublicAuthError(401, "UNAUTHENTICATED");
-  return service.authenticate(token);
+  const credential = readSessionCredential(request);
+  if (!credential) throw new PublicAuthError(401, "UNAUTHENTICATED");
+  return service.authenticate(credential.token, credential.expectedClientType);
 }
 
 function requireTusVersion(request: FastifyRequest) {
@@ -375,6 +482,7 @@ function requireTusOrigin(
   request: FastifyRequest,
   trustedOrigins: ReadonlySet<string>,
 ) {
+  if (readSessionCredential(request)?.expectedClientType === "ANDROID") return;
   const origin = exactOrigin(request.headers.origin);
   if (!trustedOrigins.has(origin)) throw new PublicAuthError(403, "FORBIDDEN");
 }
@@ -383,6 +491,7 @@ function requireOptionalTusOrigin(
   request: FastifyRequest,
   trustedOrigins: ReadonlySet<string>,
 ) {
+  readSessionCredential(request);
   if (request.headers.origin !== undefined)
     requireTusOrigin(request, trustedOrigins);
 }
@@ -441,7 +550,9 @@ function sendUploadError(
             error.statusCode,
             error.code === "UNAUTHENTICATED" ? "UNAUTHENTICATED" : "FORBIDDEN",
           )
-        : new UploadServiceError(503, "STORAGE_UNAVAILABLE");
+        : error instanceof ZodError
+          ? new UploadServiceError(400, "INVALID_REQUEST")
+          : new UploadServiceError(503, "STORAGE_UNAVAILABLE");
   logUploadFailure(request, mapped.code);
   void reply
     .header("Tus-Resumable", TUS_VERSION)

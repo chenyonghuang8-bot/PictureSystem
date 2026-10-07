@@ -15,8 +15,8 @@ import {
 } from "@family-album/contracts";
 
 import {
-  readWebSessionCookie,
-  requireTrustedJsonOrigin,
+  readSessionCredential,
+  requireSessionJsonMutation,
 } from "../auth/http.js";
 import { PublicAuthError, type AuthService } from "../auth/service.js";
 import type { ShareService } from "./service.js";
@@ -36,7 +36,7 @@ export function registerShareManagementRoutes(
     { bodyLimit: 4_096 },
     async (request, reply) =>
       handleShare(request, reply, "share_create", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         const { albumId } = albumParamsSchema.parse(request.params);
         const body = createShareRequestSchema.parse(request.body);
         const context = await authenticate(request, authService);
@@ -97,7 +97,7 @@ export function registerShareManagementRoutes(
     { bodyLimit: 4_096 },
     async (request, reply) =>
       handleShare(request, reply, "share_revoke", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         emptyObjectRequestSchema.parse(request.body);
         const { shareId } = shareParamsSchema.parse(request.params);
         const context = await authenticate(request, authService);
@@ -122,9 +122,9 @@ export function registerShareManagementRoutes(
 }
 
 async function authenticate(request: FastifyRequest, service: AuthService) {
-  const token = readWebSessionCookie(request);
-  if (!token) throw new PublicAuthError(401, "UNAUTHENTICATED");
-  return service.authenticate(token);
+  const credential = readSessionCredential(request);
+  if (!credential) throw new PublicAuthError(401, "UNAUTHENTICATED");
+  return service.authenticate(credential.token, credential.expectedClientType);
 }
 
 async function handleShare(

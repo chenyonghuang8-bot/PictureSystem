@@ -1,0 +1,731 @@
+{
+  "scope": "PHASE10_DEV_ACCEPTED_CHECKPOINT_RELEASE_DELIVERY_PENDING",
+  "utc": "2026-10-07T04:28:12.356503+00:00",
+  "baselineHead": "6510261f920b5ebe6d98d1cefa3227fb221bbd5f",
+  "phase10Complete": false,
+  "productionReady": false,
+  "fullGateRerun": false,
+  "rawLogsCommitted": false,
+  "sourceFunctionalDrift": false,
+  "documentRedactions": [
+    "docs/progress/PHASE-10-BRANDING-UPDATE.md",
+    "docs/progress/PHASE-10-FINAL-SUMMARY.md"
+  ],
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 1079,
+      "sha256": "8b9442eef7b2ffbec269fdc3dace46ff92854344dc4c96e86cf6f3715ba06dcf"
+    },
+    {
+      "path": "apps/api/src/albums/routes.ts",
+      "bytes": 34913,
+      "sha256": "c77f80b6c73c15a4592ada9f01cd85a79dd93199af0c890590b486ebb0bbae66"
+    },
+    {
+      "path": "apps/api/src/albums/service.test.ts",
+      "bytes": 8946,
+      "sha256": "c092a7d088a32b50b0dbc2fb43705309144e22d941f90d2c7b684bc83666caee"
+    },
+    {
+      "path": "apps/api/src/albums/service.ts",
+      "bytes": 29416,
+      "sha256": "ff674b64a9ac4e3c9d61d649a7290ed05033bf0d501a9ceb4be0c2800767446a"
+    },
+    {
+      "path": "apps/api/src/auth/http.ts",
+      "bytes": 4153,
+      "sha256": "427c47d4325039e39325eef1da02bd24bd47d92bb57513cc65684abe9f08252e"
+    },
+    {
+      "path": "apps/api/src/auth/native-http.test.ts",
+      "bytes": 2720,
+      "sha256": "fa09ebc12d96867e26466870d9f86590d3ad484bd2e9b877a94be578b11ef02c"
+    },
+    {
+      "path": "apps/api/src/auth/routes.ts",
+      "bytes": 12647,
+      "sha256": "74b7bae5c5b3a54c4a41511fd54f11637acd6fb40b7ed40873278f3ff24bc837"
+    },
+    {
+      "path": "apps/api/src/auth/service.ts",
+      "bytes": 12848,
+      "sha256": "aa8f8adbb63388158ff7d4618664a65d44b33d523c17750af1d214b9331a83db"
+    },
+    {
+      "path": "apps/api/src/derived-serving/routes.ts",
+      "bytes": 2463,
+      "sha256": "3b3ae80fb2e9e14356d88e5d5bd2fa761d266b565539db05a428407f4850c1d4"
+    },
+    {
+      "path": "apps/api/src/derived-serving/service.ts",
+      "bytes": 3144,
+      "sha256": "dd6d23e66d0ae0db6d2a7cf7f3844d2d08f9596f4f010695c88ad0d67f404ade"
+    },
+    {
+      "path": "apps/api/src/original-download/service.ts",
+      "bytes": 10619,
+      "sha256": "52b8233a0c604749826d240387a6e8efa5e976f34aaf5056b749790fe9ada55d"
+    },
+    {
+      "path": "apps/api/src/phase1c/routes.ts",
+      "bytes": 11874,
+      "sha256": "38cef94923818d3a68d1bdf6dcea57b4f19744d8d91284ad07a5ab29bfca66b5"
+    },
+    {
+      "path": "apps/api/src/phase1c/service.ts",
+      "bytes": 8350,
+      "sha256": "d2aa3f47a894c0ee0694520c2fb750e66daf8abc5f808db3261511e5e6506ca0"
+    },
+    {
+      "path": "apps/api/src/preview-download/service.ts",
+      "bytes": 11393,
+      "sha256": "5771c0d8aa82be49070421de01fe12920d1e5329359bcc4f0d97614e2899a6e8"
+    },
+    {
+      "path": "apps/api/src/shares/routes.ts",
+      "bytes": 5936,
+      "sha256": "0bd39fac026088a8d9abeab1f89f991253831b7e7ff7122171d2a5fd4cbad8f7"
+    },
+    {
+      "path": "apps/api/src/shares/service.ts",
+      "bytes": 5720,
+      "sha256": "9fc64acc58f0d692d69977fb6d5f58920f77d67a06856326d97f939b07a0b8ad"
+    },
+    {
+      "path": "apps/api/src/trash/routes.ts",
+      "bytes": 5106,
+      "sha256": "1add31bd9da86eace2925323cf6fec0953865f2466e6aded8d3912f457ae5498"
+    },
+    {
+      "path": "apps/api/src/trash/service.ts",
+      "bytes": 6284,
+      "sha256": "8d5b7105ee84d017ff4caa2430f2cd584345d84d425061b91c9216a1ee643061"
+    },
+    {
+      "path": "apps/api/src/uploads/api.test.ts",
+      "bytes": 7857,
+      "sha256": "0e023f8bc192bc86bb6d8c8c1a7a162b4ad71a0bf83c0bf049cf36216fc038db"
+    },
+    {
+      "path": "apps/api/src/uploads/protocol.ts",
+      "bytes": 5201,
+      "sha256": "9ec188d0dbeb552dd26235e1a912dc5b1619c691f4506e4ee8c0c63dc7f631af"
+    },
+    {
+      "path": "apps/api/src/uploads/routes-http.test.ts",
+      "bytes": 7354,
+      "sha256": "8157d70a9e7656940c32fcb80759fb28b32a2375ed03dcfc22a28a131d6fe69c"
+    },
+    {
+      "path": "apps/api/src/uploads/routes.ts",
+      "bytes": 19670,
+      "sha256": "9e1a500b4231b15c103d61bb0c27ae0f67b93eacc667bcd9121e37b704ce35f4"
+    },
+    {
+      "path": "apps/api/src/uploads/service.test.ts",
+      "bytes": 20213,
+      "sha256": "5c53d80f6cb5029eca5389f8cb5a27060e8f0666dd75dfa712c208a1caf39764"
+    },
+    {
+      "path": "apps/api/src/uploads/service.ts",
+      "bytes": 37077,
+      "sha256": "2c6a3b072f1a83585fbef1e8f904d6437ed8d4a952a941b5f8e3d8f88b973e2b"
+    },
+    {
+      "path": "apps/mobile/.env.example",
+      "bytes": 176,
+      "sha256": "ab1ba88ffc8fa55bee2e9aee09f7e14d413afa8a3df560349146fe6e74d21c60"
+    },
+    {
+      "path": "apps/mobile/app.json",
+      "bytes": 488,
+      "sha256": "73b7a45e8caede5c38af4364c27bc0c2ec89f2371ae97de96a9b3edb596a0a89"
+    },
+    {
+      "path": "apps/mobile/app/index.tsx",
+      "bytes": 35031,
+      "sha256": "2b2a3c9a78b854a05b9f92d6959036b3ee40ede9a6a021d6564dc4ea7b71eba8"
+    },
+    {
+      "path": "apps/mobile/index.ts",
+      "bytes": 105,
+      "sha256": "6b8bcad523cbb11c949121c356427d9aea86390ff4eb1ca5f2026df3c5a4ebdc"
+    },
+    {
+      "path": "apps/mobile/lib/filesystem-test-adapter.ts",
+      "bytes": 1798,
+      "sha256": "e8a205226480684ea20c3c508e9d3d622a98533e3b22b60f162bf273b886aedd"
+    },
+    {
+      "path": "apps/mobile/lib/invitations.ts",
+      "bytes": 3240,
+      "sha256": "986453c5877aed7c347cbbf20ef33dcedec301cd967cd272763f58aaca501dfc"
+    },
+    {
+      "path": "apps/mobile/lib/media.tsx",
+      "bytes": 5822,
+      "sha256": "a98469b834c08887c35e9da5e4854d0f70b4b140d12fff241ce33cd68e97ca43"
+    },
+    {
+      "path": "apps/mobile/lib/queue.test.ts",
+      "bytes": 10081,
+      "sha256": "87657662f25bc00eb366b4f2aa2f353c6736999eaf4bf84fcb0a4ed090c401c1"
+    },
+    {
+      "path": "apps/mobile/lib/queue.ts",
+      "bytes": 14943,
+      "sha256": "6a22adea4b5b816bf5d24ee52036a66e912aa4cc3665606efb311d142030b191"
+    },
+    {
+      "path": "apps/mobile/lib/session.test.ts",
+      "bytes": 8715,
+      "sha256": "a1138be462f7146263b9090515164cf2176cff0b914aaf2e9317298e5becb556"
+    },
+    {
+      "path": "apps/mobile/lib/session.ts",
+      "bytes": 11439,
+      "sha256": "f197c01f39311eb9e403d16a4ee53f64189ef1c93e1334a8e82cdb5b36dd69bf"
+    },
+    {
+      "path": "apps/mobile/metro.config.cjs",
+      "bytes": 1164,
+      "sha256": "20f570ba613c254a09c3f5c6a632c1300f4a91db5b6900d8a210c4920f545497"
+    },
+    {
+      "path": "apps/mobile/package.json",
+      "bytes": 1361,
+      "sha256": "3301060990f037dc5b0d820800f635cb72df43832190ef1e4a0f40013bc3addc"
+    },
+    {
+      "path": "apps/mobile/plugins/with-private-android.cjs",
+      "bytes": 6091,
+      "sha256": "07de45c53b3b4ddc45505594a9916faac490379de78cadb14b7b8eda965e541f"
+    },
+    {
+      "path": "apps/web/app/albums/[albumId]/page.tsx",
+      "bytes": 1855,
+      "sha256": "debe4ea7e89c8f122820e8ac6d6cad4c7f8c5cafe431c63899e45aa96912ca2f"
+    },
+    {
+      "path": "apps/web/app/albums/page.tsx",
+      "bytes": 1130,
+      "sha256": "fc4ab0688a9bc972326a6e333a209f20dd4a4da0c25bb8661e52df0bc6816d2b"
+    },
+    {
+      "path": "apps/web/app/layout.tsx",
+      "bytes": 460,
+      "sha256": "b52eb95fc99b2919668e79d87db4d9ed644d9d5d7d3c8d22dbfcb560ef92f1db"
+    },
+    {
+      "path": "apps/web/app/login/page.tsx",
+      "bytes": 302,
+      "sha256": "b8947d78a93266c13a20174043dce3a1e4853563da5e526fa07de58c77e17d5b"
+    },
+    {
+      "path": "apps/web/app/memories/page.tsx",
+      "bytes": 1467,
+      "sha256": "95b16a0186ab9eeafc940aeec14844184384cb2cd7dd0c8469881ab531235ce6"
+    },
+    {
+      "path": "apps/web/app/my/page.tsx",
+      "bytes": 1336,
+      "sha256": "cb16af1ea533f54e4998f9b1ec9fb91787dd30375fdd5ea465cf4788e8880e60"
+    },
+    {
+      "path": "apps/web/app/page.tsx",
+      "bytes": 2042,
+      "sha256": "f339329bb3fddf2d6a2f8d5357621c7d0e8e003a336507b1823f2da8efa46ca0"
+    },
+    {
+      "path": "apps/web/app/styles.css",
+      "bytes": 23613,
+      "sha256": "7be1e1bc0e0e62fac141f99a8c94386082a59168680244975c9a1e17769b5c09"
+    },
+    {
+      "path": "apps/web/components/gallery/shell.tsx",
+      "bytes": 3372,
+      "sha256": "84e095d9438f57b3291ba8545398b3f06e5a326971372c59d41ac75c805f781d"
+    },
+    {
+      "path": "apps/web/components/gallery/states.tsx",
+      "bytes": 1295,
+      "sha256": "97cb1d90b14f2d4d27d3245fb92b34c0856716f35d2f284316bcbea19e22c5aa"
+    },
+    {
+      "path": "apps/web/components/mobile/account.tsx",
+      "bytes": 2605,
+      "sha256": "4765e6554db82602d6e013b2d1540bb062b0f522879c333a9f8d70be76db81c9"
+    },
+    {
+      "path": "apps/web/components/mobile/upload-panel.tsx",
+      "bytes": 16924,
+      "sha256": "38386e2086058a0ecb23dba66034747df2e18c8263552f33346c5675868e1db2"
+    },
+    {
+      "path": "apps/web/lib/mobile-upload.ts",
+      "bytes": 2965,
+      "sha256": "59803455197c0fde3d168589cded43e227de4cc3556d43062d33f80ab9c4948d"
+    },
+    {
+      "path": "apps/web/lib/private-album-page.test.ts",
+      "bytes": 1343,
+      "sha256": "79dc3e88117047e39f440695a46a9976ce4501c3cffd864f8cc2b66c6d875bd2"
+    },
+    {
+      "path": "apps/web/lib/private-album-page.ts",
+      "bytes": 533,
+      "sha256": "71e36a853e25b0ed043600572008f3a66688c019035cd162ed3b6366a7997a09"
+    },
+    {
+      "path": "apps/web/next-env.d.ts",
+      "bytes": 296,
+      "sha256": "0f70629890b72a0a82e91972cc032c04b658b26c265373cb711cf576bfbf8fcc"
+    },
+    {
+      "path": "docs/progress/PHASE-10-ANDROID-IMPLEMENTATION-GUARDRAILS.md",
+      "bytes": 44350,
+      "sha256": "8788ec3a4780b0ba1e02a8355fed89dd9074d50196a7e88acd21f139eb7b6275"
+    },
+    {
+      "path": "docs/progress/PHASE-10-BRANDING-UPDATE.md",
+      "bytes": 6502,
+      "sha256": "58861fbc9153cc09a403b893981b7edaf248cfc291f7e61426264ece885f5561"
+    },
+    {
+      "path": "docs/progress/PHASE-10-CLIENT-IMPLEMENTATION-HANDOFF.md",
+      "bytes": 13303,
+      "sha256": "8985bbdcd0ba092f1f76875fa943f8038eb5033abcf0c7310a712b9b3ba7c2dd"
+    },
+    {
+      "path": "docs/progress/PHASE-10-CLIENT-INDEPENDENT-REVIEW.md",
+      "bytes": 17904,
+      "sha256": "60b136f809d7bbfdf042d68972120d6b597c877bcee4a8393f5ab926972fc428"
+    },
+    {
+      "path": "docs/progress/PHASE-10-CLIENT-REVIEW-FIX-HANDOFF.md",
+      "bytes": 7608,
+      "sha256": "4503062a4d9dcad3347196ce58b89b4714ed59e5b3e5a48671b0b04e42c3f7fb"
+    },
+    {
+      "path": "docs/progress/PHASE-10-DOC-ONLY-FINGERPRINT.json",
+      "bytes": 1721,
+      "sha256": "043499300910594ee8b60091791a0965aca75e63b2f38a6f7a56e8f2fbfc3108"
+    },
+    {
+      "path": "docs/progress/PHASE-10-FINAL-REVIEW.md",
+      "bytes": 15313,
+      "sha256": "cb9ce67042fa6f5758a36f4d8514e783422a886f0c70fbeee81d83b85a021dc4"
+    },
+    {
+      "path": "docs/progress/PHASE-10-FINAL-SUMMARY.md",
+      "bytes": 16775,
+      "sha256": "491ca756b0c082886331992ad730bacb2aacd91821b5aa0d96685bf9efecd79f"
+    },
+    {
+      "path": "docs/progress/PHASE-10-GIT-CHECKPOINT.md",
+      "bytes": 3594,
+      "sha256": "006e919436b7dc57fc9eb7dc09e3ffe393fc3ca43ad1224105abfabf94a11b57"
+    },
+    {
+      "path": "docs/progress/PHASE-10-REMAINING-WORK-2026-10-07.md",
+      "bytes": 8282,
+      "sha256": "45e4b4e6efcd8ec417dda49f5006bbda8a31f8484907e75635e0c7835fcf5bbc"
+    },
+    {
+      "path": "docs/progress/PHASE-10-SERVER-CHECKPOINT-FINGERPRINT.json",
+      "bytes": 7948,
+      "sha256": "a27fbb9a8269dc0b4080431dc06cb59ea82178b243c648280407427a79992193"
+    },
+    {
+      "path": "docs/progress/PHASE-10-SERVER-CHECKPOINT-SUMMARY.md",
+      "bytes": 14378,
+      "sha256": "59b237756bda84ec1ca190bf6e3750c0288e744f9a50d8634951c2272a82f21b"
+    },
+    {
+      "path": "docs/progress/PHASE-10-SERVER-HANDOFF-FINGERPRINT.json",
+      "bytes": 8298,
+      "sha256": "f942cd804648e8fce38a980c85dae6e8205c082894ad02283655dc5006774c20"
+    },
+    {
+      "path": "docs/progress/PHASE-10-SERVER-IMPLEMENTATION-HANDOFF.md",
+      "bytes": 23534,
+      "sha256": "e7e99d5a71d32d8e629c36210b17b39d7b18206b61e50303e31a31840636553f"
+    },
+    {
+      "path": "docs/progress/PHASE-10-SERVER-INDEPENDENT-REVIEW.md",
+      "bytes": 23887,
+      "sha256": "5bdebf2ca37b47ed55d376756ffca9062fc25d3f1419d71fae27b8912cd65832"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/evidence.json",
+      "bytes": 4443,
+      "sha256": "2993faf81d763211b7a127ceefd02a376afa45e1424cc03cf8c8c0cfa076c0bb"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/desktop-brand-login.png",
+      "bytes": 26065,
+      "sha256": "dbd07550fb7cc21d0b178cd0f6d8aeed3bac1eb4442a879d1a762ebb034c5d9d"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/evidence.json",
+      "bytes": 6086,
+      "sha256": "469ff7212ef1d100878800270ebe2af45aaa7f07654b84d15bc631311ddf6b6b"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/h5-brand-login.png",
+      "bytes": 20646,
+      "sha256": "9a4b956e4343a8d0a9c894b4b4a2f466b31da55668fddadd6078dd99209716c9"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/native-brand-label.png",
+      "bytes": 240199,
+      "sha256": "0492315fdf4e2b99755a83c68e738f37073662cee889da82446339473efd411f"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/native-brand-login.png",
+      "bytes": 72450,
+      "sha256": "34b5ba25c2cbff6d05dd7214a0bad4fac8b619e27bd2613fa87775de87c67918"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/android-login.png",
+      "bytes": 74097,
+      "sha256": "cc80491beabf30e0c635be8556c93bc05696c8cd1a146ec7f4a63860f73e3b0d"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/evidence-final-reviewed.json",
+      "bytes": 24967,
+      "sha256": "21b4a0dcce3852ba1bba0ff8b0950929206f3b2bec230fd4b677ef430608ff35"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/evidence-pre-review.json",
+      "bytes": 10695,
+      "sha256": "10587434390c13b4866d1b75979cb89ef9523db1f9c346e21c5539185a5ce9c1"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/evidence-review-closure.json",
+      "bytes": 17033,
+      "sha256": "6aa0c60547a5ba792d8e493a43446ad0e98121c5c68b256400378c93b623c7b0"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/evidence.json",
+      "bytes": 25830,
+      "sha256": "7b43a4fffa769f794256b2fc0e2e5ebdd6039496ebd60d289b21d0a7ad7b1b2d"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/h5-login-mobile.png",
+      "bytes": 17629,
+      "sha256": "2f5eb6265758967e636e7228cb97649e5971642c1f3a4b807063e4e47040df8f"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/h5-my.png",
+      "bytes": 69477,
+      "sha256": "a9b6da93d8266b2110554542bd49608d5004270756f36c1e246ac33bfa72a9f4"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/h5-photos.png",
+      "bytes": 38112,
+      "sha256": "e31ee58b237aedfc8ef0bd0f62a8865870609f5a8512210e93706e61dffbe253"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-acceptance-observation.json",
+      "bytes": 1093,
+      "sha256": "7716fbad101f61916eae89203b329d871250f14d92f5d3fe5c6a535862b34ffe"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-albums.png",
+      "bytes": 134379,
+      "sha256": "c6f6e49949a8dbf53843d038d1a157885c43cbb166385c77356ff79da9c8b2e0"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-authenticated-photos.png",
+      "bytes": 167938,
+      "sha256": "e8819170ec2f362bc54959d5cf76ec5081e59e04bd997660e8677c81882d783a"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-cold-logged-out.png",
+      "bytes": 59762,
+      "sha256": "cf368f080ec9ef7f6ceebf9012f702b153e16f9b4abb475406a6e1d794e5e0ed"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-invite-created-not-auto-login.png",
+      "bytes": 85456,
+      "sha256": "a906fa928e210898e8c13785c537890902d2740ea13741b84d367066daf8915b"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-invite-preview.png",
+      "bytes": 145441,
+      "sha256": "0f52448c45afc2415bf87febf2e55e1c22a2624f67a9165643cc8d558d8f9e99"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-logout.png",
+      "bytes": 62385,
+      "sha256": "63e66aa2b08a5506301cadc66d7b4a19e183cc40f3df9a362072475248f41b40"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-memories.png",
+      "bytes": 133576,
+      "sha256": "4a718eded2b770e829b7001a7d7d0ba262461eb8531c5624fdf73e3d8482d770"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-my.png",
+      "bytes": 202330,
+      "sha256": "b4d09b0d4228a491e5987ca547554431071e8c3c72b0fda96293a5172245dfa5"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-partial-offset-observation.json",
+      "bytes": 124,
+      "sha256": "b5e3f68db0009bcfbfe618b5e0d198ed704cfd32384faced31f457f39ed4a2a2"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-ready-queue.png",
+      "bytes": 265687,
+      "sha256": "b4c00b9e375b2941f55349eb86d55a544a8bc739571d2a2bca71c4e31616832b"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-viewer.png",
+      "bytes": 164179,
+      "sha256": "cdcb715f5845548b68fe5165ed691a8afaa12a20fbc6ecfb1aa4334b7d513060"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/release-resource-observation.json",
+      "bytes": 1019,
+      "sha256": "a41c7a7f712a97b732128f088ac6698c98df01ee5d8570ced032163f4d9e7439"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/web-login-desktop.png",
+      "bytes": 22723,
+      "sha256": "65821a44ad27974af58c2826364625d3e601e2ea4e75d3470e9e82354bd2ade8"
+    },
+    {
+      "path": "eslint.config.mjs",
+      "bytes": 1559,
+      "sha256": "eeb82c7a14f48fe3c8d9191d61acf434600156d10817c6f6eb60a7e49f90d334"
+    },
+    {
+      "path": "packages/contracts/src/auth.ts",
+      "bytes": 2445,
+      "sha256": "9a9554b9040f7784a868612092bd68a8d6874e7dfc8cf248759457f359cbddfc"
+    },
+    {
+      "path": "packages/contracts/src/client-upload.test.ts",
+      "bytes": 8629,
+      "sha256": "97fd79cbbfe89b591c9346be88de0d8e0d3364b457d5abe18b96db1abdfb1840"
+    },
+    {
+      "path": "packages/contracts/src/client-upload.ts",
+      "bytes": 7918,
+      "sha256": "c8f105e254ead5a849c70d4adb9bc4ef89084ee0cedfc146001653b3464827de"
+    },
+    {
+      "path": "packages/contracts/src/content-sha256.ts",
+      "bytes": 3176,
+      "sha256": "3a438b9057748f7088f5f7fd9b7014a1cf7da234e504ca8916b054b83fec78d2"
+    },
+    {
+      "path": "packages/contracts/src/index.ts",
+      "bytes": 692,
+      "sha256": "187e0c920512f3880ba01caf5d75732e138702dc76cf75214260d14996c4e3dd"
+    },
+    {
+      "path": "packages/contracts/src/uploads.ts",
+      "bytes": 3793,
+      "sha256": "9a1db6da6d4c892ed1bc0e09436c133ded13cc5f32034258a5a366ccede15c38"
+    },
+    {
+      "path": "packages/db/drizzle/0009_phase_10_android.sql",
+      "bytes": 2128,
+      "sha256": "e749f32760f0f0bcd643e674fd62365c8ca716f8acf793314fbd3e465b910939"
+    },
+    {
+      "path": "packages/db/drizzle/meta/0009_snapshot.json",
+      "bytes": 132857,
+      "sha256": "ed56ff89c6699d21d99c02765e7d6a97b5f572166c1ec864732f87138ff12a6a"
+    },
+    {
+      "path": "packages/db/drizzle/meta/_journal.json",
+      "bytes": 1565,
+      "sha256": "fbb6f8930dd88225ff953c0815a0355541d65bdbf519ba467849aa54bd46bb67"
+    },
+    {
+      "path": "packages/db/drizzle/phase8_readiness.json",
+      "bytes": 133400,
+      "sha256": "3ce182122c9530e0de0c57f43dbc04deb66df24f9b0f09c6a9c44472dce2fc1b"
+    },
+    {
+      "path": "packages/db/scripts/migrate-phase-10.ts",
+      "bytes": 3333,
+      "sha256": "94703c8f87e000a5f0c2c43efabc770f50d0e4477edc0c9e7a8623dc036051a3"
+    },
+    {
+      "path": "packages/db/src/album-repository.ts",
+      "bytes": 117851,
+      "sha256": "6c17859f47302bcf9664cddb6af3b9e2e8673bd9908bcfc873d634fba1394bb3"
+    },
+    {
+      "path": "packages/db/src/auth-repository.ts",
+      "bytes": 18896,
+      "sha256": "299595db009196510d9bedc70373f017b7b9815668ad0d338feb576d16c17966"
+    },
+    {
+      "path": "packages/db/src/index.ts",
+      "bytes": 2220,
+      "sha256": "014b79f9f4580d690ec83595daa98b74b37d9d3cb5531e7fded83111b98bf5f8"
+    },
+    {
+      "path": "packages/db/src/migration-readiness.ts",
+      "bytes": 21726,
+      "sha256": "6bb208404cf4b7ff0cb0b5f082d8c7b790f3af612d7f6623a0b978cccea1b481"
+    },
+    {
+      "path": "packages/db/src/phase10-migration.test.ts",
+      "bytes": 3037,
+      "sha256": "412bf9c4596bdecab147452cd3f80019f5a5762081aac5b3f22bbfcc22da364c"
+    },
+    {
+      "path": "packages/db/src/phase1c-repository.ts",
+      "bytes": 24503,
+      "sha256": "efc26ea219a5c33ec0590b48b4b8cab2d655db95aa41b8ae2febacb6a9bd2c30"
+    },
+    {
+      "path": "packages/db/src/phase3-schema.test.ts",
+      "bytes": 4193,
+      "sha256": "ac3633bbb81f7a336128cfe9fa479aa85aede4877bf367bac5ed29edc8aed20c"
+    },
+    {
+      "path": "packages/db/src/phase4-migration.test.ts",
+      "bytes": 8190,
+      "sha256": "cc1aed5c63792b2957c9a1340cb77ea03607213789b0b6f31fc387e5baa88806"
+    },
+    {
+      "path": "packages/db/src/phase7-migration.test.ts",
+      "bytes": 9505,
+      "sha256": "1888d73b85f8a8b35e4f16f76be7d980f53dd6f9dc65bd73d01879d0d4cd859c"
+    },
+    {
+      "path": "packages/db/src/schema.ts",
+      "bytes": 64756,
+      "sha256": "1c277f6632e4c0527d72ebe6f6c2d3dcc855cc7d0059a51b3acb441e0b86be3e"
+    },
+    {
+      "path": "packages/db/src/upload-completion.ts",
+      "bytes": 14521,
+      "sha256": "c25334aaf0807bb5939b3f122718e92441dec1fb008f16b3f777602c48848d8f"
+    },
+    {
+      "path": "packages/db/src/upload-repository.ts",
+      "bytes": 47049,
+      "sha256": "e6a932922ada228c19d1e6310834d4419ffa1854a1aabea98ffcf3369361203a"
+    },
+    {
+      "path": "patches/expo-file-system@57.0.7.patch",
+      "bytes": 937,
+      "sha256": "da3b165a518bedd3b35890e32620dfc1c7543de7753a86ed34db6119cc3b69b8"
+    },
+    {
+      "path": "playwright.phase10-client.config.ts",
+      "bytes": 730,
+      "sha256": "370b9d171812f7bce926457afa0e8ae299f28c7b1f7406514e8f09160af5ce86"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "bytes": 381266,
+      "sha256": "5eeae82eb63ec105efb494ea5f2a584e0078f0e269b6cbeb7cc1ce9d29f02674"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "bytes": 168,
+      "sha256": "253af976a8c205dbfd94016c68f50eb5da04d9dd37803d496563866e346e625b"
+    },
+    {
+      "path": "project-spec/PROJECT.md",
+      "bytes": 6706,
+      "sha256": "13ee436597d4a3b9d70684a52fef2a2757afb21ffb0c2eb7f40d0cbbb0c4a651"
+    },
+    {
+      "path": "project-spec/README.md",
+      "bytes": 3447,
+      "sha256": "378d3dbbc00611401ea7d470ef3cce8b3fc19dd5877a8e3185a64378792c95d4"
+    },
+    {
+      "path": "project-spec/ROADMAP.md",
+      "bytes": 5838,
+      "sha256": "83e3c59df95279095108fcf5b8b0d415c5ec7d4f5306549b3072c01fa063ad7d"
+    },
+    {
+      "path": "tests/e2e-native/NativeClientInstrumentation.java",
+      "bytes": 11285,
+      "sha256": "ed94480b5fbcf662bce232f863ae995edc2599bd1e5232fa6363fdfd0b74d184"
+    },
+    {
+      "path": "tests/e2e-native/build-instrumentation.py",
+      "bytes": 1890,
+      "sha256": "111b38abb5499cab329598bcb646531b87d37723f1bd62298e1c1730ece181f1"
+    },
+    {
+      "path": "tests/e2e-native/open-invitation.py",
+      "bytes": 738,
+      "sha256": "3d91eb1e0b1d6e186c54cea606e67d66047ed537cd9169fb05b482a13a74aeb2"
+    },
+    {
+      "path": "tests/e2e-native/prepare-invitation.ts",
+      "bytes": 2550,
+      "sha256": "5bb0997736867d13775f4ac84b608b13afb6f1ef2f51c23cde0d91283c28374a"
+    },
+    {
+      "path": "tests/e2e-native/run-ui-phase.py",
+      "bytes": 1256,
+      "sha256": "04f383ae725b61fb2622b299b15ebfc4921319bb31effb65533eb6c0020472b4"
+    },
+    {
+      "path": "tests/e2e-native/start-dev-harness.ts",
+      "bytes": 5003,
+      "sha256": "323977011cb0542be5087e41ab0061cfc9d84eb896000319a67447a2481d509c"
+    },
+    {
+      "path": "tests/e2e-web/memories-validation.spec.ts",
+      "bytes": 9477,
+      "sha256": "10dbd340633c3cb7a42930c01dff449742d9c8fddc833ba3299472053b71cc77"
+    },
+    {
+      "path": "tests/e2e-web/phase10-mobile-client.spec.ts",
+      "bytes": 15525,
+      "sha256": "af8e1432b217a17fc437fbf6cf5238a3f7453dab933db28fe7b70b3959a16bf4"
+    },
+    {
+      "path": "tests/e2e-web/phase10-upload-panel-isolated.mjs",
+      "bytes": 5927,
+      "sha256": "053b6888332c6d9d6a64f29f7f21e83335b609f29fdc2f58dab63aff7689a615"
+    },
+    {
+      "path": "tests/e2e-web/run-suites.mjs",
+      "bytes": 1577,
+      "sha256": "4cd62170fb62857823ce7c25cab44e40efe013e0ddfcb0a68653c0cb6f605857"
+    },
+    {
+      "path": "tests/e2e-web/start-web-https.mjs",
+      "bytes": 5190,
+      "sha256": "163037a2bc65bfcbf04488996ac31e42c9055c4a5f2298fb4a8a3154d4956acc"
+    },
+    {
+      "path": "tests/integration/phase10-server.test.ts",
+      "bytes": 40926,
+      "sha256": "8280f6c9ec7126db06739ee72f5d8a167201b3f6d494917020b59870277fc9af"
+    }
+  ],
+  "excludedLocalOnly": [
+    "apps/web/AGENTS.md",
+    "apps/web/CLAUDE.md",
+    "docs/progress/phase10-client-artifacts/native-partial-observer-source.txt",
+    "docs/progress/phase10-branding-artifacts/visible/web-visible-check.mjs",
+    "docs/progress/phase10-branding-artifacts/visible/native-brand-login.xml",
+    "docs/progress/phase10-branding-artifacts/visible/native-brand-label.xml",
+    "raw logs",
+    "APK / keystores / TLS material / generated native project / .cache"
+  ],
+  "documentFormattingOnly": [
+    "docs/progress/PHASE-10-SERVER-IMPLEMENTATION-HANDOFF.md",
+    "docs/progress/PHASE-10-SERVER-INDEPENDENT-REVIEW.md"
+  ],
+  "diffCheckPatchException": "Unified diff whitespace context retained byte-for-byte; no patch/lock change"
+}

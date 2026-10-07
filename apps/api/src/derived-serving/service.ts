@@ -88,6 +88,7 @@ export class DerivedReadService {
           userId: context.identity.userId,
           sessionId: context.identity.sessionId,
           tokenHash: context.tokenHash,
+          expectedClientType: context.expectedClientType ?? "WEB",
         },
         expected: view,
       });

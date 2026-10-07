@@ -59,3 +59,10 @@ mysql-data/
 
 # Generated from the pinned official MapLibre npm dependency at dev/build.
 apps/web/public/vendor/maplibre-*/
+
+# Expo native project is reproducible from app.json + local config plugins.
+apps/mobile/android/
+*.keystore
+*.jks
+*.apk
+*.aab

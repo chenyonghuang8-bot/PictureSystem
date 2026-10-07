@@ -15,8 +15,8 @@ import {
   purgeStatusResponseSchema,
 } from "@family-album/contracts";
 import {
-  readWebSessionCookie,
-  requireTrustedJsonOrigin,
+  readSessionCredential,
+  requireSessionJsonMutation,
 } from "../auth/http.js";
 import { PublicAuthError, type AuthService } from "../auth/service.js";
 import type { TrashService } from "./service.js";
@@ -30,16 +30,19 @@ export function registerTrashRoutes(
   },
 ) {
   const authenticate = async (request: FastifyRequest) => {
-    const token = readWebSessionCookie(request);
-    if (!token) throw new PublicAuthError(401, "UNAUTHENTICATED");
-    return options.authService.authenticate(token);
+    const credential = readSessionCredential(request);
+    if (!credential) throw new PublicAuthError(401, "UNAUTHENTICATED");
+    return options.authService.authenticate(
+      credential.token,
+      credential.expectedClientType,
+    );
   };
   app.post(
     "/api/v1/families/:familyId/trash/:mediaId/permanent-delete",
     { bodyLimit: 4096 },
     async (request, reply) =>
       handle(request, reply, async () => {
-        requireTrustedJsonOrigin(request, options.trustedOrigins);
+        requireSessionJsonMutation(request, options.trustedOrigins);
         const params = trashMediaParamsSchema.parse(request.params),
           body = permanentDeleteRequestSchema.parse(request.body);
         const result = await options.trashService.permanentDelete(
@@ -93,7 +96,7 @@ export function registerTrashRoutes(
     { bodyLimit: 4096 },
     async (request, reply) =>
       handle(request, reply, async () => {
-        requireTrustedJsonOrigin(request, options.trustedOrigins);
+        requireSessionJsonMutation(request, options.trustedOrigins);
         const params = trashMediaParamsSchema.parse(request.params),
           body = trashRequestSchema.parse(request.body);
         const result = await options.trashService.mutate(
@@ -114,7 +117,7 @@ export function registerTrashRoutes(
     { bodyLimit: 4096 },
     async (request, reply) =>
       handle(request, reply, async () => {
-        requireTrustedJsonOrigin(request, options.trustedOrigins);
+        requireSessionJsonMutation(request, options.trustedOrigins);
         const params = trashMediaParamsSchema.parse(request.params),
           body = restoreRequestSchema.parse(request.body);
         const result = await options.trashService.mutate(

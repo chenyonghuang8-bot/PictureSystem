@@ -932,6 +932,7 @@ function actor(context: AuthContext) {
     userId: context.identity.userId,
     sessionId: context.identity.sessionId,
     tokenHash: context.tokenHash,
+    expectedClientType: context.expectedClientType ?? "WEB",
   };
 }
 

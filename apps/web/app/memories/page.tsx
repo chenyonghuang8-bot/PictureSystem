@@ -14,7 +14,12 @@ export default async function MemoriesPage({
       query = searchParams ? await searchParams : {};
     const kind = memoriesKindSchema.parse(query.kind ?? "ON_THIS_DAY");
     return (
-      <GalleryShell familyName={family.familyName} active="memories">
+      <GalleryShell
+        userId={family.userId}
+        familyId={family.familyId}
+        familyName={family.familyName}
+        active="memories"
+      >
         <header className="gallery-home-header">
           <h1>回忆</h1>
         </header>

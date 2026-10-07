@@ -77,3 +77,52 @@ export const uploadFinalizeResponseSchema = z
     completedAt: z.iso.datetime(),
   })
   .strict();
+
+export const uploadOperationIdSchema = z
+  .string()
+  .regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+  );
+export const uploadTargetIdsSchema = z
+  .array(
+    z
+      .string()
+      .regex(/^[1-9][0-9]{0,19}$/u)
+      .refine((id) => BigInt(id) <= 18446744073709551615n),
+  )
+  .min(1)
+  .max(20)
+  .refine((ids) =>
+    ids.every((id, i) => i === 0 || BigInt(ids[i - 1]!) < BigInt(id)),
+  );
+export const uploadTargetsRequestSchema = z
+  .object({ albumIds: uploadTargetIdsSchema })
+  .strict();
+export const uploadResultResponseSchema = z
+  .object({
+    uploadId: z.string().regex(/^[0-9a-f]{32}$/u),
+    state: uploadStatusResponseSchema.shape.state,
+    declaredSize: z.string().regex(/^[1-9][0-9]*$/u),
+    committedOffset: z.string().regex(/^(?:0|[1-9][0-9]*)$/u),
+    processing: z.enum(["PENDING", "READY", "FAILED", "UNAVAILABLE"]),
+    placement: z.enum(["PENDING", "NEEDS_ALBUM_ACTION", "APPLIED"]),
+    retryable: z.boolean(),
+    mediaId: z
+      .string()
+      .regex(/^[1-9][0-9]*$/u)
+      .optional(),
+    albumId: z
+      .string()
+      .regex(/^[1-9][0-9]*$/u)
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (value) => (value.mediaId === undefined) === (value.albumId === undefined),
+  )
+  .refine(
+    (value) =>
+      value.mediaId === undefined ||
+      (value.processing === "READY" && value.placement === "APPLIED"),
+  );
+export type UploadPublicResult = z.infer<typeof uploadResultResponseSchema>;

@@ -62,6 +62,8 @@ describe("Phase 3B Drizzle schema", () => {
     const config = getTableConfig(uploadSessions);
     expect(config.indexes.map((item) => item.config.name)).toEqual([
       "uq_upload_sessions_public_id",
+      "uq_upload_sessions_operation",
+      "uq_upload_sessions_family_id",
       "uq_upload_sessions_family_id_object",
       "idx_upload_sessions_family_creator_state",
       "idx_upload_sessions_state_expiry",
@@ -75,6 +77,7 @@ describe("Phase 3B Drizzle schema", () => {
       "fk_upload_sessions_retired_purge",
     ]);
     expect(config.checks.map((item) => item.name)).toEqual([
+      "chk_upload_sessions_operation_pair",
       "chk_upload_sessions_size_offset",
       "chk_upload_sessions_expiry",
       "chk_upload_sessions_created",

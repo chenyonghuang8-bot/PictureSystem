@@ -190,19 +190,41 @@ describe("Phase 7A migration static safety", () => {
     ]) {
       const config = getTableConfig(table),
         snapshot = next.tables[config.name]!;
-      expect(config.columns.map((column) => column.name).sort()).toEqual(
+      // Compare the frozen 0007 topology, excluding only the explicit additive
+      // 0009 upload extension (independently checked in phase10-migration).
+      const columns = config.columns.filter(
+        (column) =>
+          table !== uploadSessions ||
+          !["client_operation_id", "client_operation_fingerprint"].includes(
+            column.name,
+          ),
+      );
+      const indexes = config.indexes.filter(
+        (index) =>
+          table !== uploadSessions ||
+          ![
+            "uq_upload_sessions_operation",
+            "uq_upload_sessions_family_id",
+          ].includes(index.config.name),
+      );
+      const checks = config.checks.filter(
+        (check) =>
+          table !== uploadSessions ||
+          check.name !== "chk_upload_sessions_operation_pair",
+      );
+      expect(columns.map((column) => column.name).sort()).toEqual(
         Object.keys(snapshot.columns).sort(),
       );
-      for (const column of config.columns) {
+      for (const column of columns) {
         expect(snapshot.columns[column.name]).toMatchObject({
           type: column.getSQLType(),
           notNull: column.notNull,
         });
       }
-      expect(config.indexes.map((index) => index.config.name).sort()).toEqual(
+      expect(indexes.map((index) => index.config.name).sort()).toEqual(
         Object.keys(snapshot.indexes).sort(),
       );
-      for (const index of config.indexes) {
+      for (const index of indexes) {
         expect(snapshot.indexes[index.config.name]).toMatchObject({
           columns: index.config.columns.map((column) =>
             "name" in column ? column.name : dialect.sqlToQuery(column).sql,
@@ -213,10 +235,10 @@ describe("Phase 7A migration static safety", () => {
       expect(config.foreignKeys.map((key) => key.getName()).sort()).toEqual(
         Object.keys(snapshot.foreignKeys).sort(),
       );
-      expect(config.checks.map((check) => check.name).sort()).toEqual(
+      expect(checks.map((check) => check.name).sort()).toEqual(
         Object.keys(snapshot.checkConstraint).sort(),
       );
-      for (const check of config.checks) {
+      for (const check of checks) {
         expect(snapshot.checkConstraint[check.name]!.value).toBe(
           dialect.sqlToQuery(check.value).sql,
         );

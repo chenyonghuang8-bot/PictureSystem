@@ -19,8 +19,10 @@ import {
 } from "@family-album/contracts";
 
 import {
-  readWebSessionCookie,
+  readSessionCredential,
   requireTrustedJsonOrigin,
+  requireSessionJsonMutation,
+  requireNativeJson,
 } from "../auth/http.js";
 import { PublicAuthError, type AuthService } from "../auth/service.js";
 import type { Phase1CService } from "./service.js";
@@ -47,7 +49,7 @@ export function registerPhase1CRoutes(
     { bodyLimit: 16_384 },
     async (request, reply) =>
       handlePhase1C(request, reply, "invitation_created", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         const { familyId } = familyParamsSchema.parse(request.params);
         const body = createInvitationRequestSchema.parse(request.body);
         const context = await authenticate(request, authService);
@@ -102,7 +104,7 @@ export function registerPhase1CRoutes(
     "/api/v1/families/:familyId/invitations/:invitationId/revoke",
     async (request, reply) =>
       handlePhase1C(request, reply, "invitation_revoked", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         emptyObjectRequestSchema.parse(request.body);
         const { familyId, invitationId } = invitationParamsSchema.parse(
           request.params,
@@ -168,6 +170,51 @@ export function registerPhase1CRoutes(
       }),
   );
 
+  app.post(
+    "/api/v1/android/invitations/preview",
+    { bodyLimit: 16_384 },
+    async (request, reply) =>
+      handlePhase1C(request, reply, "invitation_preview", async () => {
+        requireNativeJson(request);
+        if (request.headers.authorization !== undefined) {
+          throw new PublicAuthError(400, "INVALID_REQUEST");
+        }
+        const { token } = invitationTokenRequestSchema.parse(request.body);
+        const preview = await phase1cService.previewInvitation(
+          token,
+          request.ip,
+        );
+        return reply.send(
+          invitationPreviewResponseSchema.parse({
+            ...preview,
+            expiresAt: preview.expiresAt.toISOString(),
+          }),
+        );
+      }),
+  );
+
+  app.post(
+    "/api/v1/android/invitations/consume",
+    { bodyLimit: 16_384 },
+    async (request, reply) =>
+      handlePhase1C(request, reply, "invitation_consumed", async () => {
+        requireNativeJson(request);
+        if (request.headers.authorization !== undefined) {
+          throw new PublicAuthError(400, "INVALID_REQUEST");
+        }
+        const body = consumeInvitationRequestSchema.parse(request.body);
+        const consumed = await phase1cService.consumeInvitation(
+          body,
+          request.ip,
+        );
+        logSecurityEvent(request, "invitation_consumed", {
+          familyId: consumed.familyId,
+          targetMemberId: consumed.memberId,
+        });
+        return reply.status(201).send();
+      }),
+  );
+
   app.get("/api/v1/families/:familyId/members", async (request, reply) =>
     handlePhase1C(request, reply, "member_list", async () => {
       const { familyId } = familyParamsSchema.parse(request.params);
@@ -186,7 +233,7 @@ export function registerPhase1CRoutes(
     { bodyLimit: 16_384 },
     async (request, reply) =>
       handlePhase1C(request, reply, "member_changed", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         const { familyId, memberId } = memberParamsSchema.parse(request.params);
         const body = updateMemberRequestSchema.parse(request.body);
         const context = await authenticate(request, authService);
@@ -243,9 +290,9 @@ export async function handlePhase1C(
 }
 
 async function authenticate(request: FastifyRequest, service: AuthService) {
-  const token = readWebSessionCookie(request);
-  if (!token) throw new PublicAuthError(401, "UNAUTHENTICATED");
-  return service.authenticate(token);
+  const credential = readSessionCredential(request);
+  if (!credential) throw new PublicAuthError(401, "UNAUTHENTICATED");
+  return service.authenticate(credential.token, credential.expectedClientType);
 }
 
 function memberDto(member: {
@@ -327,6 +374,7 @@ function isValidationError(error: unknown) {
 export function isPhase1CPath(url: string) {
   return (
     url.startsWith("/api/v1/families/") ||
-    url.startsWith("/api/v1/invitations/")
+    url.startsWith("/api/v1/invitations/") ||
+    url.startsWith("/api/v1/android/invitations/")
   );
 }

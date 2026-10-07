@@ -20,7 +20,10 @@ for (const suite of suites) {
       "playwright",
       "test",
       "--config",
-      "playwright.web.config.ts",
+      suite === "phase10-mobile-client.spec.ts" ||
+      Boolean(process.env.PHASE10_CLIENT_TLS_CERT_FILE)
+        ? "playwright.phase10-client.config.ts"
+        : "playwright.web.config.ts",
       `tests/e2e-web/${suite}`,
       ...process.argv.slice(2),
     ],
@@ -29,7 +32,10 @@ for (const suite of suites) {
       stdio: "inherit",
       env: {
         ...process.env,
-        ...(suite === "memories-validation.spec.ts"
+        ...([
+          "memories-validation.spec.ts",
+          "phase10-mobile-client.spec.ts",
+        ].includes(suite)
           ? {
               DEV_MEDIA_PIPELINE_ENABLED: "1",
               LOCATION_DATA_DIR: resolve(root, "resources/location/2026-10-03"),

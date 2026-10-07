@@ -11,6 +11,8 @@ import { UploadMutex } from "./mutex.js";
 export type TusRequestContext = {
   auth: AuthContext;
   familyId?: string;
+  clientOperationId?: Buffer;
+  targetAlbumIds?: readonly string[];
 };
 
 export class Phase3TusDataStore extends DataStore {
@@ -34,7 +36,16 @@ export class Phase3TusDataStore extends DataStore {
       declaredSize: BigInt(upload.size),
       filename: upload.metadata?.filename,
       reportedMime: upload.metadata?.filetype,
+      ...(context.clientOperationId
+        ? {
+            clientOperationId: context.clientOperationId,
+            targetAlbumIds: context.targetAlbumIds!,
+          }
+        : {}),
     });
+    // @tus/server PostHandler ignores the datastore return value and reads this object.
+    upload.id = created.publicId;
+    upload.offset = safeNumber(created.committedOffset);
     return toTusUpload(created);
   }
 

@@ -8,6 +8,7 @@ import type { Readable } from "node:stream";
 
 import {
   CommitOutcomeUnknownError,
+  AlbumRepositoryError,
   type MySqlUploadRepository,
   TransactionRollbackFailedError,
   UploadRepositoryError,
@@ -34,6 +35,11 @@ const FINALIZE_TIMEOUT_MS = 15 * 60_000;
 export type UploadRepository = Pick<
   MySqlUploadRepository,
   | "admissionUsage"
+  | "findOperation"
+  | "discoverPlacementKey"
+  | "result"
+  | "replaceTargets"
+  | "place"
   | "createUpload"
   | "inspect"
   | "advanceOffset"
@@ -109,10 +115,20 @@ export class UploadService {
       declaredSize: bigint;
       filename: unknown;
       reportedMime: unknown;
+      clientOperationId?: Buffer;
+      targetAlbumIds?: readonly string[];
     },
   ) {
-    const filename = validateFilename(input.filename);
-    const reportedMime = validateMime(input.reportedMime);
+    const filename = validateFilename(
+      input.clientOperationId && typeof input.filename === "string"
+        ? input.filename.normalize("NFC")
+        : input.filename,
+    );
+    const reportedMime = validateMime(
+      input.clientOperationId && typeof input.reportedMime === "string"
+        ? input.reportedMime.trim().toLowerCase()
+        : input.reportedMime,
+    );
     if (input.declaredSize <= 0n || input.declaredSize > MAX_FILE_SIZE) {
       throw new UploadServiceError(413, "UPLOAD_TOO_LARGE");
     }
@@ -121,40 +137,53 @@ export class UploadService {
         throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
       }
       try {
-        return await this.sharedCapacityGate.withAdmissionLock(
+        const admitted = await this.sharedCapacityGate.withAdmissionLock(
           async (deadline, snapshot) => {
-            const root = this.requireWritable();
-            const upload = await this.database(() =>
-              this.repository.createUploadCapacityAdmitted!(
-                {
-                  actor: actor(context),
-                  familyId: input.familyId,
-                  publicId: input.publicId,
-                  originalFilename: filename,
-                  reportedMime,
-                  declaredSize: input.declaredSize,
-                },
-                deadline,
-                snapshot,
-              ),
-            );
-            if (performance.now() >= deadline) {
-              throw new UploadServiceError(503, "OUTCOME_UNKNOWN");
-            }
             try {
-              root.createUploadPayload(upload.familyId, upload.publicId);
-            } catch {
-              await this.database(() =>
-                this.repository.markFailed(
-                  input.publicId,
-                  "STAGING_CREATE_FAILED",
+              const root = this.requireWritable();
+              const upload = await this.database(() =>
+                this.repository.createUploadCapacityAdmitted!(
+                  {
+                    actor: actor(context),
+                    familyId: input.familyId,
+                    publicId: input.publicId,
+                    originalFilename: filename,
+                    reportedMime,
+                    declaredSize: input.declaredSize,
+                    ...(input.clientOperationId
+                      ? {
+                          clientOperationId: input.clientOperationId,
+                          targetAlbumIds: input.targetAlbumIds!,
+                        }
+                      : {}),
+                  },
+                  deadline,
+                  snapshot,
                 ),
               );
-              throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
+              if (performance.now() >= deadline) {
+                throw new UploadServiceError(503, "OUTCOME_UNKNOWN");
+              }
+              if (upload.reused) return { upload };
+              try {
+                root.createUploadPayload(upload.familyId, upload.publicId);
+              } catch {
+                await this.database(() =>
+                  this.repository.markFailed(
+                    Buffer.from(upload.publicId, "hex"),
+                    "STAGING_CREATE_FAILED",
+                  ),
+                );
+                throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
+              }
+              return { upload };
+            } catch (error) {
+              return { error };
             }
-            return upload;
           },
         );
+        if ("error" in admitted) throw admitted.error;
+        return admitted.upload;
       } catch (error) {
         if (error instanceof UploadServiceError) throw error;
         throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
@@ -162,6 +191,31 @@ export class UploadService {
     }
     return this.withAdmission(async () => {
       const root = this.requireWritable();
+      if (input.clientOperationId) {
+        try {
+          await this.database(() =>
+            this.repository.findOperation({
+              actor: actor(context),
+              familyId: input.familyId,
+              clientOperationId: input.clientOperationId!,
+            }),
+          );
+          // Repository create still checks the immutable fingerprint under the family lock.
+          return await this.database(() =>
+            this.repository.createUpload({
+              actor: actor(context),
+              ...input,
+              originalFilename: filename,
+              reportedMime,
+            }),
+          );
+        } catch (error) {
+          if (!(
+            error instanceof UploadServiceError && error.code === "NOT_FOUND"
+          ))
+            throw error;
+        }
+      }
       const usage = await this.database(() => this.repository.admissionUsage());
       if (
         usage.outstanding + input.declaredSize >
@@ -195,18 +249,76 @@ export class UploadService {
           originalFilename: filename,
           reportedMime,
           declaredSize: input.declaredSize,
+          ...(input.clientOperationId
+            ? {
+                clientOperationId: input.clientOperationId,
+                targetAlbumIds: input.targetAlbumIds!,
+              }
+            : {}),
         }),
       );
+      if (upload.reused) return upload;
       try {
         root.createUploadPayload(upload.familyId, upload.publicId);
       } catch {
         await this.database(() =>
-          this.repository.markFailed(publicId, "STAGING_CREATE_FAILED"),
+          this.repository.markFailed(
+            Buffer.from(upload.publicId, "hex"),
+            "STAGING_CREATE_FAILED",
+          ),
         );
         throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
       }
       return upload;
     });
+  }
+
+  async result(context: AuthContext, publicId: Buffer) {
+    return this.database(() =>
+      this.repository.result(actor(context), publicId),
+    );
+  }
+  async targets(
+    context: AuthContext,
+    publicId: Buffer,
+    albumIds: readonly string[],
+  ) {
+    await this.database(() =>
+      this.repository.replaceTargets(actor(context), publicId, albumIds),
+    );
+    return this.result(context, publicId);
+  }
+  async placement(context: AuthContext, publicId: Buffer) {
+    const key = await this.database(() =>
+      this.repository.discoverPlacementKey(actor(context), publicId),
+    );
+    const lifecycle = await new ContentCoordination(this.requireReadable(), {
+      familyId: key.familyId,
+      sha256Hex: key.sha256.toString("hex"),
+      byteSize: key.byteSize,
+    }).acquireLifecycle("S", 30_000);
+    try {
+      await this.database(() =>
+        this.repository.place(actor(context), publicId, key),
+      );
+    } finally {
+      lifecycle.close();
+    }
+    return this.result(context, publicId);
+  }
+
+  async operation(
+    context: AuthContext,
+    familyId: string,
+    clientOperationId: Buffer,
+  ) {
+    return this.database(() =>
+      this.repository.findOperation({
+        actor: actor(context),
+        familyId,
+        clientOperationId,
+      }),
+    );
   }
 
   async head(context: AuthContext, publicId: Buffer) {
@@ -922,6 +1034,20 @@ export class UploadService {
         const [status, code] = map[error.reason];
         throw new UploadServiceError(status, code, error.currentOffset);
       }
+      if (error instanceof AlbumRepositoryError) {
+        throw new UploadServiceError(
+          error.reason === "UNAUTHENTICATED"
+            ? 401
+            : error.reason === "FORBIDDEN" || error.reason === "NOT_FOUND"
+              ? 404
+              : 409,
+          error.reason === "UNAUTHENTICATED"
+            ? "UNAUTHENTICATED"
+            : error.reason === "FORBIDDEN" || error.reason === "NOT_FOUND"
+              ? "NOT_FOUND"
+              : "UPLOAD_STATE_CONFLICT",
+        );
+      }
       if (error instanceof PublicAuthError) throw error;
       throw new UploadServiceError(
         503,
@@ -952,6 +1078,7 @@ function actor(context: AuthContext) {
     userId: context.identity.userId,
     sessionId: context.identity.sessionId,
     tokenHash: context.tokenHash,
+    expectedClientType: context.expectedClientType ?? "WEB",
   };
 }
 

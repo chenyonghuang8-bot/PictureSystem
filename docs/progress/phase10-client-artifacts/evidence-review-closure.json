@@ -1,0 +1,393 @@
+{
+  "createdUTC": "2026-10-06T11:33:53.877342+00:00",
+  "head": "6510261f920b5ebe6d98d1cefa3227fb221bbd5f",
+  "scope": "C1_C4_REVIEW_FIX_CANDIDATE_PENDING_TARGETED_INDEPENDENT_REVIEW",
+  "sourceFiles": [
+    {
+      "path": "apps/mobile/.env.example",
+      "sha256": "ab1ba88ffc8fa55bee2e9aee09f7e14d413afa8a3df560349146fe6e74d21c60"
+    },
+    {
+      "path": "apps/mobile/app.json",
+      "sha256": "6c563b92d5c098440d6e98587ac7bf7f165fee3bee78c5b5122aa06ec74e116c"
+    },
+    {
+      "path": "apps/mobile/app/_layout.tsx",
+      "sha256": "74c5845ab4cdfa4bff7c3e9d04480c720d1ca97d76d1b3db549eda5168eccff5"
+    },
+    {
+      "path": "apps/mobile/app/index.tsx",
+      "sha256": "d6c1f00c3b3d52b5bb3ce95b9905eb5d67e0234f54567650371708f3ebb1e6cf"
+    },
+    {
+      "path": "apps/mobile/index.ts",
+      "sha256": "6b8bcad523cbb11c949121c356427d9aea86390ff4eb1ca5f2026df3c5a4ebdc"
+    },
+    {
+      "path": "apps/mobile/lib/filesystem-test-adapter.ts",
+      "sha256": "e8a205226480684ea20c3c508e9d3d622a98533e3b22b60f162bf273b886aedd"
+    },
+    {
+      "path": "apps/mobile/lib/invitations.ts",
+      "sha256": "986453c5877aed7c347cbbf20ef33dcedec301cd967cd272763f58aaca501dfc"
+    },
+    {
+      "path": "apps/mobile/lib/media.tsx",
+      "sha256": "a98469b834c08887c35e9da5e4854d0f70b4b140d12fff241ce33cd68e97ca43"
+    },
+    {
+      "path": "apps/mobile/lib/queue.test.ts",
+      "sha256": "5bc17dc4cef11b7c64317e221efb674c6efa905a81afa1b464998029cc5a29b5"
+    },
+    {
+      "path": "apps/mobile/lib/queue.ts",
+      "sha256": "54d90d96c10e69b77333f731a58ac33df0c388c814766b643c2fda7cca90dcb1"
+    },
+    {
+      "path": "apps/mobile/lib/session.test.ts",
+      "sha256": "e927ef2bf8e89ee21c120a2d0f66590c1e41f56d28d3fae779f6421285a7fd20"
+    },
+    {
+      "path": "apps/mobile/lib/session.ts",
+      "sha256": "555b4901ed803525c713bc7c01e4ed81123d2ecc25e8f98dbf5fccb8ceca2b6e"
+    },
+    {
+      "path": "apps/mobile/metro.config.cjs",
+      "sha256": "77656e901930da2d788c444df7c9619efcfafd0da684c179cf63e190591526a1"
+    },
+    {
+      "path": "apps/mobile/package.json",
+      "sha256": "0467e4bb9b8bba1c72ea0d07967c618c1ac3b747ab7e91d82a2d621131514b7c"
+    },
+    {
+      "path": "apps/mobile/plugins/with-private-android.cjs",
+      "sha256": "07de45c53b3b4ddc45505594a9916faac490379de78cadb14b7b8eda965e541f"
+    },
+    {
+      "path": "apps/web/app/albums/[albumId]/page.tsx",
+      "sha256": "debe4ea7e89c8f122820e8ac6d6cad4c7f8c5cafe431c63899e45aa96912ca2f"
+    },
+    {
+      "path": "apps/web/app/albums/page.tsx",
+      "sha256": "fc4ab0688a9bc972326a6e333a209f20dd4a4da0c25bb8661e52df0bc6816d2b"
+    },
+    {
+      "path": "apps/web/app/login/page.tsx",
+      "sha256": "6d0f97928e1cc369d5107e854b215795744185d6f432a821eaa0a4315df88d1e"
+    },
+    {
+      "path": "apps/web/app/memories/page.tsx",
+      "sha256": "95b16a0186ab9eeafc940aeec14844184384cb2cd7dd0c8469881ab531235ce6"
+    },
+    {
+      "path": "apps/web/app/my/page.tsx",
+      "sha256": "cb16af1ea533f54e4998f9b1ec9fb91787dd30375fdd5ea465cf4788e8880e60"
+    },
+    {
+      "path": "apps/web/app/page.tsx",
+      "sha256": "f339329bb3fddf2d6a2f8d5357621c7d0e8e003a336507b1823f2da8efa46ca0"
+    },
+    {
+      "path": "apps/web/app/styles.css",
+      "sha256": "7be1e1bc0e0e62fac141f99a8c94386082a59168680244975c9a1e17769b5c09"
+    },
+    {
+      "path": "apps/web/components/gallery/shell.tsx",
+      "sha256": "84e095d9438f57b3291ba8545398b3f06e5a326971372c59d41ac75c805f781d"
+    },
+    {
+      "path": "apps/web/components/gallery/states.tsx",
+      "sha256": "97cb1d90b14f2d4d27d3245fb92b34c0856716f35d2f284316bcbea19e22c5aa"
+    },
+    {
+      "path": "apps/web/components/mobile/account.tsx",
+      "sha256": "4765e6554db82602d6e013b2d1540bb062b0f522879c333a9f8d70be76db81c9"
+    },
+    {
+      "path": "apps/web/components/mobile/upload-panel.tsx",
+      "sha256": "38386e2086058a0ecb23dba66034747df2e18c8263552f33346c5675868e1db2"
+    },
+    {
+      "path": "apps/web/lib/mobile-upload.ts",
+      "sha256": "59803455197c0fde3d168589cded43e227de4cc3556d43062d33f80ab9c4948d"
+    },
+    {
+      "path": "apps/web/lib/private-album-page.test.ts",
+      "sha256": "79dc3e88117047e39f440695a46a9976ce4501c3cffd864f8cc2b66c6d875bd2"
+    },
+    {
+      "path": "apps/web/lib/private-album-page.ts",
+      "sha256": "71e36a853e25b0ed043600572008f3a66688c019035cd162ed3b6366a7997a09"
+    },
+    {
+      "path": "eslint.config.mjs",
+      "sha256": "eeb82c7a14f48fe3c8d9191d61acf434600156d10817c6f6eb60a7e49f90d334"
+    },
+    {
+      "path": "packages/contracts/src/client-upload.test.ts",
+      "sha256": "a2f2ec5f061f015611e1e47662693f858de5565abc5ec81e1b367e2265400043"
+    },
+    {
+      "path": "packages/contracts/src/client-upload.ts",
+      "sha256": "c2c697e743c3ea910bab665a552d7893cb9732106a2baaf978da7d8709ba06c6"
+    },
+    {
+      "path": "packages/contracts/src/content-sha256.ts",
+      "sha256": "3a438b9057748f7088f5f7fd9b7014a1cf7da234e504ca8916b054b83fec78d2"
+    },
+    {
+      "path": "packages/contracts/src/index.ts",
+      "sha256": "187e0c920512f3880ba01caf5d75732e138702dc76cf75214260d14996c4e3dd"
+    },
+    {
+      "path": "playwright.phase10-client.config.ts",
+      "sha256": "8943a497652689d8aa9f48c202161f1267ac9c69f420416caa6e8a5aa2ac5550"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "sha256": "d769d04539a9d09474e1881d8968f735d45674813b3d1fb7ff34eba97875b838"
+    },
+    {
+      "path": "project-spec/ROADMAP.md",
+      "sha256": "83e3c59df95279095108fcf5b8b0d415c5ec7d4f5306549b3072c01fa063ad7d"
+    },
+    {
+      "path": "tests/e2e-web/phase10-mobile-client.spec.ts",
+      "sha256": "a8dc5bead60e9bc3aaacbd5abcd2bdd8b6b755ba10c3f0928100a00984d1f509"
+    },
+    {
+      "path": "tests/e2e-web/phase10-upload-panel-isolated.mjs",
+      "sha256": "053b6888332c6d9d6a64f29f7f21e83335b609f29fdc2f58dab63aff7689a615"
+    },
+    {
+      "path": "tests/e2e-web/run-suites.mjs",
+      "sha256": "15cbe54ed6aad070c704b7a08bb9dad64aec37af493b96e1a5bd061d0a434f63"
+    },
+    {
+      "path": "tests/e2e-web/start-web-https.mjs",
+      "sha256": "0ae6cf0aaafa69ab2029c5d5f455fc8190943f660711c16cc83d55a6a8cbc5a1"
+    }
+  ],
+  "logs": [
+    {
+      "path": "/tmp/phase10-checkpoint-client-final-tests.log",
+      "sha256": "8c7cb3f04a29411273ca8267cf4f678fed90dff3760edd684c42da386e931597",
+      "metadata": [
+        "UTC_START=2026-10-06T11:12:31.331870+00:00",
+        "COMMAND=pnpm exec vitest run --config vitest.config.ts packages/contracts/src/client-upload.test.ts apps/mobile/lib/session.test.ts apps/web/lib/gallery-client.test.ts apps/web/lib/memories-session.test.ts",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:12:31.844203+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-final-types.log",
+      "sha256": "1312da80658789bcaf30bdef5349b1ce09833f3619a30c21c0b1a8ff0d1b19a7",
+      "metadata": [
+        "UTC_START=2026-10-06T11:12:54.571446+00:00",
+        "COMMAND=pnpm --filter @family-album/contracts --filter @family-album/mobile --filter @family-album/web typecheck",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:12:56.411752+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-final-lint.log",
+      "sha256": "b789463c3a497176211abbf9c96ca0a11c0831c9115530bf68d7e2258ff12ee7",
+      "metadata": [
+        "UTC_START=2026-10-06T11:12:56.019627+00:00",
+        "COMMAND=pnpm exec eslint apps/mobile/app/index.tsx apps/mobile/index.ts apps/mobile/lib apps/mobile/plugins apps/mobile/metro.config.cjs apps/web/components/mobile apps/web/lib/mobile-upload.ts apps/web/app/login apps/web/app/my apps/web/components/gallery/shell.tsx packages/contracts/src/client-upload.ts packages/contracts/src/client-upload.test.ts packages/contracts/src/content-sha256.ts playwright.phase10-client.config.ts tests/e2e-web/phase10-mobile-client.spec.ts tests/e2e-web/start-web-https.mjs tests/e2e-web/run-suites.mjs --max-warnings=0",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:12:56.892857+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-final-format.log",
+      "sha256": "2ce79e8d563693aab6a1a9becf06f1f00a6a065d9027d8d32e4686364bc75700",
+      "metadata": [
+        "UTC_START=2026-10-06T11:13:14.159879+00:00",
+        "COMMAND=pnpm exec prettier --check apps/mobile/app/index.tsx apps/mobile/index.ts apps/mobile/lib apps/mobile/plugins apps/mobile/metro.config.cjs apps/mobile/app.json apps/mobile/package.json apps/web/components/mobile apps/web/lib/mobile-upload.ts apps/web/app/login apps/web/app/my apps/web/components/gallery/shell.tsx apps/web/components/gallery/states.tsx apps/web/app/styles.css packages/contracts/src/client-upload.ts packages/contracts/src/client-upload.test.ts packages/contracts/src/content-sha256.ts playwright.phase10-client.config.ts tests/e2e-web/phase10-mobile-client.spec.ts tests/e2e-web/start-web-https.mjs tests/e2e-web/run-suites.mjs",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:13:14.707214+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-web-delivery.log",
+      "sha256": "c3d07f3e9414d4cfd285e8438ebbff96b58c3eda72ebfd2d4e045c9bc9cc8b2a",
+      "metadata": [
+        "UTC_START=2026-10-06T11:12:07.088247+00:00",
+        "COMMAND=pnpm --filter @family-album/web build",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:12:17.138198+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-native-delivery.log",
+      "sha256": "3bbfd66fda69a708fc2965d729c44d9cd43ef95688dd9b5f7716881b8bedce16",
+      "metadata": [
+        "UTC_START=2026-10-06T11:12:53.165940+00:00",
+        "COMMAND=./gradlew :app:assembleDebug -PreactNativeArchitectures=arm64-v8a --console=plain --no-daemon",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:13:08.411318+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-h5.log",
+      "sha256": "0f1e94ebef40141f8356fe42850af8d0daacf75219b14630622c529843a707f2",
+      "metadata": [
+        "UTC_START=2026-10-06T10:45:34.067046+00:00",
+        "COMMAND=pnpm exec playwright test --config playwright.web.config.ts tests/e2e-web/phase10-mobile-client.spec.ts",
+        "EXIT_CODE=1",
+        "UTC_END=2026-10-06T10:46:01.405101+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-h5-strict-tls.log",
+      "sha256": "7e02a5ae95b68df66bbf38c92edd1cfa989c9396c7dd474778e4fda12c837f13",
+      "metadata": [
+        "UTC_START=2026-10-06T10:48:03.183970+00:00",
+        "COMMAND=pnpm exec playwright test --config playwright.phase10-client.config.ts tests/e2e-web/phase10-mobile-client.spec.ts",
+        "EXIT_CODE=1",
+        "UTC_END=2026-10-06T10:48:13.217997+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-h5-tls-preflight.log",
+      "sha256": "81657e2a1cbd6666cb4402c14eda9fa9b293e56f14acce9396348beb15f76f70",
+      "metadata": [
+        "UTC_START=2026-10-06T11:05:35.003792+00:00",
+        "COMMAND=pnpm exec playwright test --config playwright.phase10-client.config.ts tests/e2e-web/phase10-mobile-client.spec.ts",
+        "EXIT_CODE=1",
+        "UTC_END=2026-10-06T11:05:36.227274+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-review-fixes-tests.log",
+      "sha256": "93cf0bbe560dd8a8e09ca8e46a354ed792b5acf8c7207ba997738c57b2e44f6e",
+      "metadata": [
+        "UTC_START=2026-10-06T11:29:23.200032+00:00",
+        "COMMAND=pnpm exec vitest run --config vitest.config.ts packages/contracts/src/client-upload.test.ts apps/mobile/lib/session.test.ts apps/mobile/lib/queue.test.ts apps/web/lib/private-album-page.test.ts apps/web/lib/gallery-client.test.ts apps/web/lib/memories-session.test.ts",
+        "EXIT_CODE=1",
+        "UTC_END=2026-10-06T11:29:23.832382+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-review-fixes-types.log",
+      "sha256": "e6eb5a12e2a7117dc65979405253139f452da73fb26a79cf22afa8106c87501d",
+      "metadata": [
+        "UTC_START=2026-10-06T11:29:29.837323+00:00",
+        "COMMAND=pnpm --filter @family-album/contracts --filter @family-album/mobile --filter @family-album/web typecheck",
+        "EXIT_CODE=2",
+        "UTC_END=2026-10-06T11:29:31.430459+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-review-fixes-lint.log",
+      "sha256": "eef135f2fcaac74bec60eb3c50a3c0fda56d04bbf02d9db85aa0bf7ea0cdbae0",
+      "metadata": [
+        "UTC_START=2026-10-06T11:29:40.204994+00:00",
+        "COMMAND=pnpm exec eslint apps/mobile/lib apps/web/lib/private-album-page.ts apps/web/lib/private-album-page.test.ts apps/web/components/mobile/upload-panel.tsx --max-warnings=0",
+        "EXIT_CODE=1",
+        "UTC_END=2026-10-06T11:29:40.776579+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-review-fixes-dom.log",
+      "sha256": "69a10428d33ce2595c078cc9796ebb3fb8d7070081b2d07232aa3218dae54a3f",
+      "metadata": [
+        "UTC_START=2026-10-06T11:31:26.679107+00:00",
+        "COMMAND=node tests/e2e-web/phase10-upload-panel-isolated.mjs",
+        "EXIT_CODE=1",
+        "UTC_END=2026-10-06T11:31:26.872621+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-review-fixes-tests-final.log",
+      "sha256": "90ea41c65a470c9bc62a80780403acd0b7fce05c14bc8dd3fc292bec828ab9a6",
+      "metadata": [
+        "UTC_START=2026-10-06T11:31:56.150139+00:00",
+        "COMMAND=pnpm exec vitest run --config vitest.config.ts packages/contracts/src/client-upload.test.ts apps/mobile/lib/session.test.ts apps/mobile/lib/queue.test.ts apps/web/lib/private-album-page.test.ts apps/web/lib/gallery-client.test.ts apps/web/lib/memories-session.test.ts",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:31:56.765487+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-review-fixes-types-final.log",
+      "sha256": "ae2bedd3f12bc7f4ce3c694ce05fc34e1ce1bbec77f85a702e1bdc14b90f397d",
+      "metadata": [
+        "UTC_START=2026-10-06T11:30:02.276974+00:00",
+        "COMMAND=pnpm --filter @family-album/contracts --filter @family-album/mobile --filter @family-album/web typecheck",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:30:04.194966+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-review-fixes-lint-final.log",
+      "sha256": "327776d97164be850e42626d065ec3617853b6f0456a7c356d036727efb77757",
+      "metadata": [
+        "UTC_START=2026-10-06T11:32:36.944850+00:00",
+        "COMMAND=pnpm exec eslint apps/mobile/lib apps/web/lib/private-album-page.ts apps/web/lib/private-album-page.test.ts apps/web/components/mobile/upload-panel.tsx tests/e2e-web/phase10-upload-panel-isolated.mjs --max-warnings=0",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:32:37.590505+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-review-fixes-format.log",
+      "sha256": "deddee2279930cc49046a213dbb0bf16189d9c9d81bd7275b8aca4ef30faa518",
+      "metadata": [
+        "UTC_START=2026-10-06T11:33:53.458361+00:00",
+        "COMMAND=pnpm exec prettier --check apps/mobile/lib apps/web/lib/private-album-page.ts apps/web/lib/private-album-page.test.ts apps/web/components/mobile/upload-panel.tsx tests/e2e-web/phase10-upload-panel-isolated.mjs",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:33:53.852363+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-review-fixes-web-build.log",
+      "sha256": "0750a2371157d4b655aff2d860c15cd168cb182b16bf28912085a9f4323be3db",
+      "metadata": [
+        "UTC_START=2026-10-06T11:30:04.450696+00:00",
+        "COMMAND=pnpm --filter @family-album/web build",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:30:11.832596+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-review-fixes-apk.log",
+      "sha256": "23fd4ab4414ed642441420103b3778c39069586bcfbdda90b6abba86f0a55d6a",
+      "metadata": [
+        "UTC_START=2026-10-06T11:30:14.925361+00:00",
+        "COMMAND=./gradlew :app:assembleDebug -PreactNativeArchitectures=arm64-v8a --console=plain --no-daemon",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:30:31.190844+00:00"
+      ]
+    },
+    {
+      "path": "/tmp/phase10-checkpoint-client-review-fixes-dom-final.log",
+      "sha256": "0169dbcce9eb86b05acebd9c119fd97b03e357d4fa38d44e46165d40419fee50",
+      "metadata": [
+        "UTC_START=2026-10-06T11:31:54.339786+00:00",
+        "COMMAND=node tests/e2e-web/phase10-upload-panel-isolated.mjs",
+        "EXIT_CODE=0",
+        "UTC_END=2026-10-06T11:31:55.911355+00:00"
+      ]
+    }
+  ],
+  "apk": {
+    "path": ".cache/phase10-client/family-album-dev-arm64.apk",
+    "sha256": "be2e16cad7a53761f3c880f92766849e4d89524471a210f3d0adfefff86fe16b",
+    "bytes": 85168880,
+    "installedAfterFix": false
+  },
+  "targetedTests": {
+    "files": 6,
+    "pass": 51,
+    "fail": 0,
+    "skip": 0,
+    "baseline": 33,
+    "added": 18
+  },
+  "ownedSyntheticFamiliesRemaining": 0,
+  "previousEvidence": "evidence-pre-review.json",
+  "isolatedSyntheticReactDOM": {
+    "pass": 3,
+    "tlsAcceptance": false
+  }
+}

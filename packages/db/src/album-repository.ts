@@ -2558,7 +2558,7 @@ async function lockMembers(
   return members;
 }
 
-async function lockGrantsForMembers(
+export async function lockGrantsForMembers(
   connection: PoolConnection,
   familyId: string,
   albumId: string,
@@ -2582,7 +2582,7 @@ async function lockGrantsForMembers(
   return byMember;
 }
 
-async function lockGrantsByIds(
+export async function lockGrantsByIds(
   connection: PoolConnection,
   grantIds: readonly string[],
 ) {
@@ -2613,7 +2613,7 @@ export function assertActor(
     member.userId !== actor.userId ||
     member.disabledAt ||
     member.leftAt ||
-    session.clientType !== "WEB" ||
+    session.clientType !== (actor.expectedClientType ?? "WEB") ||
     session.revokedAt ||
     !Buffer.isBuffer(session.tokenHash) ||
     !session.tokenHash.equals(actor.tokenHash) ||
@@ -2633,7 +2633,7 @@ function assertRecentAuth(session: SessionRow | undefined, now: Date) {
   }
 }
 
-async function lockAlbum(
+export async function lockAlbum(
   connection: PoolConnection,
   familyId: string,
   albumId: string,
@@ -2665,7 +2665,7 @@ function albumSelect() {
                  deleted_at AS deletedAt FROM albums`;
 }
 
-async function lockGrant(
+export async function lockGrant(
   connection: PoolConnection,
   familyId: string,
   albumId: string,
@@ -3166,7 +3166,7 @@ function toAlbumRecord(
   };
 }
 
-function albumPermissionContext(
+export function albumPermissionContext(
   row: AlbumRow,
   actor: ActorMemberRow,
   grant?: Partial<Record<keyof AlbumPermissionGrant, unknown>>,

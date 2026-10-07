@@ -511,6 +511,8 @@ export const uploadSessions = mysqlTable(
   {
     id: id(),
     publicId: uploadPublicId("public_id").notNull(),
+    clientOperationId: uploadPublicId("client_operation_id"),
+    clientOperationFingerprint: sha256Digest("client_operation_fingerprint"),
     familyId: foreignId("family_id").notNull(),
     createdByMemberId: foreignId("created_by_member_id").notNull(),
     originalFilename: varchar("original_filename", { length: 255 }).notNull(),
@@ -558,6 +560,16 @@ export const uploadSessions = mysqlTable(
   },
   (table) => [
     uniqueIndex("uq_upload_sessions_public_id").on(table.publicId),
+    uniqueIndex("uq_upload_sessions_operation").on(
+      table.familyId,
+      table.createdByMemberId,
+      table.clientOperationId,
+    ),
+    uniqueIndex("uq_upload_sessions_family_id").on(table.familyId, table.id),
+    check(
+      "chk_upload_sessions_operation_pair",
+      sql`(${table.clientOperationId} IS NULL AND ${table.clientOperationFingerprint} IS NULL) OR (${table.clientOperationId} IS NOT NULL AND ${table.clientOperationFingerprint} IS NOT NULL)`,
+    ),
     uniqueIndex("uq_upload_sessions_family_id_object").on(
       table.familyId,
       table.id,
@@ -1756,6 +1768,51 @@ export const mediaLocationProjections = mysqlTable(
     check(
       "chk_location_city",
       sql`${t.cityGeonameId} IS NULL OR (${t.countryCode} IS NOT NULL AND ${t.cityGeonameId} > 0)`,
+    ),
+  ],
+);
+
+export const uploadAlbumTargets = mysqlTable(
+  "upload_album_targets",
+  {
+    id: id(),
+    familyId: foreignId("family_id").notNull(),
+    uploadSessionId: foreignId("upload_session_id").notNull(),
+    albumId: foreignId("album_id").notNull(),
+    state: mysqlEnum("state", ["PENDING", "APPLIED"])
+      .notNull()
+      .default("PENDING"),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    appliedAt: timestamp("applied_at"),
+  },
+  (table) => [
+    uniqueIndex("uq_upload_album_targets_identity").on(
+      table.familyId,
+      table.uploadSessionId,
+      table.albumId,
+    ),
+    foreignKey({
+      name: "fk_upload_album_targets_receipt",
+      columns: [table.familyId, table.uploadSessionId],
+      foreignColumns: [uploadSessions.familyId, uploadSessions.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    foreignKey({
+      name: "fk_upload_album_targets_album",
+      columns: [table.familyId, table.albumId],
+      foreignColumns: [albums.familyId, albums.id],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check(
+      "chk_upload_album_targets_applied",
+      sql`(${table.state} = 'APPLIED' AND ${table.appliedAt} IS NOT NULL) OR (${table.state} = 'PENDING' AND ${table.appliedAt} IS NULL)`,
     ),
   ],
 );

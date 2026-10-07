@@ -18,7 +18,12 @@ export default async function AlbumsPage() {
       albumsResponseSchema,
     );
     return (
-      <GalleryShell familyName={family.familyName} active="albums">
+      <GalleryShell
+        userId={family.userId}
+        familyId={family.familyId}
+        familyName={family.familyName}
+        active="albums"
+      >
         <AlbumList familyId={family.familyId} initial={page} />
       </GalleryShell>
     );

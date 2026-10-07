@@ -289,6 +289,7 @@ describe("AlbumService", () => {
         userId: context.identity.userId,
         sessionId: context.identity.sessionId,
         tokenHash: context.tokenHash,
+        expectedClientType: "WEB",
       },
       albumId: "4",
       targetMemberId: "6",

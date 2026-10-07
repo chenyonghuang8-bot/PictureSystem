@@ -54,8 +54,8 @@ import {
 } from "@family-album/contracts";
 
 import {
-  readWebSessionCookie,
-  requireTrustedJsonOrigin,
+  readSessionCredential,
+  requireSessionJsonMutation,
 } from "../auth/http.js";
 import { PublicAuthError, type AuthService } from "../auth/service.js";
 import {
@@ -110,7 +110,7 @@ export function registerAlbumRoutes(
 
   app.post("/api/v1/albums", { bodyLimit: 16_384 }, async (request, reply) =>
     handleAlbum(request, reply, "album_create", async () => {
-      requireTrustedJsonOrigin(request, trustedOrigins);
+      requireSessionJsonMutation(request, trustedOrigins);
       const body = createAlbumRequestSchema.parse(request.body);
       const context = await authenticate(request, authService);
       const created = await albumService.create(context, body);
@@ -265,7 +265,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 4_096 },
     async (request, reply) =>
       handleAlbum(request, reply, "album_media_add", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         const { albumId } = albumParamsSchema.parse(request.params);
         const { mediaId } = albumMediaPlacementRequestSchema.parse(
           request.body,
@@ -289,7 +289,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 4_096 },
     async (request, reply) =>
       handleAlbum(request, reply, "media_favorite_put", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         emptyObjectRequestSchema.parse(request.body);
         const { albumId, mediaId } = galleryMediaParamsSchema.parse(
           request.params,
@@ -313,7 +313,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 4_096 },
     async (request, reply) =>
       handleAlbum(request, reply, "media_favorite_delete", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         emptyObjectRequestSchema.parse(request.body);
         const { albumId, mediaId } = galleryMediaParamsSchema.parse(
           request.params,
@@ -354,7 +354,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 24_576 },
     async (request, reply) =>
       handleAlbum(request, reply, "media_tag_create", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         const { albumId, mediaId } = galleryMediaParamsSchema.parse(
           request.params,
         );
@@ -386,7 +386,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 24_576 },
     async (request, reply) =>
       handleAlbum(request, reply, "media_tag_put", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         emptyObjectRequestSchema.parse(request.body);
         const { albumId, mediaId, tagId } = mediaTagParamsSchema.parse(
           request.params,
@@ -418,7 +418,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 24_576 },
     async (request, reply) =>
       handleAlbum(request, reply, "media_tag_delete", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         emptyObjectRequestSchema.parse(request.body);
         const { albumId, mediaId, tagId } = mediaTagParamsSchema.parse(
           request.params,
@@ -446,7 +446,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 24_576 },
     async (request, reply) =>
       handleAlbum(request, reply, "media_note_put", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         const { albumId, mediaId } = galleryMediaParamsSchema.parse(
           request.params,
         );
@@ -512,7 +512,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 24_576 },
     async (request, reply) =>
       handleAlbum(request, reply, "media_comment_create", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         const { albumId, mediaId } = galleryMediaParamsSchema.parse(
           request.params,
         );
@@ -544,7 +544,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 24_576 },
     async (request, reply) =>
       handleAlbum(request, reply, "media_comment_delete", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         emptyObjectRequestSchema.parse(request.body);
         const { albumId, mediaId, commentId } = mediaCommentParamsSchema.parse(
           request.params,
@@ -572,7 +572,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 4_096 },
     async (request, reply) =>
       handleAlbum(request, reply, "media_featured_put", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         emptyObjectRequestSchema.parse(request.body);
         const { albumId, mediaId } = galleryMediaParamsSchema.parse(
           request.params,
@@ -598,7 +598,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 4_096 },
     async (request, reply) =>
       handleAlbum(request, reply, "media_featured_delete", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         emptyObjectRequestSchema.parse(request.body);
         const { albumId, mediaId } = galleryMediaParamsSchema.parse(
           request.params,
@@ -625,7 +625,7 @@ export function registerAlbumRoutes(
 
   app.delete("/api/v1/albums/:albumId/media/:mediaId", async (request, reply) =>
     handleAlbum(request, reply, "album_media_remove", async () => {
-      requireTrustedJsonOrigin(request, trustedOrigins);
+      requireSessionJsonMutation(request, trustedOrigins);
       emptyObjectRequestSchema.parse(request.body);
       const { albumId, mediaId } = galleryMediaParamsSchema.parse(
         request.params,
@@ -774,7 +774,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 16_384 },
     async (request, reply) =>
       handleAlbum(request, reply, "album_update", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         const { albumId } = albumParamsSchema.parse(request.params);
         const body = updateAlbumRequestSchema.parse(request.body);
         const context = await authenticate(request, authService);
@@ -808,7 +808,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 16_384 },
     async (request, reply) =>
       handleAlbum(request, reply, "album_delete", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         const { albumId } = albumParamsSchema.parse(request.params);
         const { expectedRevision } = deleteAlbumRequestSchema.parse(
           request.body,
@@ -844,7 +844,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 16_384 },
     async (request, reply) =>
       handleAlbum(request, reply, "album_member_put", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         const { albumId, memberId } = albumMemberParamsSchema.parse(
           request.params,
         );
@@ -885,7 +885,7 @@ export function registerAlbumRoutes(
     { bodyLimit: 16_384 },
     async (request, reply) =>
       handleAlbum(request, reply, "album_member_remove", async () => {
-        requireTrustedJsonOrigin(request, trustedOrigins);
+        requireSessionJsonMutation(request, trustedOrigins);
         const { albumId, memberId } = albumMemberParamsSchema.parse(
           request.params,
         );
@@ -915,9 +915,9 @@ export function registerAlbumRoutes(
 }
 
 async function authenticate(request: FastifyRequest, service: AuthService) {
-  const token = readWebSessionCookie(request);
-  if (!token) throw new PublicAuthError(401, "UNAUTHENTICATED");
-  return service.authenticate(token);
+  const credential = readSessionCredential(request);
+  if (!credential) throw new PublicAuthError(401, "UNAUTHENTICATED");
+  return service.authenticate(credential.token, credential.expectedClientType);
 }
 
 async function handleAlbum(

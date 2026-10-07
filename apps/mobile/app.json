@@ -1,17 +1,19 @@
 {
   "expo": {
-    "name": "张家的时光",
+    "name": "嘟嘟家庭相册",
     "slug": "family-album",
     "version": "0.0.0",
     "orientation": "portrait",
     "scheme": "familyalbum",
     "userInterfaceStyle": "light",
-    "plugins": ["expo-router"],
-    "experiments": {
-      "typedRoutes": true
-    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-document-picker",
+      "./plugins/with-private-android.cjs"
+    ],
     "android": {
-      "package": "local.familyalbum.app"
+      "package": "local.familyalbum.app",
+      "allowBackup": false
     },
     "web": {
       "bundler": "metro",

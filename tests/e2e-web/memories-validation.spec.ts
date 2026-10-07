@@ -187,18 +187,28 @@ test("real HTTPS login and historical EXIF uploads reach native READY, home card
     home.getByRole("heading", { name: "一年前的这周", exact: true }),
   ).toBeVisible();
   const today = home.getByRole("region", { name: "往年今日", exact: true });
-  await expect(
-    today.getByText("拍摄日期 " + anniversary, { exact: true }),
-  ).toBeVisible();
+  const anniversaryCount = anniversary === context.weekStart ? 2 : 1;
+  const todayDates = today.getByText("拍摄日期 " + anniversary, {
+    exact: true,
+  });
+  await expect(todayDates).toHaveCount(anniversaryCount);
+  await expect(todayDates.first()).toBeVisible();
   await today.getByRole("link", { name: "查看全部" }).click();
   await expect(page).toHaveURL(/\/memories\?kind=ON_THIS_DAY$/);
   const full = page
     .getByRole("region", { name: "往年今日", exact: true })
     .last();
-  await expect(
-    full.getByText("拍摄日期 " + anniversary, { exact: true }),
-  ).toBeVisible();
-  await full.getByRole("button").first().click();
+  const fullDates = full.getByText("拍摄日期 " + anniversary, { exact: true });
+  await expect(fullDates).toHaveCount(anniversaryCount);
+  await expect(fullDates.first()).toBeVisible();
+  await full
+    .getByRole("button")
+    .filter({
+      has: page.locator(
+        `img[src="/api/v1/media/${originals[0]!.mediaId}/derived/thumbnail"]`,
+      ),
+    })
+    .click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect
     .poll(() =>

@@ -1,15 +1,20 @@
 import type { ReactNode } from "react";
+import { MobileUploadPanel } from "../mobile/upload-panel.js";
 
 const LATER = ["地图", "收藏", "家庭成员", "管理后台"] as const;
 
 export function GalleryShell({
   familyName,
+  userId,
+  familyId,
   active,
   aside,
   children,
 }: {
   familyName: string;
-  active: "photos" | "albums" | "trash" | "memories";
+  userId?: string;
+  familyId?: string;
+  active: "photos" | "albums" | "trash" | "memories" | "my";
   aside?: ReactNode;
   children: ReactNode;
 }) {
@@ -36,7 +41,7 @@ export function GalleryShell({
             <span>相册</span>
           </a>
           <a
-            className="gallery-nav-link"
+            className="gallery-nav-link desktop-trash"
             href="/trash"
             aria-current={active === "trash" ? "page" : undefined}
           >
@@ -52,6 +57,14 @@ export function GalleryShell({
             <span>回忆</span>
           </a>
         </div>
+        <a
+          className="gallery-nav-link mobile-my"
+          href="/my"
+          aria-current={active === "my" ? "page" : undefined}
+        >
+          <span aria-hidden="true">◉</span>
+          <span>我的</span>
+        </a>
         <p className="gallery-nav-label">更多</p>
         <div className="gallery-nav-group">
           {LATER.map((label) => (
@@ -62,7 +75,16 @@ export function GalleryShell({
           ))}
         </div>
       </nav>
-      <main className="gallery-main">{children}</main>
+      <main className="gallery-main">
+        {children}
+        {userId && familyId ? (
+          <MobileUploadPanel
+            key={`${userId}:${familyId}`}
+            userId={userId}
+            familyId={familyId}
+          />
+        ) : null}
+      </main>
       <aside className="gallery-aside" aria-label="辅助信息">
         <div className="gallery-aside-stack">
           <section className="gallery-aside-card">

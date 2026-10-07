@@ -1,0 +1,181 @@
+{
+  "scope": "LOCAL_BRAND_VISIBLE_DOC_EVIDENCE_ONLY",
+  "utc": "2026-10-07T04:16:08.745094+00:00",
+  "brand": "嘟嘟家庭相册",
+  "head": "6510261f920b5ebe6d98d1cefa3227fb221bbd5f",
+  "baseline": {
+    "path": "docs/progress/phase10-branding-artifacts/evidence.json",
+    "bytes": 4443,
+    "sha256": "2993faf81d763211b7a127ceefd02a376afa45e1424cc03cf8c8c0cfa076c0bb"
+  },
+  "baselineImmutable": true,
+  "sourceFingerprintsMatchBaseline": [
+    {
+      "path": "apps/mobile/app.json",
+      "bytes": 488,
+      "sha256": "73b7a45e8caede5c38af4364c27bc0c2ec89f2371ae97de96a9b3edb596a0a89"
+    },
+    {
+      "path": "apps/mobile/app/index.tsx",
+      "bytes": 35031,
+      "sha256": "2b2a3c9a78b854a05b9f92d6959036b3ee40ede9a6a021d6564dc4ea7b71eba8"
+    },
+    {
+      "path": "apps/mobile/android/app/src/main/res/values/strings.xml",
+      "bytes": 78,
+      "sha256": "35ef850b4adb47bf22e1b3df456a679897528c06a1f844bec56fac940ddc9cd0"
+    },
+    {
+      "path": "apps/mobile/android/settings.gradle",
+      "bytes": 1271,
+      "sha256": "33b4d438c0a9741fd6a4f5a8068c93e8b93041f8309cefb274a1ec27956f8a4c"
+    },
+    {
+      "path": "apps/mobile/android/.idea/.name",
+      "bytes": 18,
+      "sha256": "3e8e6603bbf3f4fb34dc7188e5b501e719dacef6e5af6eb3370ac37b463ee1ef"
+    },
+    {
+      "path": "apps/web/app/layout.tsx",
+      "bytes": 460,
+      "sha256": "b52eb95fc99b2919668e79d87db4d9ed644d9d5d7d3c8d22dbfcb560ef92f1db"
+    },
+    {
+      "path": "apps/web/app/login/page.tsx",
+      "bytes": 302,
+      "sha256": "b8947d78a93266c13a20174043dce3a1e4853563da5e526fa07de58c77e17d5b"
+    },
+    {
+      "path": "project-spec/README.md",
+      "bytes": 3447,
+      "sha256": "378d3dbbc00611401ea7d470ef3cce8b3fc19dd5877a8e3185a64378792c95d4"
+    },
+    {
+      "path": "project-spec/PROJECT.md",
+      "bytes": 6706,
+      "sha256": "13ee436597d4a3b9d70684a52fef2a2757afb21ffb0c2eb7f40d0cbbb0c4a651"
+    }
+  ],
+  "apk": {
+    "path": ".cache/phase10-branding/family-album-dev-arm64.apk",
+    "bytes": 85204648,
+    "sha256": "3e15988b972fb5d8f43df27b4d4d36e6e69ea9c9f27a73e4e5f2196a1e6694c9"
+  },
+  "checks": {
+    "apkInstallStart": "PASS",
+    "nativeLogin": "PASS",
+    "nativeInstalledAppLabel": "PASS_SETTINGS_APP_INFO",
+    "launcherHomeScreenshot": "NOT_EXECUTED",
+    "webH5": "PASS",
+    "webDesktop": "PASS",
+    "studioRecentCard": "BLOCKED_NO_SAFE_GUI_ACCESS",
+    "webSandboxLaunch": "FAIL_SIGABRT_EPERM",
+    "webRuntimeExitCode": 0,
+    "strictTLS": true,
+    "ignoreHTTPSErrors": false,
+    "fullGate": "NOT_EXECUTED",
+    "independentReview": "NOT_EXECUTED_THIS_DOC_ONLY_TASK",
+    "targetedDocumentFormat": "PASS",
+    "gitDiffCheck": "PASS"
+  },
+  "webViewports": [
+    {
+      "width": 390,
+      "height": 844,
+      "httpStatus": 200
+    },
+    {
+      "width": 1440,
+      "height": 1000,
+      "httpStatus": 200
+    }
+  ],
+  "approvalModeObserved": "workspace-write / auto_review",
+  "approvalSettingsChanged": false,
+  "cleanup": {
+    "ownedEmulator": "STOPPED_EXIT_0",
+    "ownedWebHarness": "STOPPED_EXIT_0",
+    "ownedAdbServer": "STOPPED",
+    "deviceXmlTemporaryFiles": "REMOVED",
+    "ports": {
+      "3443": "NO_LISTENER",
+      "4400": "NO_LISTENER"
+    },
+    "accountsOrDatabaseFixturesCreated": false,
+    "mediaCreated": false,
+    "trustOrProxyChanged": false
+  },
+  "productSourceEditedThisTask": false,
+  "formalSigning": false,
+  "phase10Complete": false,
+  "productionReady": false,
+  "artifacts": [
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/desktop-brand-login.png",
+      "bytes": 26065,
+      "sha256": "dbd07550fb7cc21d0b178cd0f6d8aeed3bac1eb4442a879d1a762ebb034c5d9d"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/emulator.log",
+      "bytes": 9103,
+      "sha256": "aafece9b69f57c774acf250a8c8dc0909a6ceb5b3b39a10b2ceceeb2e0d1b4b0"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/h5-brand-login.png",
+      "bytes": 20646,
+      "sha256": "9a4b956e4343a8d0a9c894b4b4a2f466b31da55668fddadd6078dd99209716c9"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/native-brand-label.png",
+      "bytes": 240199,
+      "sha256": "0492315fdf4e2b99755a83c68e738f37073662cee889da82446339473efd411f"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/native-brand-label.xml",
+      "bytes": 23708,
+      "sha256": "c7ac031810c4eaf30e3cbcb3cf9936a750856c3a0598a208e8ceae8a8166bc05"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/native-brand-login.png",
+      "bytes": 72450,
+      "sha256": "34b5ba25c2cbff6d05dd7214a0bad4fac8b619e27bd2613fa87775de87c67918"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/native-brand-login.xml",
+      "bytes": 6359,
+      "sha256": "51349a57fabe71d8da2a510c2ddc149c49eaf223fe42c3366170ebe159f44225"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/web-runtime-result.log",
+      "bytes": 235,
+      "sha256": "6279ed0e81dcc664b00c6cad870ef88884832d968d4f163a6fc12d381a6004ef"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/web-sandbox-failure.log",
+      "bytes": 6566,
+      "sha256": "b57f6da602f973d831b8210dbf93f387a72b13750f91de8675a0390d1c74d665"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/web-server.log",
+      "bytes": 259,
+      "sha256": "fc73e5e0a69698ce3cf2102d5ec6753a9fea20ce45819d27c91de96e3c0c7bfb"
+    },
+    {
+      "path": "docs/progress/phase10-branding-artifacts/visible/web-visible-check.mjs",
+      "bytes": 1204,
+      "sha256": "76626c5834b8f11f25019cdc96ce1a35beeca76d9dc0c37cdc537060c38279c6"
+    }
+  ],
+  "reports": [
+    {
+      "path": "docs/progress/PHASE-10-BRANDING-UPDATE.md",
+      "bytes": 6528,
+      "sha256": "027bf38a158175f8eb9ec65eecac65350154d62671cf4f0842ac206d346da8c5"
+    },
+    {
+      "path": "docs/progress/PHASE-10-REMAINING-WORK-2026-10-07.md",
+      "bytes": 8282,
+      "sha256": "45e4b4e6efcd8ec417dda49f5006bbda8a31f8484907e75635e0c7835fcf5bbc"
+    }
+  ]
+}

@@ -49,6 +49,7 @@ export type SecurityErrorCategory =
 
 export type AuthContext = {
   identity: SessionIdentity;
+  expectedClientType?: "WEB" | "ANDROID";
   tokenHash: Buffer;
 };
 
@@ -99,6 +100,7 @@ export class AuthService {
     password: unknown;
     deviceLabel: string | null;
     ip: string;
+    expectedClientType?: "WEB" | "ANDROID";
   }): Promise<IssuedWebSession> {
     this.ipAttempt(input.ip);
     const username = normalizeUsername(input.username);
@@ -131,6 +133,7 @@ export class AuthService {
           ...(replacementPasswordHash ? { replacementPasswordHash } : {}),
           tokenHash,
           deviceLabel: input.deviceLabel,
+          expectedClientType: input.expectedClientType ?? "WEB",
         }),
       );
       success = true;
@@ -157,7 +160,10 @@ export class AuthService {
     }
   }
 
-  async authenticate(token: unknown): Promise<AuthContext> {
+  async authenticate(
+    token: unknown,
+    expectedClientType: "WEB" | "ANDROID" = "WEB",
+  ): Promise<AuthContext> {
     let tokenHash: Buffer;
     try {
       tokenHash = hashSessionToken(token);
@@ -167,7 +173,7 @@ export class AuthService {
     const identity = await this.database(() =>
       this.repository.findSession(tokenHash),
     );
-    if (!identity || !this.isValid(identity)) {
+    if (!identity || !this.isValid(identity, expectedClientType)) {
       throw new PublicAuthError(401, "UNAUTHENTICATED");
     }
     await this.database(() =>
@@ -175,9 +181,10 @@ export class AuthService {
         sessionId: identity.sessionId,
         userId: identity.userId,
         tokenHash,
+        expectedClientType,
       }),
     );
-    return { identity, tokenHash };
+    return { identity, tokenHash, expectedClientType };
   }
 
   async me(context: AuthContext): Promise<{ memberships: Membership[] }> {
@@ -188,7 +195,10 @@ export class AuthService {
     };
   }
 
-  async logout(token: unknown): Promise<{ clearCookie: boolean }> {
+  async logout(
+    token: unknown,
+    expectedClientType: "WEB" | "ANDROID" = "WEB",
+  ): Promise<{ clearCookie: boolean }> {
     let tokenHash: Buffer;
     try {
       tokenHash = hashSessionToken(token);
@@ -196,7 +206,7 @@ export class AuthService {
       return { clearCookie: true };
     }
     const result = await this.database(() =>
-      this.repository.revokeByToken(tokenHash),
+      this.repository.revokeByToken(tokenHash, expectedClientType),
     );
     return { clearCookie: result.sessionStillAddressable };
   }
@@ -216,6 +226,7 @@ export class AuthService {
         userId: context.identity.userId,
         callerSessionId: context.identity.sessionId,
         callerTokenHash: context.tokenHash,
+        expectedClientType: context.expectedClientType ?? "WEB",
         targetSessionId,
       }),
     );
@@ -233,6 +244,7 @@ export class AuthService {
         userId: context.identity.userId,
         sessionId: context.identity.sessionId,
         oldTokenHash: context.tokenHash,
+        expectedClientType: context.expectedClientType ?? "WEB",
         newTokenHash: hashSessionToken(token),
         expectedPasswordHash: context.identity.passwordHash,
       }),
@@ -249,6 +261,7 @@ export class AuthService {
         userId: context.identity.userId,
         sessionId: context.identity.sessionId,
         tokenHash: context.tokenHash,
+        expectedClientType: context.expectedClientType ?? "WEB",
       }),
     );
   }
@@ -268,6 +281,7 @@ export class AuthService {
         userId: context.identity.userId,
         sessionId: context.identity.sessionId,
         oldTokenHash: context.tokenHash,
+        expectedClientType: context.expectedClientType ?? "WEB",
         replacementTokenHash: hashSessionToken(token),
         expectedPasswordHash: context.identity.passwordHash,
         newPasswordHash,
@@ -303,10 +317,13 @@ export class AuthService {
     }
   }
 
-  private isValid(identity: SessionIdentity) {
+  private isValid(
+    identity: SessionIdentity,
+    expectedClientType: "WEB" | "ANDROID",
+  ) {
     const now = identity.serverNow.getTime();
     return (
-      identity.clientType === "WEB" &&
+      identity.clientType === expectedClientType &&
       identity.revokedAt === null &&
       identity.disabledAt === null &&
       now < identity.expiresAt.getTime() &&

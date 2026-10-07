@@ -6,6 +6,7 @@ export default tseslint.config(
     ignores: [
       ".cache/**",
       "**/.expo/**",
+      "apps/mobile/android/**",
       "**/.next/**",
       "**/coverage/**",
       "**/dist/**",
@@ -28,9 +29,14 @@ export default tseslint.config(
       "tests/integration/fixtures/**/*.mjs",
       "tests/e2e-web/**/*.mjs",
       "apps/web/scripts/**/*.mjs",
+      "apps/mobile/plugins/**/*.cjs",
+      "apps/mobile/*.cjs",
     ],
     languageOptions: {
       globals: {
+        __dirname: "readonly",
+        require: "readonly",
+        module: "readonly",
         Buffer: "readonly",
         console: "readonly",
         process: "readonly",
@@ -43,6 +49,10 @@ export default tseslint.config(
         queueMicrotask: "readonly",
       },
     },
+  },
+  {
+    files: ["apps/mobile/plugins/**/*.cjs", "apps/mobile/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
   {
     files: ["**/*.{ts,tsx}"],

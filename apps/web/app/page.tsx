@@ -32,6 +32,8 @@ export default async function HomePage({
     );
     return (
       <GalleryShell
+        userId={family.userId}
+        familyId={family.familyId}
         familyName={family.familyName}
         active="photos"
         aside={

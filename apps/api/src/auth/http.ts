@@ -1,5 +1,7 @@
 import type { FastifyRequest } from "fastify";
 
+import { hashSessionToken } from "@family-album/auth";
+
 import { PublicAuthError } from "./service.js";
 
 export const SESSION_COOKIE_NAME = "__Host-family_session";
@@ -66,4 +68,68 @@ export function sessionCookie(token: string, expiresAt: Date, serverNow: Date) {
 
 export function clearSessionCookie() {
   return `${SESSION_COOKIE_NAME}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax`;
+}
+
+export type SessionCredential = {
+  token: string;
+  expectedClientType: "WEB" | "ANDROID";
+};
+
+export function readSessionCredential(
+  request: FastifyRequest,
+): SessionCredential | null {
+  const authorization = request.headers.authorization;
+  if (authorization !== undefined) {
+    const raw = request.raw.rawHeaders ?? [];
+    const count = raw.filter(
+      (_, index) =>
+        index % 2 === 0 && raw[index]!.toLowerCase() === "authorization",
+    ).length;
+    if (
+      request.headers.cookie !== undefined ||
+      request.headers.origin !== undefined ||
+      count > 1 ||
+      typeof authorization !== "string" ||
+      !/^Bearer [A-Za-z0-9_-]{43}$/u.test(authorization)
+    ) {
+      throw new PublicAuthError(401, "UNAUTHENTICATED");
+    }
+    const token = authorization.slice(7);
+    try {
+      hashSessionToken(token);
+    } catch {
+      throw new PublicAuthError(401, "UNAUTHENTICATED");
+    }
+    return { token, expectedClientType: "ANDROID" };
+  }
+  const token = readWebSessionCookie(request);
+  return token ? { token, expectedClientType: "WEB" } : null;
+}
+
+export function requireNativeJson(request: FastifyRequest) {
+  if (
+    request.headers.cookie !== undefined ||
+    request.headers.origin !== undefined ||
+    request.headers.authorization !== undefined
+  )
+    throw new PublicAuthError(400, "INVALID_REQUEST");
+  requireJson(request);
+}
+
+function requireJson(request: FastifyRequest) {
+  const value = request.headers["content-type"];
+  if (
+    typeof value !== "string" ||
+    !/^application\/json(?:\s*;\s*charset=[A-Za-z0-9._-]+)?$/i.test(value)
+  )
+    throw new PublicAuthError(415, "INVALID_REQUEST");
+}
+
+export function requireSessionJsonMutation(
+  request: FastifyRequest,
+  trustedOrigins: ReadonlySet<string>,
+) {
+  const credential = readSessionCredential(request);
+  if (credential?.expectedClientType === "ANDROID") requireJson(request);
+  else requireTrustedJsonOrigin(request, trustedOrigins);
 }

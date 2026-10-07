@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import type {
   Pool,
@@ -22,7 +22,27 @@ import {
 } from "./capacity-inventory.js";
 import { runCapacityTransaction } from "./capacity-transaction.js";
 import { assertMigrationReadiness } from "./migration-readiness.js";
+import {
+  lockAlbum,
+  lockGrant,
+  albumPermissionContext,
+  lockActor as lockAlbumActor,
+  assertActor as assertAlbumActor,
+  lockIds,
+} from "./album-repository.js";
+import {
+  canViewAlbum,
+  canUploadToAlbum,
+  canEditAlbum,
+} from "@family-album/permissions";
 import type { Phase1CActor } from "./phase1c-repository.js";
+import {
+  discoverUploadPlacementKey,
+  observeUploadResult,
+  replaceUploadTargets,
+  applyUploadPlacement,
+  type UploadPlacementKey,
+} from "./upload-completion.js";
 import { CommitOutcomeUnknownError } from "./transaction.js";
 
 const IDLE_TIMEOUT_MS = 7 * 24 * 60 * 60_000;
@@ -53,6 +73,7 @@ export type UploadState =
   | "RETIRED";
 
 export type UploadRecord = {
+  reused?: boolean;
   id: string;
   publicId: string;
   familyId: string;
@@ -79,6 +100,8 @@ export type CreateUploadInput = {
   originalFilename: string;
   reportedMime: string | null;
   declaredSize: bigint;
+  clientOperationId?: Buffer;
+  targetAlbumIds?: readonly string[];
 };
 
 export class UploadRepositoryError extends Error {
@@ -426,6 +449,8 @@ export class MySqlUploadRepository {
     input: CreateUploadInput,
     beforeInsert?: () => Promise<void>,
   ): Promise<UploadRecord> {
+    if (!input.clientOperationId && input.targetAlbumIds)
+      throw new UploadRepositoryError("CONFLICT");
     const memberId = await locateMemberId(
       connection,
       input.familyId,
@@ -441,6 +466,37 @@ export class MySqlUploadRepository {
     );
     const now = await readServerTime(connection);
     assertActor(auth, input.actor, now);
+
+    const fingerprint = input.clientOperationId
+      ? createUploadFingerprint(input)
+      : null;
+    if (input.clientOperationId) {
+      const [existing] = await connection.query<RowDataPacket[]>(
+        "SELECT public_id AS publicId, client_operation_fingerprint AS fingerprint FROM upload_sessions WHERE family_id=? AND created_by_member_id=? AND client_operation_id=? FOR UPDATE",
+        [input.familyId, memberId, input.clientOperationId],
+      );
+      if (existing[0]) {
+        assertActor(auth, input.actor, await readServerTime(connection));
+        if (
+          !Buffer.isBuffer(existing[0].fingerprint) ||
+          !existing[0].fingerprint.equals(fingerprint!)
+        )
+          throw new UploadRepositoryError("CONFLICT");
+        return {
+          ...(await this.readLockedByPublicId(
+            connection,
+            existing[0].publicId,
+          )),
+          reused: true,
+        };
+      }
+      await checkUploadTargets(
+        connection,
+        input.familyId,
+        input.actor,
+        input.targetAlbumIds!,
+      );
+    }
 
     const [counts] = await connection.query<RowDataPacket[]>(
       `SELECT
@@ -471,13 +527,15 @@ export class MySqlUploadRepository {
     }
 
     await beforeInsert?.();
-    const expiresAt = new Date(now.getTime() + UPLOAD_LIFETIME_MS);
+    const creationNow = await readServerTime(connection);
+    assertActor(auth, input.actor, creationNow);
+    const expiresAt = new Date(creationNow.getTime() + UPLOAD_LIFETIME_MS);
     await connection.execute<ResultSetHeader>(
       `INSERT INTO upload_sessions
           (public_id, family_id, created_by_member_id, original_filename,
            reported_mime, declared_size, committed_offset, state, expires_at,
-           created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 0, 'CREATED', ?, ?, ?)`,
+           created_at, updated_at, client_operation_id, client_operation_fingerprint)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 'CREATED', ?, ?, ?, ?, ?)`,
       [
         input.publicId,
         input.familyId,
@@ -486,11 +544,65 @@ export class MySqlUploadRepository {
         input.reportedMime,
         input.declaredSize.toString(),
         expiresAt,
-        now,
-        now,
+        creationNow,
+        creationNow,
+        input.clientOperationId ?? null,
+        fingerprint,
       ],
     );
-    return this.readLockedByPublicId(connection, input.publicId);
+    const created = await this.readLockedByPublicId(connection, input.publicId);
+    for (const albumId of input.targetAlbumIds ?? [])
+      await connection.query(
+        "INSERT INTO upload_album_targets(family_id,upload_session_id,album_id,created_at,updated_at) VALUES(?,?,?,?,?)",
+        [input.familyId, created.id, albumId, creationNow, creationNow],
+      );
+    return created;
+  }
+
+  discoverPlacementKey(actor: Phase1CActor, publicId: Buffer) {
+    return discoverUploadPlacementKey(this.pool, actor, publicId);
+  }
+  result(actor: Phase1CActor, publicId: Buffer) {
+    return observeUploadResult(this.pool, actor, publicId);
+  }
+  replaceTargets(
+    actor: Phase1CActor,
+    publicId: Buffer,
+    albumIds: readonly string[],
+  ) {
+    return replaceUploadTargets(this.pool, actor, publicId, albumIds);
+  }
+  place(actor: Phase1CActor, publicId: Buffer, key: UploadPlacementKey) {
+    return applyUploadPlacement(this.pool, actor, publicId, key);
+  }
+
+  async findOperation(input: {
+    actor: Phase1CActor;
+    familyId: string;
+    clientOperationId: Buffer;
+  }): Promise<UploadRecord> {
+    return runCheckedTransaction(this.pool, async (connection) => {
+      await lockFamily(connection, input.familyId);
+      const memberId = await locateMemberId(
+        connection,
+        input.familyId,
+        input.actor.userId,
+      );
+      if (!memberId) throw new UploadRepositoryError("NOT_FOUND");
+      const auth = await lockActor(
+        connection,
+        input.familyId,
+        memberId,
+        input.actor,
+      );
+      const [rows] = await connection.query<RowDataPacket[]>(
+        "SELECT public_id AS publicId FROM upload_sessions WHERE family_id=? AND created_by_member_id=? AND client_operation_id=? FOR UPDATE",
+        [input.familyId, memberId, input.clientOperationId],
+      );
+      assertActor(auth, input.actor, await readServerTime(connection));
+      if (!rows[0]) throw new UploadRepositoryError("NOT_FOUND");
+      return this.readLockedByPublicId(connection, rows[0].publicId);
+    });
   }
 
   async inspect(input: {
@@ -1103,7 +1215,7 @@ function assertActor(
     member.disabledAt ||
     member.leftAt ||
     member.userId !== actor.userId ||
-    session.clientType !== "WEB" ||
+    session.clientType !== (actor.expectedClientType ?? "WEB") ||
     session.revokedAt ||
     !Buffer.isBuffer(session.tokenHash) ||
     !session.tokenHash.equals(actor.tokenHash) ||
@@ -1229,4 +1341,79 @@ function assertScanLimit(afterId: string, limit: number) {
 
 export function createUploadPublicId() {
   return randomBytes(16);
+}
+
+export function createUploadFingerprint(input: CreateUploadInput): Buffer {
+  if (
+    !input.clientOperationId ||
+    input.clientOperationId.length !== 16 ||
+    !input.targetAlbumIds ||
+    input.targetAlbumIds.length < 1 ||
+    input.targetAlbumIds.length > 20
+  )
+    throw new UploadRepositoryError("CONFLICT");
+  const sorted = [...new Set(input.targetAlbumIds)].sort((a, b) =>
+    BigInt(a) < BigInt(b) ? -1 : 1,
+  );
+  if (
+    sorted.length !== input.targetAlbumIds.length ||
+    sorted.some(
+      (id, i) =>
+        id !== input.targetAlbumIds![i] ||
+        !/^[1-9][0-9]{0,19}$/u.test(id) ||
+        BigInt(id) > 18446744073709551615n,
+    )
+  )
+    throw new UploadRepositoryError("CONFLICT");
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        1,
+        input.declaredSize.toString(),
+        input.originalFilename.normalize("NFC"),
+        input.reportedMime?.trim().toLowerCase() ?? null,
+        sorted,
+      ]),
+    )
+    .digest();
+}
+
+export async function checkUploadTargets(
+  connection: PoolConnection,
+  familyId: string,
+  actor: Phase1CActor,
+  ids: readonly string[],
+) {
+  const state = await lockAlbumActor(connection, familyId, actor);
+  const albums = [];
+  for (const id of ids) albums.push(await lockAlbum(connection, familyId, id));
+  if (ids.length) {
+    const [rows] = await connection.query<RowDataPacket[]>(
+      `SELECT CAST(id AS CHAR) id FROM album_members WHERE family_id=? AND member_id=? AND album_id IN (${ids.map(() => "?").join(",")}) ORDER BY id`,
+      [familyId, state.member.id, ...ids],
+    );
+    await lockIds(
+      connection,
+      "album_members",
+      rows.map((row) => row.id),
+    );
+  }
+  const grants = [];
+  for (const album of albums)
+    grants.push(
+      album
+        ? await lockGrant(connection, familyId, album.id, state.member.id)
+        : undefined,
+    );
+  assertAlbumActor(state, actor, await readServerTime(connection));
+  for (let i = 0; i < albums.length; i++) {
+    const album = albums[i];
+    if (!album) throw new UploadRepositoryError("NOT_FOUND");
+    const context = albumPermissionContext(album, state.member, grants[i]);
+    if (
+      !canViewAlbum(context) ||
+      !(canUploadToAlbum(context) || canEditAlbum(context))
+    )
+      throw new UploadRepositoryError("NOT_FOUND");
+  }
 }

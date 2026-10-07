@@ -1,0 +1,13 @@
+diff --git a/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt b/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt
+index 4626dac32067ec203788ae69de4b0f1d5b03eec0..c95648fcc3eeb98696dc2d854fac7af9b316cc68 100644
+--- a/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt
++++ b/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt
+@@ -1053,7 +1053,7 @@ open class FileSystemLegacyModule : Module() {
+     uri.scheme == "file" -> FileInputStream(uri.toFile())
+     uri.scheme == "asset" -> openAssetInputStream(uri)
+     uri.scheme == null && !uriStr.isNullOrEmpty() -> openResourceInputStream(uriStr)
+-    uri.isSAFUri -> context.contentResolver.openInputStream(uri)!!
++    uri.scheme == "content" -> context.contentResolver.openInputStream(uri)!!
+     else -> throw IOException("Unsupported scheme for location '$uri'.")
+   }
+ 

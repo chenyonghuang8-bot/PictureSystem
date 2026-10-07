@@ -27,6 +27,7 @@ const IDLE_TIMEOUT_MS = 7 * 24 * 60 * 60_000;
 const RECENT_AUTH_MS = 15 * 60_000;
 
 export type Phase1CActor = {
+  expectedClientType?: "WEB" | "ANDROID";
   userId: string;
   sessionId: string;
   tokenHash: Buffer;
@@ -173,7 +174,7 @@ export class MySqlPhase1CRepository {
           WHERE i.family_id = ?
             AND am.disabled_at IS NULL AND am.left_at IS NULL
             AND au.disabled_at IS NULL AND am.role IN ('ADMIN','SUPER_ADMIN')
-            AND s.client_type = 'WEB' AND s.token_hash = ?
+            AND s.client_type = ? AND s.token_hash = ?
             AND s.revoked_at IS NULL AND s.expires_at > CURRENT_TIMESTAMP(3)
             AND DATE_ADD(s.last_seen_at, INTERVAL 7 DAY) > CURRENT_TIMESTAMP(3)
             AND EXISTS (
@@ -183,7 +184,13 @@ export class MySqlPhase1CRepository {
                  AND su.disabled_at IS NULL
             )
           ORDER BY i.created_at DESC, i.id DESC LIMIT 100`,
-        [actor.userId, actor.sessionId, familyId, actor.tokenHash],
+        [
+          actor.userId,
+          actor.sessionId,
+          familyId,
+          actor.expectedClientType ?? "WEB",
+          actor.tokenHash,
+        ],
       );
       if (rows.length === 0) {
         await assertCanListFamily(connection, actor, familyId);
@@ -423,11 +430,17 @@ export class MySqlPhase1CRepository {
           WHERE m.family_id = ? AND m.left_at IS NULL
             AND am.disabled_at IS NULL AND am.left_at IS NULL
             AND au.disabled_at IS NULL
-            AND s.client_type = 'WEB' AND s.token_hash = ?
+            AND s.client_type = ? AND s.token_hash = ?
             AND s.revoked_at IS NULL AND s.expires_at > CURRENT_TIMESTAMP(3)
             AND DATE_ADD(s.last_seen_at, INTERVAL 7 DAY) > CURRENT_TIMESTAMP(3)
           ORDER BY m.id ASC LIMIT 100`,
-        [actor.userId, actor.sessionId, familyId, actor.tokenHash],
+        [
+          actor.userId,
+          actor.sessionId,
+          familyId,
+          actor.expectedClientType ?? "WEB",
+          actor.tokenHash,
+        ],
       );
       if (rows.length === 0) {
         throw new Phase1CRepositoryError("NOT_FOUND");
@@ -626,7 +639,7 @@ function assertActor(
     user.disabledAt ||
     member.disabledAt ||
     member.leftAt ||
-    session.clientType !== "WEB" ||
+    session.clientType !== (actor.expectedClientType ?? "WEB") ||
     session.revokedAt ||
     !Buffer.isBuffer(session.tokenHash) ||
     !session.tokenHash.equals(actor.tokenHash) ||
@@ -698,11 +711,17 @@ async function assertCanListFamily(
       WHERE am.family_id = ? AND am.user_id = ?
         AND am.disabled_at IS NULL AND am.left_at IS NULL
         AND au.disabled_at IS NULL
-        AND s.client_type = 'WEB' AND s.token_hash = ?
+        AND s.client_type = ? AND s.token_hash = ?
         AND s.revoked_at IS NULL AND s.expires_at > CURRENT_TIMESTAMP(3)
         AND DATE_ADD(s.last_seen_at, INTERVAL 7 DAY) > CURRENT_TIMESTAMP(3)
       LIMIT 1`,
-    [actor.sessionId, familyId, actor.userId, actor.tokenHash],
+    [
+      actor.sessionId,
+      familyId,
+      actor.userId,
+      actor.expectedClientType ?? "WEB",
+      actor.tokenHash,
+    ],
   );
   const role = rows[0]?.role as FamilyRole | undefined;
   if (!role) throw new Phase1CRepositoryError("NOT_FOUND");

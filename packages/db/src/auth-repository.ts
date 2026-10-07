@@ -104,7 +104,7 @@ async function lockUserSessionsInIdOrder(
   const locked: RowDataPacket[] = [];
   for (const id of ids) {
     const [rows] = await connection.query<RowDataPacket[]>(
-      `SELECT CAST(id AS CHAR) AS id, token_hash AS tokenHash,
+      `SELECT CAST(id AS CHAR) AS id, token_hash AS tokenHash, client_type AS clientType,
               revoked_at AS revokedAt, expires_at AS expiresAt,
               last_seen_at AS lastSeenAt, authenticated_at AS authenticatedAt
          FROM sessions
@@ -142,6 +142,7 @@ export class MySqlAuthRepository {
     replacementPasswordHash?: string;
     tokenHash: Buffer;
     deviceLabel: string | null;
+    expectedClientType?: "WEB" | "ANDROID";
   }): Promise<{ sessionId: string; expiresAt: Date; serverNow: Date }> {
     return inTransaction(this.pool, async (connection) => {
       const [users] = await connection.query<UserRow[]>(
@@ -192,10 +193,11 @@ export class MySqlAuthRepository {
         `INSERT INTO sessions
           (user_id, token_hash, client_type, device_label, authenticated_at,
            created_at, last_seen_at, expires_at)
-         VALUES (?, ?, 'WEB', ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           input.userId,
           input.tokenHash,
+          input.expectedClientType ?? "WEB",
           input.deviceLabel,
           serverNow,
           serverNow,
@@ -241,6 +243,7 @@ export class MySqlAuthRepository {
     sessionId: string;
     userId: string;
     tokenHash: Buffer;
+    expectedClientType?: "WEB" | "ANDROID";
   }): Promise<void> {
     return inTransaction(this.pool, async (connection) => {
       await this.lockEnabledUser(connection, input.userId);
@@ -253,8 +256,13 @@ export class MySqlAuthRepository {
       );
       const session = rows[0];
       const serverNow = await getServerNow(connection);
-      this.assertLockedSession(session, input.tokenHash, serverNow);
-      if (session!.clientType !== "WEB") {
+      this.assertLockedSession(
+        session,
+        input.tokenHash,
+        serverNow,
+        input.expectedClientType ?? "WEB",
+      );
+      if (session!.clientType !== (input.expectedClientType ?? "WEB")) {
         throw new AuthRepositoryStateError("UNAUTHENTICATED");
       }
 
@@ -265,7 +273,7 @@ export class MySqlAuthRepository {
         `UPDATE sessions
             SET last_seen_at = GREATEST(last_seen_at, ?)
           WHERE id = ? AND user_id = ? AND token_hash = ?
-            AND client_type = 'WEB' AND revoked_at IS NULL
+            AND client_type = ? AND revoked_at IS NULL
             AND expires_at > ?
             AND DATE_ADD(last_seen_at, INTERVAL 7 DAY) > ?
             AND last_seen_at <= DATE_SUB(?, INTERVAL 5 MINUTE)`,
@@ -274,6 +282,7 @@ export class MySqlAuthRepository {
           input.sessionId,
           input.userId,
           input.tokenHash,
+          input.expectedClientType ?? "WEB",
           serverNow,
           serverNow,
           serverNow,
@@ -304,18 +313,19 @@ export class MySqlAuthRepository {
 
   async revokeByToken(
     tokenHash: Buffer,
+    expectedClientType: "WEB" | "ANDROID" = "WEB",
   ): Promise<{ sessionStillAddressable: boolean }> {
     const connection = await acquireCheckedConnection(this.pool);
     try {
       const [updated] = await connection.query<ResultSetHeader>(
         `UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP(3), revoke_reason = 'LOGOUT'
-          WHERE token_hash = ? AND client_type = 'WEB' AND revoked_at IS NULL`,
-        [tokenHash],
+          WHERE token_hash = ? AND client_type = ? AND revoked_at IS NULL`,
+        [tokenHash, expectedClientType],
       );
       if (updated.affectedRows === 1) return { sessionStillAddressable: true };
       const [rows] = await connection.query<RowDataPacket[]>(
-        "SELECT 1 FROM sessions WHERE token_hash = ? AND client_type = 'WEB' LIMIT 1",
-        [tokenHash],
+        "SELECT 1 FROM sessions WHERE token_hash = ? AND client_type = ? LIMIT 1",
+        [tokenHash, expectedClientType],
       );
       return { sessionStillAddressable: rows.length === 1 };
     } finally {
@@ -347,6 +357,7 @@ export class MySqlAuthRepository {
     callerSessionId: string;
     callerTokenHash: Buffer;
     targetSessionId: string;
+    expectedClientType?: "WEB" | "ANDROID";
   }): Promise<{ revokedCurrent: boolean }> {
     return inTransaction(this.pool, async (connection) => {
       await this.lockEnabledUser(connection, input.userId);
@@ -358,7 +369,12 @@ export class MySqlAuthRepository {
         (row) => String(row.id) === input.callerSessionId,
       );
       const serverNow = await getServerNow(connection);
-      this.assertLockedSession(caller, input.callerTokenHash, serverNow);
+      this.assertLockedSession(
+        caller,
+        input.callerTokenHash,
+        serverNow,
+        input.expectedClientType ?? "WEB",
+      );
       const target = rows.find(
         (row) => String(row.id) === input.targetSessionId,
       );
@@ -382,6 +398,7 @@ export class MySqlAuthRepository {
     oldTokenHash: Buffer;
     newTokenHash: Buffer;
     expectedPasswordHash: string;
+    expectedClientType?: "WEB" | "ANDROID";
   }): Promise<{ expiresAt: Date; serverNow: Date }> {
     return inTransaction(this.pool, async (connection) => {
       const user = await this.lockEnabledUser(connection, input.userId);
@@ -389,13 +406,18 @@ export class MySqlAuthRepository {
         throw new AuthRepositoryStateError("CONFLICT");
       }
       const [rows] = await connection.query<RowDataPacket[]>(
-        `SELECT token_hash AS tokenHash, revoked_at AS revokedAt,
+        `SELECT token_hash AS tokenHash, client_type AS clientType, revoked_at AS revokedAt,
                 expires_at AS expiresAt, last_seen_at AS lastSeenAt
            FROM sessions WHERE id = ? AND user_id = ? FOR UPDATE`,
         [input.sessionId, input.userId],
       );
       const serverNow = await getServerNow(connection);
-      this.assertLockedSession(rows[0], input.oldTokenHash, serverNow);
+      this.assertLockedSession(
+        rows[0],
+        input.oldTokenHash,
+        serverNow,
+        input.expectedClientType ?? "WEB",
+      );
       await connection.query<ResultSetHeader>(
         `UPDATE sessions
             SET token_hash = ?, authenticated_at = CURRENT_TIMESTAMP(3),
@@ -415,13 +437,19 @@ export class MySqlAuthRepository {
     userId: string;
     sessionId: string;
     tokenHash: Buffer;
+    expectedClientType?: "WEB" | "ANDROID";
   }): Promise<void> {
     return inTransaction(this.pool, async (connection) => {
       await this.lockEnabledUser(connection, input.userId);
       const rows = await lockUserSessionsInIdOrder(connection, input.userId);
       const session = rows.find((row) => String(row.id) === input.sessionId);
       const serverNow = await getServerNow(connection);
-      this.assertLockedSession(session, input.tokenHash, serverNow);
+      this.assertLockedSession(
+        session,
+        input.tokenHash,
+        serverNow,
+        input.expectedClientType ?? "WEB",
+      );
       const authenticatedAt = session!.authenticatedAt as Date;
       const age = serverNow.getTime() - authenticatedAt.getTime();
       if (age < 0 || age >= 15 * 60_000) {
@@ -443,6 +471,7 @@ export class MySqlAuthRepository {
     expectedPasswordHash: string;
     newPasswordHash: string;
     deviceLabel: string | null;
+    expectedClientType?: "WEB" | "ANDROID";
   }): Promise<{ expiresAt: Date; serverNow: Date }> {
     return inTransaction(this.pool, async (connection) => {
       const user = await this.lockEnabledUser(connection, input.userId);
@@ -455,7 +484,12 @@ export class MySqlAuthRepository {
       );
       const caller = sessions.find((row) => String(row.id) === input.sessionId);
       const serverNow = await getServerNow(connection);
-      this.assertLockedSession(caller, input.oldTokenHash, serverNow);
+      this.assertLockedSession(
+        caller,
+        input.oldTokenHash,
+        serverNow,
+        input.expectedClientType ?? "WEB",
+      );
       const authAge =
         serverNow.getTime() - (caller!.authenticatedAt as Date).getTime();
       if (authAge < 0 || authAge >= 15 * 60_000) {
@@ -480,10 +514,11 @@ export class MySqlAuthRepository {
         `INSERT INTO sessions
           (user_id, token_hash, client_type, device_label, authenticated_at,
            created_at, last_seen_at, expires_at)
-         VALUES (?, ?, 'WEB', ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           input.userId,
           input.replacementTokenHash,
+          input.expectedClientType ?? "WEB",
           input.deviceLabel,
           serverNow,
           serverNow,
@@ -516,10 +551,12 @@ export class MySqlAuthRepository {
     row: RowDataPacket | undefined,
     expectedTokenHash: Buffer,
     serverNow: Date,
+    expectedClientType: "WEB" | "ANDROID",
   ) {
     if (
       !row ||
       row.revokedAt !== null ||
+      row.clientType !== expectedClientType ||
       !Buffer.isBuffer(row.tokenHash) ||
       !row.tokenHash.equals(expectedTokenHash)
     ) {

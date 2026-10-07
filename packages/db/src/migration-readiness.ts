@@ -25,6 +25,7 @@ import {
   sessions,
   storageObjects,
   uploadSessions,
+  uploadAlbumTargets,
   users,
   userFavorites,
   familyFeatured,
@@ -47,6 +48,7 @@ const PROJECT_TABLES = [
   albumMembers,
   storageObjects,
   uploadSessions,
+  uploadAlbumTargets,
   mediaItems,
   backgroundJobs,
   derivedAssets,
@@ -692,6 +694,15 @@ export function buildPhase8PredecessorSchemaSnapshot(): SchemaSnapshot {
   return JSON.parse(
     readFileSync(
       new URL("../drizzle/phase7_readiness.json", import.meta.url),
+      "utf8",
+    ),
+  ) as SchemaSnapshot;
+}
+
+export function buildPhase10PredecessorSchemaSnapshot(): SchemaSnapshot {
+  return JSON.parse(
+    readFileSync(
+      new URL("../drizzle/phase8_readiness.json", import.meta.url),
       "utf8",
     ),
   ) as SchemaSnapshot;

@@ -1,0 +1,17 @@
+{
+  "releaseResources": "apps/mobile/android/app/build/intermediates/linked_resources_binary_format/release/processReleaseResources/linked-resources-binary-format-release.ap_",
+  "sha256": "b0f8b24a8a4a1d602a9aceeffcc8e352d016d5934ca11f314353f679087a455a",
+  "devCaResourceEntries": [],
+  "networkSecurityXml": "E: network-security-config (line=1)\n    E: base-config (line=1)\n      A: cleartextTrafficPermitted=false\n        E: trust-anchors (line=1)\n            E: certificates (line=1)\n              A: src=\"system\" (Raw: \"system\")\n",
+  "releaseAPKGenerated": false,
+  "formalSigningPerformed": false,
+  "debugAPK": {
+    "path": ".cache/phase10-client/family-album-dev-arm64.apk",
+    "bytes": 85204644,
+    "sha256": "c346d17c3ea0e336f9d3139480d5bfbf43057f93a7a340c37f7cc38559126eb5",
+    "installedAndActuallyValidated": true,
+    "debugOnly": true,
+    "finalAuditAPKExactlyMatchesValidatedAPK": true
+  },
+  "verification": "actual linked release resources; separate apksigner log verifies debug APK"
+}

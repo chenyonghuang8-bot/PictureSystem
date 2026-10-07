@@ -82,3 +82,11 @@ export type PasswordProofRequest = z.infer<typeof passwordProofRequestSchema>;
 export type PasswordChangeRequest = z.infer<typeof passwordChangeRequestSchema>;
 export type MeResponse = z.infer<typeof meResponseSchema>;
 export type SessionsResponse = z.infer<typeof sessionsResponseSchema>;
+
+export const androidSessionResponseSchema = z
+  .object({
+    token: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+    expiresAt: z.iso.datetime(),
+    serverNow: z.iso.datetime(),
+  })
+  .strict();

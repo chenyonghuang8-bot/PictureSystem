@@ -1,0 +1,657 @@
+{
+  "createdUTC": "2026-10-06T13:52:06.478567+00:00",
+  "head": "6510261f920b5ebe6d98d1cefa3227fb221bbd5f",
+  "scope": "REAL_CLIENT_ACCEPTANCE_AND_FINAL_GATE_CANDIDATE_PENDING_FINAL_INDEPENDENT_REVIEW",
+  "sourceFiles": [
+    {
+      "path": "apps/mobile/.env.example",
+      "bytes": 176,
+      "sha256": "ab1ba88ffc8fa55bee2e9aee09f7e14d413afa8a3df560349146fe6e74d21c60"
+    },
+    {
+      "path": "apps/mobile/app.json",
+      "bytes": 485,
+      "sha256": "6c563b92d5c098440d6e98587ac7bf7f165fee3bee78c5b5122aa06ec74e116c"
+    },
+    {
+      "path": "apps/mobile/app/_layout.tsx",
+      "bytes": 138,
+      "sha256": "74c5845ab4cdfa4bff7c3e9d04480c720d1ca97d76d1b3db549eda5168eccff5"
+    },
+    {
+      "path": "apps/mobile/app/index.tsx",
+      "bytes": 35025,
+      "sha256": "dfe9acd36f9c937c89c704a06b16b1310d15760a6e0282a9dbaf17e5ebaa2186"
+    },
+    {
+      "path": "apps/mobile/index.ts",
+      "bytes": 105,
+      "sha256": "6b8bcad523cbb11c949121c356427d9aea86390ff4eb1ca5f2026df3c5a4ebdc"
+    },
+    {
+      "path": "apps/mobile/lib/filesystem-test-adapter.ts",
+      "bytes": 1798,
+      "sha256": "e8a205226480684ea20c3c508e9d3d622a98533e3b22b60f162bf273b886aedd"
+    },
+    {
+      "path": "apps/mobile/lib/invitations.ts",
+      "bytes": 3240,
+      "sha256": "986453c5877aed7c347cbbf20ef33dcedec301cd967cd272763f58aaca501dfc"
+    },
+    {
+      "path": "apps/mobile/lib/media.tsx",
+      "bytes": 5822,
+      "sha256": "a98469b834c08887c35e9da5e4854d0f70b4b140d12fff241ce33cd68e97ca43"
+    },
+    {
+      "path": "apps/mobile/lib/queue.test.ts",
+      "bytes": 10081,
+      "sha256": "87657662f25bc00eb366b4f2aa2f353c6736999eaf4bf84fcb0a4ed090c401c1"
+    },
+    {
+      "path": "apps/mobile/lib/queue.ts",
+      "bytes": 14943,
+      "sha256": "6a22adea4b5b816bf5d24ee52036a66e912aa4cc3665606efb311d142030b191"
+    },
+    {
+      "path": "apps/mobile/lib/session.test.ts",
+      "bytes": 8715,
+      "sha256": "a1138be462f7146263b9090515164cf2176cff0b914aaf2e9317298e5becb556"
+    },
+    {
+      "path": "apps/mobile/lib/session.ts",
+      "bytes": 11439,
+      "sha256": "f197c01f39311eb9e403d16a4ee53f64189ef1c93e1334a8e82cdb5b36dd69bf"
+    },
+    {
+      "path": "apps/mobile/metro.config.cjs",
+      "bytes": 1164,
+      "sha256": "20f570ba613c254a09c3f5c6a632c1300f4a91db5b6900d8a210c4920f545497"
+    },
+    {
+      "path": "apps/mobile/package.json",
+      "bytes": 1361,
+      "sha256": "3301060990f037dc5b0d820800f635cb72df43832190ef1e4a0f40013bc3addc"
+    },
+    {
+      "path": "apps/mobile/plugins/with-private-android.cjs",
+      "bytes": 6091,
+      "sha256": "07de45c53b3b4ddc45505594a9916faac490379de78cadb14b7b8eda965e541f"
+    },
+    {
+      "path": "apps/web/app/albums/[albumId]/page.tsx",
+      "bytes": 1855,
+      "sha256": "debe4ea7e89c8f122820e8ac6d6cad4c7f8c5cafe431c63899e45aa96912ca2f"
+    },
+    {
+      "path": "apps/web/app/albums/page.tsx",
+      "bytes": 1130,
+      "sha256": "fc4ab0688a9bc972326a6e333a209f20dd4a4da0c25bb8661e52df0bc6816d2b"
+    },
+    {
+      "path": "apps/web/app/login/page.tsx",
+      "bytes": 296,
+      "sha256": "6d0f97928e1cc369d5107e854b215795744185d6f432a821eaa0a4315df88d1e"
+    },
+    {
+      "path": "apps/web/app/memories/page.tsx",
+      "bytes": 1467,
+      "sha256": "95b16a0186ab9eeafc940aeec14844184384cb2cd7dd0c8469881ab531235ce6"
+    },
+    {
+      "path": "apps/web/app/my/page.tsx",
+      "bytes": 1336,
+      "sha256": "cb16af1ea533f54e4998f9b1ec9fb91787dd30375fdd5ea465cf4788e8880e60"
+    },
+    {
+      "path": "apps/web/app/page.tsx",
+      "bytes": 2042,
+      "sha256": "f339329bb3fddf2d6a2f8d5357621c7d0e8e003a336507b1823f2da8efa46ca0"
+    },
+    {
+      "path": "apps/web/app/styles.css",
+      "bytes": 23613,
+      "sha256": "7be1e1bc0e0e62fac141f99a8c94386082a59168680244975c9a1e17769b5c09"
+    },
+    {
+      "path": "apps/web/components/gallery/shell.tsx",
+      "bytes": 3372,
+      "sha256": "84e095d9438f57b3291ba8545398b3f06e5a326971372c59d41ac75c805f781d"
+    },
+    {
+      "path": "apps/web/components/gallery/states.tsx",
+      "bytes": 1295,
+      "sha256": "97cb1d90b14f2d4d27d3245fb92b34c0856716f35d2f284316bcbea19e22c5aa"
+    },
+    {
+      "path": "apps/web/components/mobile/account.tsx",
+      "bytes": 2605,
+      "sha256": "4765e6554db82602d6e013b2d1540bb062b0f522879c333a9f8d70be76db81c9"
+    },
+    {
+      "path": "apps/web/components/mobile/upload-panel.tsx",
+      "bytes": 16924,
+      "sha256": "38386e2086058a0ecb23dba66034747df2e18c8263552f33346c5675868e1db2"
+    },
+    {
+      "path": "apps/web/lib/mobile-upload.ts",
+      "bytes": 2965,
+      "sha256": "59803455197c0fde3d168589cded43e227de4cc3556d43062d33f80ab9c4948d"
+    },
+    {
+      "path": "apps/web/lib/private-album-page.test.ts",
+      "bytes": 1343,
+      "sha256": "79dc3e88117047e39f440695a46a9976ce4501c3cffd864f8cc2b66c6d875bd2"
+    },
+    {
+      "path": "apps/web/lib/private-album-page.ts",
+      "bytes": 533,
+      "sha256": "71e36a853e25b0ed043600572008f3a66688c019035cd162ed3b6366a7997a09"
+    },
+    {
+      "path": "eslint.config.mjs",
+      "bytes": 1559,
+      "sha256": "eeb82c7a14f48fe3c8d9191d61acf434600156d10817c6f6eb60a7e49f90d334"
+    },
+    {
+      "path": "packages/contracts/src/client-upload.test.ts",
+      "bytes": 8629,
+      "sha256": "97fd79cbbfe89b591c9346be88de0d8e0d3364b457d5abe18b96db1abdfb1840"
+    },
+    {
+      "path": "packages/contracts/src/client-upload.ts",
+      "bytes": 7918,
+      "sha256": "c8f105e254ead5a849c70d4adb9bc4ef89084ee0cedfc146001653b3464827de"
+    },
+    {
+      "path": "packages/contracts/src/content-sha256.ts",
+      "bytes": 3176,
+      "sha256": "3a438b9057748f7088f5f7fd9b7014a1cf7da234e504ca8916b054b83fec78d2"
+    },
+    {
+      "path": "packages/contracts/src/index.ts",
+      "bytes": 692,
+      "sha256": "187e0c920512f3880ba01caf5d75732e138702dc76cf75214260d14996c4e3dd"
+    },
+    {
+      "path": "patches/expo-file-system@57.0.7.patch",
+      "bytes": 937,
+      "sha256": "da3b165a518bedd3b35890e32620dfc1c7543de7753a86ed34db6119cc3b69b8"
+    },
+    {
+      "path": "playwright.phase10-client.config.ts",
+      "bytes": 730,
+      "sha256": "370b9d171812f7bce926457afa0e8ae299f28c7b1f7406514e8f09160af5ce86"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "bytes": 381266,
+      "sha256": "5eeae82eb63ec105efb494ea5f2a584e0078f0e269b6cbeb7cc1ce9d29f02674"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "bytes": 168,
+      "sha256": "253af976a8c205dbfd94016c68f50eb5da04d9dd37803d496563866e346e625b"
+    },
+    {
+      "path": "project-spec/ROADMAP.md",
+      "bytes": 5838,
+      "sha256": "83e3c59df95279095108fcf5b8b0d415c5ec7d4f5306549b3072c01fa063ad7d"
+    },
+    {
+      "path": "tests/e2e-native/NativeClientInstrumentation.java",
+      "bytes": 11285,
+      "sha256": "ed94480b5fbcf662bce232f863ae995edc2599bd1e5232fa6363fdfd0b74d184"
+    },
+    {
+      "path": "tests/e2e-native/build-instrumentation.py",
+      "bytes": 1890,
+      "sha256": "111b38abb5499cab329598bcb646531b87d37723f1bd62298e1c1730ece181f1"
+    },
+    {
+      "path": "tests/e2e-native/open-invitation.py",
+      "bytes": 738,
+      "sha256": "3d91eb1e0b1d6e186c54cea606e67d66047ed537cd9169fb05b482a13a74aeb2"
+    },
+    {
+      "path": "tests/e2e-native/prepare-invitation.ts",
+      "bytes": 2550,
+      "sha256": "5bb0997736867d13775f4ac84b608b13afb6f1ef2f51c23cde0d91283c28374a"
+    },
+    {
+      "path": "tests/e2e-native/run-ui-phase.py",
+      "bytes": 1256,
+      "sha256": "04f383ae725b61fb2622b299b15ebfc4921319bb31effb65533eb6c0020472b4"
+    },
+    {
+      "path": "tests/e2e-native/start-dev-harness.ts",
+      "bytes": 5003,
+      "sha256": "323977011cb0542be5087e41ab0061cfc9d84eb896000319a67447a2481d509c"
+    },
+    {
+      "path": "tests/e2e-web/phase10-mobile-client.spec.ts",
+      "bytes": 15525,
+      "sha256": "af8e1432b217a17fc437fbf6cf5238a3f7453dab933db28fe7b70b3959a16bf4"
+    },
+    {
+      "path": "tests/e2e-web/phase10-upload-panel-isolated.mjs",
+      "bytes": 5927,
+      "sha256": "053b6888332c6d9d6a64f29f7f21e83335b609f29fdc2f58dab63aff7689a615"
+    },
+    {
+      "path": "tests/e2e-web/run-suites.mjs",
+      "bytes": 1577,
+      "sha256": "4cd62170fb62857823ce7c25cab44e40efe013e0ddfcb0a68653c0cb6f605857"
+    },
+    {
+      "path": "tests/e2e-web/start-web-https.mjs",
+      "bytes": 5190,
+      "sha256": "163037a2bc65bfcbf04488996ac31e42c9055c4a5f2298fb4a8a3154d4956acc"
+    }
+  ],
+  "logs": [
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-final-format-complete.log",
+      "bytes": 315,
+      "sha256": "9394bc213fbb7c8590b6c8099d6b4f91f08131de3d71f92f88a11a4b5a9fcda7",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:46:31.160585+00:00",
+      "utcEnd": "2026-10-06T13:46:35.222303+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-final-format-complete.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-final-lint-complete.log",
+      "bytes": 197,
+      "sha256": "9f28409018f56646bc01032e2145384c2a5e5bc10a436f82158b7d3b78d5fe09",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:46:35.245021+00:00",
+      "utcEnd": "2026-10-06T13:46:39.045660+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-final-lint-complete.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-final-types-complete.log",
+      "bytes": 1145,
+      "sha256": "511f6f113512888fe18d95a27bc9d71e629a3917b54035a9355e66f2f7ae3b63",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:46:39.069620+00:00",
+      "utcEnd": "2026-10-06T13:46:49.048557+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-final-types-complete.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-full-unit-latest.log",
+      "bytes": 37816,
+      "sha256": "d0ac2346d8f512647a93f11d231090aa8e8a37cb257dabe15cacc51af0419509",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:23:42.843458+00:00",
+      "utcEnd": "2026-10-06T13:24:17.376899+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-full-unit-latest.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-full-integration-serial.log",
+      "bytes": 16356,
+      "sha256": "0294fc4f72d97e8fa38437655c188f842d73e2ad38ff2939015a4903027953b8",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:31:56.467093+00:00",
+      "utcEnd": "2026-10-06T13:34:15.822664+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-full-integration-serial.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-web-wasm-build.log",
+      "bytes": 6523,
+      "sha256": "47d663d53814df9499fec3d8107bfa7642594d12b04489f713a3c4d7d2af52b4",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:30:08.990791+00:00",
+      "utcEnd": "2026-10-06T13:30:30.337860+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-web-wasm-build.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-final-api-e2e.log",
+      "bytes": 1379,
+      "sha256": "32f4d6f18fc84342432de4070a8a7a957c856d811c952b016f2ab8366cf9cf43",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:34:53.782622+00:00",
+      "utcEnd": "2026-10-06T13:34:57.915181+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-final-api-e2e.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-all-strict-web-e2e.log",
+      "bytes": 30489,
+      "sha256": "f24ad054f8e21cb80ab1b8e16df707a9f68d9065cb21ceeda1f628e3280fe120",
+      "exitCode": 1,
+      "utcStart": "2026-10-06T13:35:50.540955+00:00",
+      "utcEnd": "2026-10-06T13:41:09.706634+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-all-strict-web-e2e.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-strict-client-precise-ui.log",
+      "bytes": 7439,
+      "sha256": "b16df09fc41b86c3dd1eab96d159ba90e4b9821f9ae8571f34569435d224cbda",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:44:13.905514+00:00",
+      "utcEnd": "2026-10-06T13:45:05.905966+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-strict-client-precise-ui.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-final-android-resource-audit.log",
+      "bytes": 43195,
+      "sha256": "4ee17d2fd04a52e072e414ddef221d01b197cdb6b7685ca372975d55523da91b",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:46:29.752371+00:00",
+      "utcEnd": "2026-10-06T13:46:56.563510+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-final-android-resource-audit.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-final-apk-signature.log",
+      "bytes": 1333,
+      "sha256": "a97428b87648d002c9b09d9dc5755debc229a0dd9a4c59d485713826afb63b9a",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:49:30.750517+00:00",
+      "utcEnd": "2026-10-06T13:49:31.064903+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-final-apk-signature.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-final-readiness-cleanup.log",
+      "bytes": 217,
+      "sha256": "064b5e9c0beab61bf45390c522f51f5ae4e5590ce6f4fe60bf98d1a86562e9f9",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:48:17.430619+00:00",
+      "utcEnd": "2026-10-06T13:48:18.050305+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-final-readiness-cleanup.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-client-native-actual-source-provider-ready.log",
+      "bytes": 198,
+      "sha256": "8ed1073e88a7027827b0b0b5ccdc3aa5398a196f186d87c8956ed733380c2263",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:01:34.467573+00:00",
+      "utcEnd": "2026-10-06T13:02:23.396018+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-client-native-actual-source-provider-ready.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-client-native-specific-partial-cold-resume.log",
+      "bytes": 200,
+      "sha256": "3a348337a01cb831539079bf6b6bdc595adf1f31235cbab7db5e20dc50a906ab",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:19:41.848745+00:00",
+      "utcEnd": "2026-10-06T13:21:05.289653+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-client-native-specific-partial-cold-resume.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-client-native-partial-offset-kill-retry.log",
+      "bytes": 279,
+      "sha256": "cbd3f6574b0dad3d625ad976a59001095627acc2396f163e562125bc5952bb97",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:13:47.257351+00:00",
+      "utcEnd": "2026-10-06T13:15:14.913158+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-client-native-partial-offset-kill-retry.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-client-native-real-logout.log",
+      "bytes": 186,
+      "sha256": "6eb85443077e44cb671b72969ce22abc0566e5bbae77833dd9e3d866b5bcf4ce",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:22:29.367410+00:00",
+      "utcEnd": "2026-10-06T13:22:31.785346+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-client-native-real-logout.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-client-native-cold-logged-out.log",
+      "bytes": 194,
+      "sha256": "8072263f3d2d84bf9ece55dcbfb70311c9b550f7cc7bde78577d74c336731906",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:22:31.808831+00:00",
+      "utcEnd": "2026-10-06T13:22:33.315736+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-client-native-cold-logged-out.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-client-native-logout-anonymous-401.log",
+      "bytes": 204,
+      "sha256": "b67c7f1a83e62d895584b6b37f0032320fe50665e2ae17daf439e9232c8742f5",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:22:33.341165+00:00",
+      "utcEnd": "2026-10-06T13:22:34.978003+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-client-native-logout-anonymous-401.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-client-native-invitation-real-server-preview.log",
+      "bytes": 202,
+      "sha256": "87830aa81a4bf61939a7950a856e29d255ccbd6c23c6538bcd2ad9fe3b0f87fd",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:24:44.778050+00:00",
+      "utcEnd": "2026-10-06T13:24:52.799324+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-client-native-invitation-real-server-preview.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-client-native-invitation-warm-preview.log",
+      "bytes": 212,
+      "sha256": "793a4439cfd62165e77fa6d90d5ffe98ddd692f45b5aa8d048454b66ef1b84fd",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:24:52.836999+00:00",
+      "utcEnd": "2026-10-06T13:25:01.234254+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-client-native-invitation-warm-preview.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-client-native-invitation-new-account.log",
+      "bytes": 202,
+      "sha256": "3c9b1844afa0702b9a12573005b4f3eeeaf6c64af22d3aa8beb651e3dc543673",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:25:01.271154+00:00",
+      "utcEnd": "2026-10-06T13:25:10.337931+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-client-native-invitation-new-account.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-client-startup-lifecycle-targeted.log",
+      "bytes": 415,
+      "sha256": "ec5a7d6417a5591c68004b8efee0712cd911497ef2cd4956cfd206514512e832",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T13:11:27.262463+00:00",
+      "utcEnd": "2026-10-06T13:11:30.282209+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-client-startup-lifecycle-targeted.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-client-native-base64-golden.log",
+      "bytes": 381,
+      "sha256": "f52cf41c6423a0563dcde7e18ca5a4878087c0d84b32b7f30871affdfc414a89",
+      "exitCode": 0,
+      "utcStart": "2026-10-06T12:46:32.817283+00:00",
+      "utcEnd": "2026-10-06T12:46:34.524402+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-client-native-base64-golden.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-full-integration-race.log",
+      "bytes": 21078,
+      "sha256": "1f6a4743d00aec6856c42685d0b7e137b1eac843cab113ed2b488ba1caac3c06",
+      "exitCode": 1,
+      "utcStart": "2026-10-06T13:27:28.712039+00:00",
+      "utcEnd": "2026-10-06T13:30:11.170795+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-full-integration-race.log"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/logs/phase10-checkpoint-phase10-final-build.log",
+      "bytes": 7041,
+      "sha256": "9a2b9b43648cce4f24d8b19534c621259ecf10d01c9293e8a1642744f5babbe3",
+      "exitCode": 1,
+      "utcStart": "2026-10-06T13:28:38.987006+00:00",
+      "utcEnd": "2026-10-06T13:28:59.466788+00:00",
+      "originalPath": "/tmp/phase10-checkpoint-phase10-final-build.log"
+    }
+  ],
+  "apk": {
+    "path": ".cache/phase10-client/family-album-dev-arm64.apk",
+    "bytes": 85204644,
+    "sha256": "c346d17c3ea0e336f9d3139480d5bfbf43057f93a7a340c37f7cc38559126eb5",
+    "installedAndActuallyValidated": true,
+    "debugOnly": true,
+    "finalAuditAPKExactlyMatchesValidatedAPK": true
+  },
+  "screenshots": [
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-albums.png",
+      "bytes": 134379,
+      "sha256": "c6f6e49949a8dbf53843d038d1a157885c43cbb166385c77356ff79da9c8b2e0"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-authenticated-photos.png",
+      "bytes": 167938,
+      "sha256": "e8819170ec2f362bc54959d5cf76ec5081e59e04bd997660e8677c81882d783a"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-cold-logged-out.png",
+      "bytes": 59762,
+      "sha256": "cf368f080ec9ef7f6ceebf9012f702b153e16f9b4abb475406a6e1d794e5e0ed"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-invite-created-not-auto-login.png",
+      "bytes": 85456,
+      "sha256": "a906fa928e210898e8c13785c537890902d2740ea13741b84d367066daf8915b"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-invite-preview.png",
+      "bytes": 145441,
+      "sha256": "0f52448c45afc2415bf87febf2e55e1c22a2624f67a9165643cc8d558d8f9e99"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-logout.png",
+      "bytes": 62385,
+      "sha256": "63e66aa2b08a5506301cadc66d7b4a19e183cc40f3df9a362072475248f41b40"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-memories.png",
+      "bytes": 133576,
+      "sha256": "4a718eded2b770e829b7001a7d7d0ba262461eb8531c5624fdf73e3d8482d770"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-my.png",
+      "bytes": 202330,
+      "sha256": "b4d09b0d4228a491e5987ca547554431071e8c3c72b0fda96293a5172245dfa5"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-ready-queue.png",
+      "bytes": 265687,
+      "sha256": "b4c00b9e375b2941f55349eb86d55a544a8bc739571d2a2bca71c4e31616832b"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-viewer.png",
+      "bytes": 164179,
+      "sha256": "cdcb715f5845548b68fe5165ed691a8afaa12a20fbc6ecfb1aa4334b7d513060"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/h5-photos.png",
+      "bytes": 38112,
+      "sha256": "e31ee58b237aedfc8ef0bd0f62a8865870609f5a8512210e93706e61dffbe253"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/h5-my.png",
+      "bytes": 69477,
+      "sha256": "a9b6da93d8266b2110554542bd49608d5004270756f36c1e246ac33bfa72a9f4"
+    }
+  ],
+  "observations": [
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-partial-offset-observation.json",
+      "bytes": 124,
+      "sha256": "b5e3f68db0009bcfbfe618b5e0d198ed704cfd32384faced31f457f39ed4a2a2"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-acceptance-observation.json",
+      "bytes": 1093,
+      "sha256": "7716fbad101f61916eae89203b329d871250f14d92f5d3fe5c6a535862b34ffe"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/release-resource-observation.json",
+      "bytes": 1019,
+      "sha256": "a41c7a7f712a97b732128f088ac6698c98df01ee5d8570ced032163f4d9e7439"
+    },
+    {
+      "path": "docs/progress/phase10-client-artifacts/native-partial-observer-source.txt",
+      "bytes": 1349,
+      "sha256": "4cd29a19c819ad3c61231352b777997cc7844cf8750711c761558b3d1579a8c5",
+      "purpose": "snapshot of actually executed DEV-only partial offset observer; protected runtime credentials are not included"
+    }
+  ],
+  "results": {
+    "unit": {
+      "files": 131,
+      "pass": 1258,
+      "fail": 0,
+      "skip": 0
+    },
+    "integration": {
+      "files": 37,
+      "pass": 474,
+      "fail": 0,
+      "skip": 0
+    },
+    "apiE2E": {
+      "pass": 5,
+      "fail": 0,
+      "skip": 0
+    },
+    "webCoverage": {
+      "existingSuitesPass": 21,
+      "phase10LatestPass": 6,
+      "latestFailures": 0,
+      "skip": 0,
+      "singleRootDriverExit0": false,
+      "rootFailurePreserved": "5 test locator/fixture failures; affected six tests rerun PASS"
+    }
+  },
+  "migration": {
+    "tag": "0009_phase_10_android",
+    "sha256": "e749f32760f0f0bcd643e674fd62365c8ca716f8acf793314fbd3e465b910939",
+    "appliedAgain": false,
+    "readiness": "CURRENT_NO_DDL"
+  },
+  "cleanup": {
+    "ownedNativeAndH5Rows": 0,
+    "ownLoopbackServicesRemaining": 0,
+    "ownedExternalFixturesRemoved": true,
+    "originalEmulatorProxyRestored": true,
+    "ownedEmulatorStopped": true,
+    "CAUserSSLTrustRetainedAsAuthorized": true
+  },
+  "previousEvidence": "evidence-review-closure.json",
+  "phase10Complete": false,
+  "finalIndependentReview": "ACCEPT_DEV_CANDIDATE",
+  "familyDevices": "PENDING",
+  "releaseSigning": "NOT_PERFORMED",
+  "deliverables": [
+    {
+      "path": "project-spec/README.md",
+      "bytes": 3417,
+      "sha256": "f1f0b7e9fa0deafd2e97dc6f8487dc981a6698b30ca070ee7c9df9620bbcabb4"
+    },
+    {
+      "path": "docs/progress/PHASE-10-FINAL-SUMMARY.md",
+      "bytes": 16777,
+      "sha256": "6850b1f620676e1d13837785f40956a7dea604a7e0aba7b7e4b89ba0625f8d23"
+    },
+    {
+      "path": "docs/progress/PHASE-10-CLIENT-IMPLEMENTATION-HANDOFF.md",
+      "bytes": 13303,
+      "sha256": "8985bbdcd0ba092f1f76875fa943f8038eb5033abcf0c7310a712b9b3ba7c2dd"
+    },
+    {
+      "path": "docs/progress/PHASE-10-SERVER-IMPLEMENTATION-HANDOFF.md",
+      "bytes": 23502,
+      "sha256": "c443ef7659309796465a3056e101e00a37dd7738b96129bea3a1514aa778b536"
+    },
+    {
+      "path": "docs/progress/PHASE-10-FINAL-REVIEW.md",
+      "bytes": 15313,
+      "sha256": "cb9ce67042fa6f5758a36f4d8514e783422a886f0c70fbeee81d83b85a021dc4"
+    },
+    {
+      "path": "docs/progress/PHASE-10-DOC-ONLY-FINGERPRINT.json",
+      "bytes": 1721,
+      "sha256": "043499300910594ee8b60091791a0965aca75e63b2f38a6f7a56e8f2fbfc3108"
+    }
+  ],
+  "docOnlyUpdate": {
+    "utc": "2026-10-06T14:09:44.461716+00:00",
+    "reviewedManifest": "evidence-final-reviewed.json",
+    "reviewedEvidenceSHA256": "21b4a0dcce3852ba1bba0ff8b0950929206f3b2bec230fd4b677ef430608ff35",
+    "stableArtifactsUnchanged": true,
+    "fingerprintReport": "docs/progress/PHASE-10-DOC-ONLY-FINGERPRINT.json"
+  }
+}

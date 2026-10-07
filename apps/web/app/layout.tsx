@@ -5,7 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles.css";
 
 export const metadata: Metadata = {
-  title: "家庭相册",
+  title: "嘟嘟家庭相册",
   description: "Private family album",
 };
 

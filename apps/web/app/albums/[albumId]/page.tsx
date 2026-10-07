@@ -36,7 +36,12 @@ export default async function AlbumDetailPage({
       galleryMediaPageSchema,
     );
     return (
-      <GalleryShell familyName={family.familyName} active="albums">
+      <GalleryShell
+        userId={family.userId}
+        familyId={family.familyId}
+        familyName={family.familyName}
+        active="albums"
+      >
         <AlbumDetail
           key={`${family.userId}:${family.familyId}:${albumId}`}
           userId={family.userId}

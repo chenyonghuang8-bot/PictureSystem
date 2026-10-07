@@ -72,3 +72,5 @@ export {
   MemoriesAnchorExpiredError,
   type MemoriesRecord,
 } from "./album-repository.js";
+
+export type { UploadPlacementKey } from "./upload-completion.js";

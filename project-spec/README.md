@@ -1,6 +1,6 @@
-# Family Album — Codex Starter Pack
+# 嘟嘟家庭相册 — Codex Starter Pack
 
-这是家庭相册系统的正式开工包。请先阅读以下文件，再开始编码：
+这是“嘟嘟家庭相册”家庭相册系统的正式开工包。请先阅读以下文件，再开始编码：
 
 1. `PROJECT.md` — 已确认的产品范围与业务规则
 2. `ARCHITECTURE.md` — 技术架构与关键工程决策
@@ -17,7 +17,7 @@
 ## 当前已确认的关键决策
 
 - 家庭内部使用，约 5 人，预计初期 1 万张照片以内。
-- Android 是主要移动端；iPad 暂不做原生分发。
+- Android 是主要移动端；Phase 10 当前批准范围为 Android APK + 鸿蒙 HarmonyOS 6.1 手机 H5，不包含鸿蒙原生客户端；iPad 暂不做原生分发。
 - Web 同时承担普通家庭相册和管理员后台。
 - Mac mini M4 24×7 自托管。
 - 数据库使用 MySQL，目标基线 MySQL 8.4 LTS。
@@ -26,7 +26,7 @@
 - 原始媒体不可修改（immutable）。
 - 照片、视频、HEIC、RAW/DNG、4K/HDR/HEVC 原文件保存。
 - V1 做文件级 SHA-256 完全去重。
-- App Push 通知；不做短信和邮件。
+- App Push 通知保留为未来路线；Phase 10 本期延期通知、FCM/device registration，不作为当前交付门槛，以 `ROADMAP.md` 当前范围为准；不做短信和邮件。
 - UI 必须以 `ui/app-preview.png` 与 `ui/web-preview.png` 为视觉基准。
 - DEV / PROD 隔离，Codex 默认不得访问生产家庭照片。
 - 重要流程必须有自动化测试与 E2E。
@@ -36,7 +36,6 @@
 把整个目录复制到 Codex 工作区，先发送 `CODEX_START_PROMPT.md` 中的内容。
 
 不要一次性实现全部功能。严格按 `ROADMAP.md` 的 Phase 顺序推进。
-
 
 ## 安装 hardened codex-bridge-chatgpt
 
@@ -51,6 +50,7 @@ bash scripts/install-codex-bridge-skill.sh
 安装后新开一个 Codex 任务。
 
 模型和 Bridge 路由规则见：
+
 - `MODEL_ROUTING.md`
 - `BRIDGE_POLICY.md`
 
@@ -70,16 +70,17 @@ Codex 在重要任务开始前必须显示 `ROUTING DECISION`。
 
 这样即使客户端不支持 agent 自动切换底层模型，也不会在错误模型上静默执行高风险修改。
 
-
 ## V1.3 — Plus 经济模式
 
 默认：
+
 - Terra：日常开发
 - Sol Medium：核心复杂逻辑
 - Astra Low：高风险分析/审查
 - hardened Bridge：R4 独立复核
 
 同时加入：
+
 - targeted tests
 - scoped context
 - Phase summary
