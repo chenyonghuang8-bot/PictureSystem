@@ -1,3 +1,4 @@
+import { pauseControlledWebRuntime } from "../helpers/controlled-web-runtime.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
@@ -254,6 +255,7 @@ test.describe.serial("Phase 6D5 real HTTPS download validation", () => {
   }, 120_000);
 
   test.afterAll(async () => {
+    await pauseControlledWebRuntime(database.pool);
     const connection = await database.pool.getConnection();
     try {
       for (const cleanupFamilyId of [familyId, otherFamilyId].filter(Boolean)) {

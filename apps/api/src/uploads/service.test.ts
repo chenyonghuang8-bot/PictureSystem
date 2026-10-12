@@ -278,7 +278,7 @@ describe("Phase 3C upload service", () => {
     expect(current?.committedOffset).toBe(0n);
   });
 
-  it("marks a payload shorter than the trusted offset as an integrity failure", async () => {
+  it("rejects a shorter payload on HEAD without writing a failure transition", async () => {
     await service.create(context, {
       familyId: "1",
       publicId: Buffer.from(uploadId, "hex"),
@@ -292,9 +292,25 @@ describe("Phase 3C upload service", () => {
     ).rejects.toMatchObject({
       code: "STORAGE_UNAVAILABLE",
     });
-    expect(repository.markFailed).toHaveBeenCalledWith(
-      Buffer.from(uploadId, "hex"),
-      "STAGING_INTEGRITY_MISMATCH",
+    expect(repository.markFailed).not.toHaveBeenCalled();
+    expect(repository.inspect).toHaveBeenCalledWith(
+      expect.objectContaining({ transitionExpiry: false }),
+    );
+  });
+
+  it("does not expire or clean staging from HEAD/status even with a writable owner", async () => {
+    current = record({ state: "EXPIRED", declaredSize: 8n });
+    root.createUploadPayload("1", uploadId, Buffer.from("retained"));
+    await expect(
+      service.head(context, Buffer.from(uploadId, "hex")),
+    ).rejects.toMatchObject({ code: "UPLOAD_EXPIRED" });
+    expect(
+      (await service.status(context, Buffer.from(uploadId, "hex"))).state,
+    ).toBe("EXPIRED");
+    expect(root.inspectUploadPayload("1", uploadId)).toBe(8n);
+    expect(repository.markCleaned).not.toHaveBeenCalled();
+    expect(repository.inspect).toHaveBeenCalledWith(
+      expect.objectContaining({ transitionExpiry: false }),
     );
   });
 

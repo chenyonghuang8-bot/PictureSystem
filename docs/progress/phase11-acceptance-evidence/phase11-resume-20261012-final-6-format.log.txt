@@ -1,0 +1,6 @@
+
+> family-album@0.0.0 format:check /Users/toby/PictureSystem
+> prettier --check apps packages tests *.json *.yaml *.ts *.mjs
+
+Checking formatting...
+All matched files use Prettier code style!

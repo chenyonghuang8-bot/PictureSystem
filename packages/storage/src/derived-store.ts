@@ -1,3 +1,4 @@
+import { currentOperationPermit } from "./operation-gate.js";
 import type { ReadGuard } from "./phase7-coordination.js";
 import { bindPurgeStore } from "./purge-bindings.js";
 import { createHash } from "node:crypto";
@@ -97,6 +98,7 @@ type DerivedNative = {
     store: NativeStore,
     scenario: string,
     readOccupancy?: object,
+    operationPermit?: object,
   ): {
     width: number;
     height: number;
@@ -515,14 +517,26 @@ export class SealedDerivedOutput {
       throw new StorageSafetyError("DERIVED_STORE_MISMATCH");
     }
     try {
+      if (currentOperationPermit() && !readGuard)
+        throw new StorageSafetyError("HANDOFF_READ_GUARD_REQUIRED");
       const raw = readGuard
         ? readGuard.withNativeOccupancy((occupancy) =>
-            native.verifySealedOutput(
-              this.#handle,
-              handle,
-              scenario,
-              occupancy,
-            ),
+            currentOperationPermit()
+              ? currentOperationPermit()!.withNativeAdmission((permit) =>
+                  native.verifySealedOutput(
+                    this.#handle,
+                    handle,
+                    scenario,
+                    occupancy,
+                    permit,
+                  ),
+                )
+              : native.verifySealedOutput(
+                  this.#handle,
+                  handle,
+                  scenario,
+                  occupancy,
+                ),
           )
         : native.verifySealedOutput(this.#handle, handle, scenario);
       if (

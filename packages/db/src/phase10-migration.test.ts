@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { describe, it, expect } from "vitest";
 import { createUploadFingerprint } from "./upload-repository.js";
 import {
-  buildExpectedSchemaSnapshot,
+  buildPhase11PredecessorSchemaSnapshot,
   buildPhase10PredecessorSchemaSnapshot,
   loadExpectedMigrationManifest,
 } from "./migration-readiness.js";
@@ -11,7 +11,8 @@ const root = new URL("../../../", import.meta.url);
 describe("Phase10 bounded additive migration and operation identity", () => {
   it("keeps every applied predecessor migration byte-for-byte", async () => {
     const manifest = await loadExpectedMigrationManifest();
-    expect(manifest).toHaveLength(10);
+    expect(manifest.slice(0, 10)).toHaveLength(10);
+    expect(manifest.slice(10).every((m) => m.index >= 10)).toBe(true);
     expect(manifest[9]?.tag).toBe("0009_phase_10_android");
     for (const previous of manifest.slice(0, 9)) {
       const path = `packages/db/drizzle/${previous.tag}.sql`;
@@ -28,7 +29,7 @@ describe("Phase10 bounded additive migration and operation identity", () => {
   });
   it("adds only upload fields/identity and target table, with same-family restrictive FKs and no media child", () => {
     const before = buildPhase10PredecessorSchemaSnapshot(),
-      after = buildExpectedSchemaSnapshot();
+      after = buildPhase11PredecessorSchemaSnapshot();
     expect(after.tables.length - before.tables.length).toBe(1);
     const target = after.tables.find((t) => t.name === "upload_album_targets")!;
     expect(target.foreignKeys.map((f) => f.referencedTable).sort()).toEqual([

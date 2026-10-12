@@ -11,6 +11,13 @@ import {
 } from "drizzle-orm/mysql-core";
 
 import {
+  systemControlRuns,
+  systemControlRunMembers,
+  systemControl,
+  systemAdminGrants,
+  systemControlOperations,
+  adminAuditEvents,
+  adminRuntimeObservations,
   albumMedia,
   shareEvents,
   shares,
@@ -64,6 +71,13 @@ const PROJECT_TABLES = [
   purgeFiles,
   auditLogs,
   mediaLocationProjections,
+  systemControl,
+  systemAdminGrants,
+  systemControlOperations,
+  adminAuditEvents,
+  adminRuntimeObservations,
+  systemControlRuns,
+  systemControlRunMembers,
 ] as const;
 
 const PHASE_4_PREDECESSOR_TABLES = PROJECT_TABLES.slice(0, 9);
@@ -427,7 +441,7 @@ function expectedTable(table: MySqlTable): SchemaTable {
     {
       name: "PRIMARY",
       unique: true,
-      columns: columnsForPrimaryKey(config.columns),
+      columns: columnsForPrimaryKey(config.columns, config.primaryKeys),
       hasPartialOrExpression: false,
     },
     ...config.indexes.map((index) => ({
@@ -655,7 +669,12 @@ function arraysEqual(left: readonly string[], right: readonly string[]) {
 
 function columnsForPrimaryKey(
   columns: ReturnType<typeof getTableConfig>["columns"],
+  primaryKeys: ReturnType<typeof getTableConfig>["primaryKeys"],
 ) {
+  if (primaryKeys.length === 1)
+    return primaryKeys[0]!.columns.map((c) => c.name);
+  if (primaryKeys.length > 1)
+    throw new MigrationReadinessError("MANIFEST_INVALID");
   const primary = columns
     .filter((column) => column.primary)
     .map((column) => column.name);
@@ -706,4 +725,32 @@ export function buildPhase10PredecessorSchemaSnapshot(): SchemaSnapshot {
       "utf8",
     ),
   ) as SchemaSnapshot;
+}
+
+export function buildPhase11PredecessorSchemaSnapshot(): SchemaSnapshot {
+  const snapshot = buildExpectedSchemaSnapshot(PROJECT_TABLES.slice(0, 25));
+  const members = snapshot.tables.find((t) => t.name === "family_members")!;
+  members.indexes = members.indexes.filter(
+    (i) => i.name !== "uq_family_members_binding",
+  );
+  return snapshot;
+}
+
+/** Exact applied 0010 shape, before the additive R1 run-proof protocol. */
+export function buildRunProofPredecessorSchemaSnapshot(): SchemaSnapshot {
+  const snapshot = buildExpectedSchemaSnapshot(PROJECT_TABLES.slice(0, 30));
+  const control = snapshot.tables.find((t) => t.name === "system_control")!;
+  control.columns = control.columns.filter(
+    (c) => !["current_run_id", "run_epoch"].includes(c.name),
+  );
+  control.foreignKeys = control.foreignKeys.filter(
+    (f) => !f.columns.includes("current_run_id"),
+  );
+  const audit = snapshot.tables.find((t) => t.name === "admin_audit_events")!;
+  const action = audit.columns.find((c) => c.name === "action")!;
+  action.type = action.type.replace(
+    /,'(?:RUN_STARTED|RUN_STOPPING|RUN_CLEAN_CLOSED|STARTUP_AUTO_CONFIRMED|STARTUP_RECHECK_REQUIRED)'/gi,
+    "",
+  );
+  return snapshot;
 }

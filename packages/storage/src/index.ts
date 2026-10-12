@@ -152,7 +152,7 @@ function readRecoveryFact(raw: NativeDerivedRecoveryFact) {
     return null;
   }
   return {
-    fileClass: raw.fileClass,
+    fileClass: raw.fileClass as "REGULAR" | "SYMLINK" | "UNSAFE",
     byteSize,
     device: device.toString(),
     inode: inode.toString(),
@@ -265,6 +265,7 @@ type NativeBinding = {
     device: string;
   };
   closeOriginalReader(handle: NativeOriginalReader): void;
+  assertOriginalReaderIdentity(handle: NativeOriginalReader): void;
   openVerifiedOriginal(
     handle: NativeOriginalReader,
     familyId: string,
@@ -308,6 +309,7 @@ type NativeBinding = {
     allowPrepared: boolean,
   ): void;
   verifyRootIdentity(handle: NativeRoot): string;
+  assertRootWritableMount(handle: NativeRoot): void;
   listDirectory(
     handle: NativeRoot,
     relativePath: string,
@@ -633,6 +635,16 @@ export class OriginalReader {
     } catch (error) {
       if (error instanceof StorageSafetyError) throw error;
       throw safetyError("ORIGINAL_READER_UNAVAILABLE", error);
+    }
+  }
+
+  assertIdentity() {
+    if (this.#handle === null)
+      throw new StorageSafetyError("ORIGINAL_READER_CLOSED");
+    try {
+      this.#native.assertOriginalReaderIdentity(this.#handle);
+    } catch (error) {
+      throw safetyError("ORIGINAL_READER_IDENTITY_CHANGED", error);
     }
   }
 
@@ -1139,6 +1151,15 @@ export class StorageRoot {
       this.#native.validateCoordinationRoot(this.#requiredHandle());
     } catch (error) {
       throw safetyError("COORD_NAMESPACE_UNAVAILABLE", error);
+    }
+  }
+  /** Read-only fstatfs observation on the owned root descriptor. */
+  assertWritableMount() {
+    this.assertIdentity();
+    try {
+      this.#native.assertRootWritableMount(this.#requiredHandle());
+    } catch (error) {
+      throw safetyError("STORAGE_MOUNT_UNAVAILABLE", error);
     }
   }
 
@@ -1774,7 +1795,7 @@ export class CapacityGate {
         mediaId: item.mediaId,
         generation,
         recipeId: 1 as const,
-        kind: item.kind,
+        kind: item.kind as "THUMBNAIL" | "PREVIEW",
         ...fact,
       });
     }
@@ -2045,3 +2066,9 @@ function safetyError(reason: string, cause: unknown) {
       : reason,
   );
 }
+
+export * from "./operation-gate.js";
+export * from "./control-admission.js";
+
+export * from "./control-coordinator.js";
+export * from "./versioned-owner.js";

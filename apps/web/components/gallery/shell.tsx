@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { MobileUploadPanel } from "../mobile/upload-panel.js";
 
-const LATER = ["地图", "收藏", "家庭成员", "管理后台"] as const;
+const LATER = ["地图", "收藏"] as const;
 
 export function GalleryShell({
   familyName,
@@ -14,7 +14,7 @@ export function GalleryShell({
   familyName: string;
   userId?: string;
   familyId?: string;
-  active: "photos" | "albums" | "trash" | "memories" | "my";
+  active: "photos" | "albums" | "trash" | "memories" | "my" | "admin";
   aside?: ReactNode;
   children: ReactNode;
 }) {
@@ -67,6 +67,14 @@ export function GalleryShell({
         </a>
         <p className="gallery-nav-label">更多</p>
         <div className="gallery-nav-group">
+          <a
+            className="gallery-nav-link desktop-admin"
+            href="/admin"
+            aria-current={active === "admin" ? "page" : undefined}
+          >
+            <span aria-hidden="true">◎</span>
+            <span>家庭管理</span>
+          </a>
           {LATER.map((label) => (
             <button key={label} type="button" disabled>
               <span aria-hidden="true">·</span>

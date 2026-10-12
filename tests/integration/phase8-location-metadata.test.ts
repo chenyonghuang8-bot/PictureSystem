@@ -1,3 +1,4 @@
+import { InProcessControlOwner } from "../helpers/in-process-control-owner.js";
 import { readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
@@ -16,6 +17,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import {
   assertMigrationReadiness,
+  acquireCheckedConnection,
   createDatabase,
   type LeaseFence,
   MySqlJobRepository,
@@ -32,6 +34,17 @@ describe.sequential(
   "Phase8 projection atomic metadata and actual native driver",
   () => {
     const database = createDatabase(databaseUrl);
+    const fixtureQuery = async <T extends RowDataPacket[] | ResultSetHeader>(
+      sql: string,
+      values: unknown[] = [],
+    ) => {
+      const connection = await acquireCheckedConnection(database.pool);
+      try {
+        return await connection.query<T>(sql, values);
+      } finally {
+        connection.release();
+      }
+    };
     const jobs = new MySqlJobRepository(database.pool, { random: () => 0 });
     const media = new MySqlMediaRepository(database.pool);
     const projector = loadLocationProjector(
@@ -101,7 +114,7 @@ describe.sequential(
 
     afterEach(async () => {
       if (!familyId) return;
-      await database.pool.query(
+      await fixtureQuery(
         `UPDATE background_jobs SET state='CANCELLED',worker_id=NULL,
         locked_at=NULL,heartbeat_at=NULL,locked_until=NULL,last_failure_code=NULL,
         finished_at=CURRENT_TIMESTAMP(3)
@@ -173,20 +186,20 @@ describe.sequential(
         .update(fixture ?? `${suffix}:${label}`)
         .digest();
       const bytes = BigInt(fixture?.length ?? 4096 + label.length);
-      const [object] = await database.pool.query<ResultSetHeader>(
+      const [object] = await fixtureQuery<ResultSetHeader>(
         `INSERT INTO storage_objects
         (family_id,sha256,byte_size,key_version,state,durable_at,verified_at)
        VALUES (?,?,?,1,'AVAILABLE',CURRENT_TIMESTAMP(3),CURRENT_TIMESTAMP(3))`,
         [familyId, sha256, bytes.toString()],
       );
       const storageObjectId = String(object.insertId);
-      const [upload] = await database.pool.query<ResultSetHeader>(
+      const [upload] = await fixtureQuery<ResultSetHeader>(
         `INSERT INTO upload_sessions
         (public_id,family_id,created_by_member_id,original_filename,
          declared_size,committed_offset,state,computed_sha256,
-         finalize_started_at,storage_object_id,completed_at,expires_at)
+         finalize_started_at,storage_object_id,completed_at,staging_cleaned_at,expires_at)
        VALUES (?,?,?,'synthetic.bin',?,?,'COMPLETE',?,CURRENT_TIMESTAMP(3),?,
-         CURRENT_TIMESTAMP(3),DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 1 DAY))`,
+         CURRENT_TIMESTAMP(3),CURRENT_TIMESTAMP(3),DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 1 DAY))`,
         [
           randomBytes(16),
           familyId,
@@ -204,7 +217,7 @@ describe.sequential(
         })
       ).media;
       if (generation !== 1n) {
-        await database.pool.query(
+        await fixtureQuery(
           "UPDATE media_items SET generation=?,processing_state='PENDING' WHERE id=?",
           [generation.toString(), item.id],
         );
@@ -224,7 +237,7 @@ describe.sequential(
 
     async function insertClaimedJob(mediaId: string, generation: bigint) {
       const workerId = MySqlJobRepository.createWorkerIdentity();
-      const [inserted] = await database.pool.query<ResultSetHeader>(
+      const [inserted] = await fixtureQuery<ResultSetHeader>(
         `INSERT INTO background_jobs
         (family_id,media_id,generation,recipe_id,job_type,state,attempts,
          available_at,locked_at,heartbeat_at,locked_until,worker_id,lease_epoch)
@@ -257,7 +270,7 @@ describe.sequential(
       expectedEpoch: bigint;
     }) {
       const workerId = MySqlJobRepository.createWorkerIdentity();
-      const [changed] = await database.pool.query<ResultSetHeader>(
+      const [changed] = await fixtureQuery<ResultSetHeader>(
         `UPDATE background_jobs SET state='RUNNING',attempts=attempts+1,
         worker_id=?,lease_epoch=lease_epoch+1,locked_at=CURRENT_TIMESTAMP(3),
         heartbeat_at=CURRENT_TIMESTAMP(3),
@@ -287,7 +300,7 @@ describe.sequential(
     }
 
     async function expire(jobId: string) {
-      await database.pool.query(
+      await fixtureQuery(
         `UPDATE background_jobs SET
         locked_at=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 120 SECOND),
         heartbeat_at=DATE_SUB(CURRENT_TIMESTAMP(3),INTERVAL 120 SECOND),
@@ -298,7 +311,7 @@ describe.sequential(
     }
 
     async function projectionRows(id: string) {
-      const [rows] = await database.pool.query<RowDataPacket[]>(
+      const [rows] = await fixtureQuery<RowDataPacket[]>(
         "SELECT h3_cell cell,country_code country,CAST(generation AS CHAR) generation FROM media_location_projections WHERE family_id=? AND media_id=?",
         [familyId, id],
       );
@@ -316,7 +329,7 @@ describe.sequential(
       expect(await projectionRows(f.item.id)).toEqual([
         expect.objectContaining({ country: "US", generation: "1" }),
       ]);
-      await database.pool.query(
+      await fixtureQuery(
         "UPDATE background_jobs SET state='RUNNING',lease_epoch=2,finished_at=NULL,locked_at=CURRENT_TIMESTAMP(3),heartbeat_at=CURRENT_TIMESTAMP(3),locked_until=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 90 SECOND),worker_id=? WHERE id=?",
         [f.fence.workerId, f.fence.jobId],
       );
@@ -329,7 +342,7 @@ describe.sequential(
         "CAPABILITY_DISABLED",
       );
       expect(await projectionRows(f.item.id)).toEqual([]);
-      const [snapshot] = await database.pool.query<RowDataPacket[]>(
+      const [snapshot] = await fixtureQuery<RowDataPacket[]>(
         "SELECT gps_latitude gps FROM media_items WHERE id=?",
         [f.item.id],
       );
@@ -354,10 +367,9 @@ describe.sequential(
             expectedEpoch: 1n,
           });
         } else
-          await database.pool.query(
-            "UPDATE media_items SET generation=2 WHERE id=?",
-            [f.item.id],
-          );
+          await fixtureQuery("UPDATE media_items SET generation=2 WHERE id=?", [
+            f.item.id,
+          ]);
         expect(
           await metadata.persistResult(f.fence, f.preparation, gps),
         ).toEqual({ affectedRows: 0 });
@@ -380,7 +392,7 @@ describe.sequential(
         repository.persistResult(f.fence, f.preparation, gps),
       ).rejects.toThrow("LOCATION_PROJECTION_INVALID");
       expect(await projectionRows(f.item.id)).toEqual([]);
-      const [rows] = await database.pool.query<RowDataPacket[]>(
+      const [rows] = await fixtureQuery<RowDataPacket[]>(
         "SELECT m.metadata_generation metadataGeneration,j.state FROM media_items m JOIN background_jobs j ON j.media_id=m.id WHERE j.id=?",
         [f.fence.jobId],
       );
@@ -409,7 +421,7 @@ describe.sequential(
       ).toMatchObject({ affectedRows: 1, jobState: "SUCCEEDED" });
       expect(failures).toBe(1);
       expect(await projectionRows(f.item.id)).toEqual([]);
-      const [rows] = await database.pool.query<RowDataPacket[]>(
+      const [rows] = await fixtureQuery<RowDataPacket[]>(
         "SELECT gps_latitude gps FROM media_items WHERE id=?",
         [f.item.id],
       );
@@ -418,7 +430,7 @@ describe.sequential(
     it("serializes backfill and same-generation metadata replacement in both real lock acquisition orders", async () => {
       for (const first of ["backfill", "metadata"] as const) {
         const f = await createClaimed(`barrier-${first}`);
-        await database.pool.query(
+        await fixtureQuery(
           "UPDATE media_items SET metadata_generation=generation,gps_latitude='37.780000',gps_longitude='-122.420000' WHERE id=?",
           [f.item.id],
         );
@@ -446,12 +458,13 @@ describe.sequential(
                   get(connection, method) {
                     if (method === "query")
                       return async (...args: Parameters<typeof c.query>) => {
+                        const sql: unknown = args[0];
                         const result = await c.query(...args);
                         if (
                           !waited &&
-                          typeof args[0] === "string" &&
-                          args[0].includes("FROM media_items") &&
-                          args[0].includes("FOR UPDATE")
+                          typeof sql === "string" &&
+                          sql.includes("FROM media_items") &&
+                          sql.includes("FOR UPDATE")
                         ) {
                           waited = true;
                           acquired();
@@ -509,7 +522,7 @@ describe.sequential(
         for (const first of ["backfill", "mutation"] as const) {
           const f = await createClaimed(`fence-${change}-${first}`);
           // This is a focused locking/CAS fixture, not upload runtime evidence.
-          await database.pool.query(
+          await fixtureQuery(
             "UPDATE media_items SET metadata_generation=generation,gps_latitude='37.780000',gps_longitude='-122.420000' WHERE id=?",
             [f.item.id],
           );
@@ -537,12 +550,13 @@ describe.sequential(
                     get(connection, method) {
                       if (method === "query")
                         return async (...args: Parameters<typeof c.query>) => {
+                          const sql: unknown = args[0];
                           const result = await c.query(...args);
                           if (
                             pause &&
-                            typeof args[0] === "string" &&
-                            args[0].includes("FROM media_items") &&
-                            args[0].includes("FOR UPDATE")
+                            typeof sql === "string" &&
+                            sql.includes("FROM media_items") &&
+                            sql.includes("FOR UPDATE")
                           ) {
                             pause = false;
                             enter();
@@ -660,7 +674,7 @@ describe.sequential(
     it("recovers projection commit-response loss from fresh scans without replaying committed writes", async () => {
       for (const committed of [false, true]) {
         const f = await createClaimed(`projection-unknown-${committed}`);
-        await database.pool.query(
+        await fixtureQuery(
           "UPDATE media_items SET metadata_generation=generation,gps_latitude='37.780000',gps_longitude='-122.420000' WHERE id=?",
           [f.item.id],
         );
@@ -715,6 +729,7 @@ describe.sequential(
         rootPath = freshStorageRootPath("p8-native-");
       const writer = StorageRoot.open(rootPath, { initialize: true });
       let reader: OriginalReader | undefined;
+      let control: InProcessControlOwner | undefined;
       try {
         const sha256Hex = createHash("sha256").update(bytes).digest("hex"),
           uploadId = randomBytes(16).toString("hex");
@@ -731,17 +746,34 @@ describe.sequential(
           mediaRoot: rootPath,
           expectedMarkerId: writer.markerId,
         });
-        await database.pool.query(
+        await fixtureQuery(
           "UPDATE background_jobs SET state='QUEUED',locked_at=NULL,heartbeat_at=NULL,locked_until=NULL,worker_id=NULL,attempts=0 WHERE id=?",
           [f.fence.jobId],
         );
-        const driver = new MetadataJobDriver(database.pool, reader, projector);
+        await fixtureQuery(
+          "UPDATE upload_sessions SET public_id=UNHEX(?) WHERE family_id=? AND id=?",
+          [uploadId, familyId, f.uploadId],
+        );
+        control = await InProcessControlOwner.start(
+          database.pool,
+          [familyId, crossFamilyId],
+          writer,
+          { reader },
+        );
+        reader = await control.withResources(async (r) => r.reader!);
+        const driver = new MetadataJobDriver(
+          database.pool,
+          reader,
+          projector,
+          undefined,
+          control.admission,
+        );
         expect(await driver.runNext()).toBe(true);
         expect(await projectionRows(f.item.id)).toEqual([
           expect.objectContaining({ country: "US", generation: "1" }),
         ]);
         expect(readFileSync(path)).toEqual(before);
-        const [jobs] = await database.pool.query<RowDataPacket[]>(
+        const [jobs] = await fixtureQuery<RowDataPacket[]>(
           "SELECT job_type type,state FROM background_jobs WHERE family_id=? AND media_id=? ORDER BY id",
           [familyId, f.item.id],
         );
@@ -753,6 +785,7 @@ describe.sequential(
           }),
         ]);
       } finally {
+        await control?.close();
         reader?.close();
         writer.close();
         rmSync(rootPath, { recursive: true, force: true });

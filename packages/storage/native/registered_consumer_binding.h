@@ -26,6 +26,15 @@ static napi_value p7_create_launch(napi_env env,napi_callback_info info) {
   napi_value out,handle,fd;napi_create_object(env,&out);napi_create_external(env,l,p7_launch_finalize,NULL,&handle);
   napi_create_int32(env,l->child,&fd);napi_set_named_property(env,out,"handle",handle);napi_set_named_property(env,out,"childFd",fd);return out;
 }
+static napi_value p7_bridge_launch(napi_env env,napi_callback_info info) {
+  napi_value args[2];size_t argc=2;napi_get_cb_info(env,info,&argc,args,NULL,NULL);
+  ps_operation_gate *g=argc==2?op_get(env,args[0]):NULL;if(!g)return NULL;
+  p7_launch *l=p7_get_launch(env,args[1]);if(!l)return NULL;
+  if(op_create_bridge(g,l->handoff)) {
+    throw_code(env,"OPERATION_BRIDGE_UNKNOWN","Durable launch protection could not be established.");return NULL;
+  }
+  return undefined_value(env);
+}
 static napi_value p7_register_supervisor(napi_env env,napi_callback_info info) {
   napi_value args[2];size_t argc=2;napi_get_cb_info(env,info,&argc,args,NULL,NULL);
   p7_launch *l=p7_get_launch(env,args[0]);if(!l)return NULL;int32_t pid=0;uint64_t sec=0,usec=0;

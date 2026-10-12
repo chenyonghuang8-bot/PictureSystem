@@ -1,0 +1,101 @@
+
+> family-album@0.0.0 build /Users/toby/PictureSystem
+> pnpm -r --if-present build
+
+Scope: 13 of 14 workspace projects
+packages/config build$ tsc -p tsconfig.build.json
+packages/contracts build$ tsc -p tsconfig.build.json
+packages/auth build$ tsc -p tsconfig.build.json
+packages/i18n build$ tsc -p tsconfig.build.json
+packages/i18n build: Done
+packages/permissions build$ tsc -p tsconfig.build.json
+packages/config build: Done
+packages/ui-tokens build$ tsc -p tsconfig.build.json
+packages/permissions build: Done
+packages/auth build: Done
+packages/contracts build: Done
+packages/ui-tokens build: Done
+apps/mobile build$ expo export --platform web --output-dir dist
+packages/storage build$ pnpm build:native && tsc -p tsconfig.build.json
+apps/web build$ node scripts/prepare-map-worker.mjs && next build --webpack
+packages/storage build: > @family-album/storage@0.0.0 build:native /Users/toby/PictureSystem/packages/storage
+packages/storage build: > node scripts/build-native.mjs
+apps/web build: ▲ Next.js 16.3.3 (webpack)
+apps/web build: ✓ Running next.config.ts took 70ms
+apps/web build:   Creating an optimized production build ...
+apps/mobile build: Expo Autolinking module resolution enabled
+apps/mobile build: Starting Metro Bundler
+apps/mobile build: Static rendering is enabled. Learn more: https://docs.expo.dev/router/web/static-rendering/
+apps/mobile build: Web Bundled 703ms apps/mobile/index.ts (449 modules)
+apps/mobile build: λ Bundled 711ms node_modules/.pnpm/@expo+router-server@57.0.9_@expo+metro-runtime@57.0.15_expo-constants@57.0.18_expo-font_43a88053d76ad17ed2871a19a8f21a39/node_modules/@expo/router-server/node/render.js (1016 modules)
+apps/mobile build: expo-file-system is not supported on web
+apps/mobile build: expo-file-system is not supported on web
+apps/mobile build: › web bundles (3):
+apps/mobile build: _expo/static/js/web/index-4a388ad6d65614cf0aa56fe1a44fab7c.js (1.2MB)
+apps/mobile build: _expo/static/js/web/index-c781758a6c9f3c343c6204342c09960c.js (3.1KB)
+apps/mobile build: _expo/static/js/web/worker-e50c7fc223b616449b18975fc352e1e7.js (133KB)
+apps/mobile build: › Static routes (3):
+apps/mobile build: / (index) (17KB)
+apps/mobile build: /_sitemap (17KB)
+apps/mobile build: /+not-found (17KB)
+apps/mobile build: Exported: dist
+apps/mobile build: Done
+apps/web build: ✓ Compiled successfully in 1874ms
+apps/web build:   Running TypeScript ...
+apps/web build:   Finished TypeScript in 923ms ...
+apps/web build:   Collecting page data using 9 workers ...
+apps/web build:   Generating static pages using 9 workers (0/3) ...
+apps/web build: ✓ Generating static pages using 9 workers (3/3) in 191ms
+apps/web build:   Finalizing page optimization ...
+apps/web build:   Collecting build traces ...
+apps/web build: Route (app)
+apps/web build: ┌ ƒ /
+apps/web build: ├ ○ /_not-found
+apps/web build: ├ ƒ /admin
+apps/web build: ├ ƒ /albums
+apps/web build: ├ ƒ /albums/[albumId]
+apps/web build: ├ ƒ /api/v1/families/[familyId]/memories
+apps/web build: ├ ƒ /api/v1/families/[familyId]/memories/preview
+apps/web build: ├ ƒ /api/v1/families/[familyId]/search
+apps/web build: ├ ƒ /api/v1/families/[familyId]/search/locations
+apps/web build: ├ ƒ /api/v1/families/[familyId]/search/map
+apps/web build: ├ ƒ /api/v1/families/[familyId]/search/options
+apps/web build: ├ ○ /login
+apps/web build: ├ ƒ /memories
+apps/web build: ├ ƒ /my
+apps/web build: ├ ƒ /share/[token]
+apps/web build: └ ƒ /trash
+apps/web build: ○  (Static)   prerendered as static content
+apps/web build: ƒ  (Dynamic)  server-rendered on demand
+apps/web build: Done
+packages/storage build: Done
+packages/media build$ tsc -p tsconfig.build.json
+packages/media build: Done
+packages/db build$ tsc -p tsconfig.build.json
+packages/db build: Done
+apps/api build$ tsup src/index.ts src/storage-reconcile-cli.ts --format esm --clean
+apps/worker build$ tsup src/index.ts src/metadata-main.ts --format esm --clean
+apps/worker build: CLI Building entry: src/index.ts, src/metadata-main.ts
+apps/worker build: CLI Using tsconfig: tsconfig.json
+apps/worker build: CLI tsup v8.5.1
+apps/worker build: CLI Using tsup config: /Users/toby/PictureSystem/apps/worker/tsup.config.ts
+apps/api build: CLI Building entry: src/index.ts, src/storage-reconcile-cli.ts
+apps/api build: CLI Using tsconfig: tsconfig.json
+apps/api build: CLI tsup v8.5.1
+apps/api build: CLI Using tsup config: /Users/toby/PictureSystem/apps/api/tsup.config.ts
+apps/worker build: CLI Target: es2022
+apps/api build: CLI Target: es2022
+apps/worker build: CLI Cleaning output folder
+apps/api build: CLI Cleaning output folder
+apps/worker build: ESM Build start
+apps/api build: ESM Build start
+apps/worker build: ESM dist/metadata-main.js  7.32 KB
+apps/worker build: ESM dist/index.js          64.05 KB
+apps/worker build: ESM dist/chunk-V2L7IOOI.js 20.79 KB
+apps/worker build: ESM ⚡️ Build success in 13ms
+apps/worker build: Done
+apps/api build: ESM dist/storage-reconcile-cli.js 3.00 KB
+apps/api build: ESM dist/chunk-3GTEOP5U.js        47.67 KB
+apps/api build: ESM dist/index.js                 293.07 KB
+apps/api build: ESM ⚡️ Build success in 20ms
+apps/api build: Done

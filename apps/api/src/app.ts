@@ -20,6 +20,12 @@ import type { OriginalDownloadService } from "./original-download/service.js";
 import type { PreviewDownloadService } from "./preview-download/service.js";
 import type { TrashService } from "./trash/service.js";
 import { registerTrashRoutes } from "./trash/routes.js";
+import { registerAdminRoutes } from "./admin/routes.js";
+import { installControlAdmission } from "./admin/admission.js";
+import {
+  denyControlAdmission,
+  type ControlAdmission,
+} from "@family-album/storage";
 
 export function createApp(options?: {
   authService: AuthService;
@@ -36,6 +42,11 @@ export function createApp(options?: {
   trustedOrigins: ReadonlySet<string>;
   trustedProxies?: readonly string[];
   uploadMutex?: UploadMutex;
+  controlAdmission?: ControlAdmission;
+  admin?: Omit<
+    Parameters<typeof registerAdminRoutes>[1],
+    "authService" | "trustedOrigins"
+  >;
 }) {
   const app = Fastify({
     logger: createLoggerOptions(),
@@ -45,6 +56,10 @@ export function createApp(options?: {
         ? [...options.trustedProxies]
         : false,
   });
+  installControlAdmission(
+    app,
+    options?.controlAdmission ?? denyControlAdmission,
+  );
 
   app.get("/health", async () =>
     healthResponseSchema.parse({
@@ -55,6 +70,12 @@ export function createApp(options?: {
   );
 
   if (options) {
+    if (options.admin)
+      registerAdminRoutes(app, {
+        ...options.admin,
+        authService: options.authService,
+        trustedOrigins: options.trustedOrigins,
+      });
     if (options.trashService)
       registerTrashRoutes(app, {
         authService: options.authService,

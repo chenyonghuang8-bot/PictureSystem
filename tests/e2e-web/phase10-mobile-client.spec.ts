@@ -1,7 +1,6 @@
+import { pauseControlledWebRuntime } from "../helpers/controlled-web-runtime.js";
 import { test, expect, type Page } from "@playwright/test";
 import { resolve } from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
-import { once } from "node:events";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createDatabase } from "../../packages/db/src/index.js";
 import { hashPassword } from "../../packages/auth/src/index.js";
@@ -13,7 +12,6 @@ if (!process.env.DATABASE_URL || process.env.DEV_MEDIA_PIPELINE_ENABLED !== "1")
 const db = createDatabase(process.env.DATABASE_URL),
   f = new MemoriesFixture(db.pool);
 const password = "phase10-mobile-synthetic-password";
-let metadata: ChildProcess | undefined;
 test.beforeAll(async () => {
   await f.setup();
   writeFileSync(
@@ -29,34 +27,9 @@ test.beforeAll(async () => {
     await hashPassword(password),
     f.users[1],
   ]);
-  metadata = spawn(
-    process.execPath,
-    ["--env-file=.env", "--import=tsx", "apps/worker/src/metadata-main.ts"],
-    {
-      env: {
-        ...process.env,
-        APP_ENV: "dev",
-        NODE_ENV: "test",
-        LOG_LEVEL: "silent",
-        DEV_MEDIA_ROOT: process.env.PHASE5_WEB_E2E_MEDIA_ROOT,
-        DEV_STORAGE_MARKER_ID: process.env.PHASE5_WEB_E2E_MARKER_ID,
-        LOCATION_DATA_DIR: resolve("resources/location/2026-10-03"),
-      },
-      stdio: "ignore",
-    },
-  );
 });
 test.afterAll(async () => {
-  if (metadata && metadata.exitCode === null) {
-    const done = once(metadata, "exit");
-    metadata.kill("SIGTERM");
-    const timer = setTimeout(() => metadata?.kill("SIGKILL"), 10000);
-    try {
-      await done;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
+  await pauseControlledWebRuntime(db.pool);
   try {
     await db.pool.query("DELETE FROM upload_album_targets WHERE family_id=?", [
       f.familyId,

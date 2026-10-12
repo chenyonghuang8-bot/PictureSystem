@@ -1,3 +1,4 @@
+import { currentOperationPermit } from "./operation-gate.js";
 import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
 import { ContentCoordination, type ReadGuard } from "./phase7-coordination.js";
@@ -47,12 +48,15 @@ export class RegisteredOriginalRun {
     const coordination = new ContentCoordination(identity, identity);
     const read = await coordination.acquireReadOnly(30_000);
     try {
-      return new RegisteredOriginalRun(
-        native,
-        read,
-        read.createRegisteredLaunch(),
-        source,
-      );
+      const launch = read.createRegisteredLaunch();
+      try {
+        currentOperationPermit()?.bridgeLaunch(launch.handle);
+        return new RegisteredOriginalRun(native, read, launch, source);
+      } catch (error) {
+        native.closeRegisteredLaunch(launch.handle);
+        read.detachHandoff();
+        throw error;
+      }
     } catch (error) {
       read.close();
       throw error;

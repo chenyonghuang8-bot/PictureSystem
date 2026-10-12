@@ -18,6 +18,7 @@ import {
   MySqlUploadPipelineRepository,
   MySqlMediaRepository,
   MySqlJobRepository,
+  MySqlAdminReadRepository,
 } from "@family-album/db";
 import { resolve } from "node:path";
 import { coordinatedDerivedReader } from "./derived-serving/reader.js";
@@ -27,6 +28,7 @@ import {
   OriginalReader,
   probeStorageCapability,
   StorageSafetyError,
+  ControlAdmissionError,
   type StorageCapability,
 } from "@family-album/storage";
 import { createApp } from "./app.js";
@@ -37,9 +39,11 @@ import { PublicShareService } from "./shares/public-service.js";
 import { ShareService } from "./shares/service.js";
 import { UploadService } from "./uploads/service.js";
 import { TrashService } from "./trash/service.js";
-import type { ReconciliationResult } from "./uploads/recovery.js";
 import { UploadMutex } from "./uploads/mutex.js";
-import { assessStorageStartup } from "./uploads/startup.js";
+import {
+  assessStorageStartup,
+  confirmStorageStartup,
+} from "./uploads/startup.js";
 import { DerivedReadService } from "./derived-serving/service.js";
 import {
   OriginalDownloadService,
@@ -52,10 +56,31 @@ import {
 
 import { UploadPipelineReconciler } from "./uploads/pipeline-reconciler.js";
 import { ImageDerivativeDriver } from "../../worker/src/image-derivative-driver.js";
+import {
+  loadDeploymentControl,
+  configuredControlRoles,
+} from "../../worker/src/deployment-control.js";
+import { assertStorageOwnerHealth } from "../../worker/src/storage-owner-health.js";
+import {
+  StorageRuntimeOwner,
+  type RuntimeMediaResources,
+} from "../../worker/src/storage-runtime-owner.js";
+import { borrowedService } from "./admin/borrowed-service.js";
 
 async function main() {
   const env = loadApiEnv();
   const database = createDatabase(env.DATABASE_URL);
+  const localControlRoles =
+    process.env.DEV_MEDIA_PIPELINE_ENABLED === "1"
+      ? (["API", "DERIVATIVE"] as const)
+      : (["API"] as const);
+  const control = await loadDeploymentControl(database.pool, env, {
+    path: process.env.DEV_CONTROL_PATH,
+    deploymentId: process.env.DEV_CONTROL_DEPLOYMENT_ID,
+    roles: localControlRoles,
+    mediaRoot: resolve(process.cwd(), env.DEV_MEDIA_ROOT),
+    markerId: env.DEV_STORAGE_MARKER_ID,
+  });
   let storageCapability: StorageCapability = {
     state: "UNAVAILABLE",
     reason: "STORAGE_NOT_CONFIGURED",
@@ -65,33 +90,59 @@ async function main() {
   let derivedStore: DerivedStore | undefined;
   let reconciler: UploadPipelineReconciler | undefined;
   let derivative: ImageDerivativeDriver | undefined;
+  let mediaOwner: StorageRuntimeOwner | undefined;
   let app: ReturnType<typeof createApp> | undefined;
   let cleanupPromise: Promise<void> | undefined;
   const requestStop = () => {
     reconciler?.requestStop();
     derivative?.requestStop();
+    control.stop?.();
   };
   const cleanup = () =>
     (cleanupPromise ??= (async () => {
+      try {
+        await control.beginShutdown?.();
+      } catch {
+        /* No CLEAN without known STOPPING. */
+      }
       requestStop();
       const results = await Promise.allSettled([
         reconciler?.drain(),
         derivative?.drain(),
       ]);
       let failed = results.some((r) => r.status === "rejected");
-      for (const resource of [
-        derivedStore,
-        originalReader,
-        sharedCapacityGate,
-        storageCapability.state !== "UNAVAILABLE"
-          ? storageCapability.root
-          : undefined,
-      ]) {
+      try {
+        await control.drain?.();
+      } catch {
+        failed = true;
+      }
+      if (mediaOwner) {
+        try {
+          await mediaOwner.resources.close();
+        } catch {
+          failed = true;
+        }
+      }
+      for (const resource of mediaOwner
+        ? []
+        : [
+            derivedStore,
+            originalReader,
+            sharedCapacityGate,
+            storageCapability.state !== "UNAVAILABLE"
+              ? storageCapability.root
+              : undefined,
+          ]) {
         try {
           resource?.close();
         } catch {
           failed = true;
         }
+      }
+      try {
+        await control.resourcesClosed?.(!failed);
+      } catch {
+        failed = true;
       }
       try {
         await database.pool.end();
@@ -135,49 +186,70 @@ async function main() {
     const shareService = new ShareService(shareRepository);
     const uploadRepository = new MySqlUploadRepository(database.pool);
     const uploadMutex = new UploadMutex();
-    let startupRecoveryReport: ReconciliationResult | null = null;
-    if (env.DEV_STORAGE_MARKER_ID) {
-      const connection = await acquireCheckedConnection(database.pool);
+    const enabled = process.env.DEV_MEDIA_PIPELINE_ENABLED;
+    const requiredRoles = configuredControlRoles(
+      enabled === "1" ? ["API", "DERIVATIVE"] : ["API"],
+    );
+    if (enabled !== undefined && enabled !== "0" && enabled !== "1")
+      throw new Error("PIPELINE_ENABLE_INVALID");
+    if (env.DEV_STORAGE_MARKER_ID && control.gate) {
       try {
-        await assertMigrationReadiness(connection);
-        storageCapability = probeStorageCapability({
-          mediaRoot: resolve(process.cwd(), env.DEV_MEDIA_ROOT),
-          initialize: false,
-          expectedMarkerId: env.DEV_STORAGE_MARKER_ID,
-        });
-        if (storageCapability.state === "READ_WRITE") {
-          const assessed = await assessStorageStartup(
-            uploadRepository,
-            storageCapability,
-            uploadMutex,
-          );
-          storageCapability = assessed.capability;
-          startupRecoveryReport = assessed.report;
-        }
-        if (storageCapability.state === "READ_WRITE") {
-          try {
-            sharedCapacityGate = CapacityGate.open({
-              mediaRoot: storageCapability.root.canonicalPath,
-              expectedMarkerId: storageCapability.root.markerId,
+        const connection = await acquireCheckedConnection(database.pool);
+        try {
+          await assertMigrationReadiness(connection);
+          storageCapability = probeStorageCapability({
+            mediaRoot: resolve(process.cwd(), env.DEV_MEDIA_ROOT),
+            initialize: false,
+            expectedMarkerId: env.DEV_STORAGE_MARKER_ID,
+            ...(!control.startupWritable
+              ? { readOnlyReason: "CONTROL_WRITE_PAUSED" }
+              : {}),
+          });
+          if (storageCapability.state !== "UNAVAILABLE") {
+            const ownerRoot = storageCapability.root;
+            control.bindHealth?.(async () => {
+              await assertStorageOwnerHealth(ownerRoot, control.repository, {
+                ...(originalReader ? { reader: originalReader } : {}),
+                ...(sharedCapacityGate ? { gate: sharedCapacityGate } : {}),
+              });
             });
-          } catch {
-            storageCapability = {
-              state: "READ_ONLY",
-              root: storageCapability.root,
-              reason: "CAPACITY_GATE_UNAVAILABLE",
-            };
           }
+          // PREPARING permits only handle opening/read-only fresh inspection.
+          // Original repair remains solely in authorized owner recovery below.
+          if (storageCapability.state === "READ_WRITE") {
+            try {
+              sharedCapacityGate = CapacityGate.open({
+                mediaRoot: storageCapability.root.canonicalPath,
+                expectedMarkerId: storageCapability.root.markerId,
+              });
+            } catch {
+              storageCapability = {
+                state: "READ_ONLY",
+                root: storageCapability.root,
+                reason: "CAPACITY_GATE_UNAVAILABLE",
+              };
+            }
+          }
+        } finally {
+          connection.release();
         }
-      } finally {
-        connection.release();
+      } catch {
+        if (storageCapability.state !== "UNAVAILABLE")
+          storageCapability.root.close();
+        storageCapability = {
+          state: "UNAVAILABLE",
+          reason: "CONTROL_READINESS_UNAVAILABLE",
+        };
+        console.error(
+          '{"event":"storage_startup_paused","category":"READINESS_UNAVAILABLE"}',
+        );
       }
     }
     const derivedReads = new MySqlDerivedReadRepository(database.pool);
-    const derivedReader = coordinatedDerivedReader(
+    let derivedReader = coordinatedDerivedReader(
       storageCapability,
       sharedCapacityGate,
     );
-    const derivedService = new DerivedReadService(derivedReads, derivedReader);
     if (storageCapability.state !== "UNAVAILABLE") {
       try {
         originalReader = OriginalReader.open({
@@ -188,6 +260,100 @@ async function main() {
         originalReader = undefined;
       }
     }
+    if (
+      enabled === "1" &&
+      storageCapability.state === "READ_WRITE" &&
+      sharedCapacityGate &&
+      originalReader
+    ) {
+      try {
+        derivedStore = DerivedStore.open(storageCapability);
+      } catch {
+        storageCapability = {
+          state: "READ_ONLY",
+          root: storageCapability.root,
+          reason: "DERIVED_WRITER_UNAVAILABLE",
+        };
+        await control.trip?.("WRITER_NOT_READY").catch(() => {});
+      }
+    }
+    if (
+      storageCapability.state !== "UNAVAILABLE" &&
+      env.DEV_STORAGE_MARKER_ID
+    ) {
+      mediaOwner = new StorageRuntimeOwner(
+        {
+          capability: storageCapability,
+          ...(sharedCapacityGate ? { gate: sharedCapacityGate } : {}),
+          ...(originalReader ? { reader: originalReader } : {}),
+          ...(derivedStore ? { store: derivedStore } : {}),
+        },
+        database.pool,
+        control.repository,
+        {
+          mediaRoot: resolve(process.cwd(), env.DEV_MEDIA_ROOT),
+          markerId: env.DEV_STORAGE_MARKER_ID,
+          roles: requiredRoles,
+        },
+        async (permit, resources) => {
+          const assessed = await permit.run("STARTUP_ASSESS", () =>
+            assessStorageStartup(
+              uploadRepository,
+              resources.capability,
+              uploadMutex,
+            ),
+          );
+          if (assessed.capability.state !== "READ_WRITE")
+            throw Error("STORAGE_STARTUP_RECOVERY_INCOMPLETE");
+          if (enabled === "1") {
+            const recovered = new UploadPipelineReconciler({
+              repository: new MySqlUploadPipelineRepository(database.pool),
+              media: new MySqlMediaRepository(database.pool),
+              jobs: new MySqlJobRepository(database.pool),
+              acquire: UploadPipelineReconciler.acquire(
+                assessed.capability.root,
+              ),
+            });
+            const repository = new MySqlUploadPipelineRepository(database.pool);
+            const throughId = await repository.readUploadPipelineHighWater();
+            if (throughId) {
+              const candidates = await repository.listUploadPipelinePage({
+                afterId: "0",
+                throughId,
+                limit: 20,
+              });
+              for (const candidate of candidates) {
+                const outcome = await recovered.reconcileFenced(
+                  permit,
+                  candidate,
+                );
+                if (["INVARIANT_REJECTED", "DEFERRED"].includes(outcome.result))
+                  return false;
+              }
+            }
+          }
+          return true;
+        },
+        (resources) =>
+          confirmStorageStartup(
+            uploadRepository,
+            resources.capability,
+            uploadMutex,
+          ),
+      );
+      control.bindOwner?.(mediaOwner);
+      const owner = mediaOwner;
+      derivedReader = {
+        read: (identity, options) =>
+          owner.resources.withValue((r) =>
+            coordinatedDerivedReader(r.capability, r.gate).read(
+              identity,
+              options,
+            ),
+          ),
+      };
+    }
+    const derivedService = new DerivedReadService(derivedReads, derivedReader);
     const unavailableOriginalReader: OriginalDownloadReader = {
       withVerifiedDownload: async () => {
         throw new StorageSafetyError("ORIGINAL_READER_UNAVAILABLE");
@@ -195,7 +361,18 @@ async function main() {
     };
     const originalDownloadService = new OriginalDownloadService(
       albumRepository,
-      originalReader ?? unavailableOriginalReader,
+      mediaOwner
+        ? {
+            withVerifiedDownload: (identity, options, callback) =>
+              mediaOwner!.resources.withValue((r) =>
+                (r.reader ?? unavailableOriginalReader).withVerifiedDownload(
+                  identity,
+                  options,
+                  callback,
+                ),
+              ),
+          }
+        : (originalReader ?? unavailableOriginalReader),
     );
     const previewDownloadReader: PreviewDownloadReader = derivedReader;
     const previewDownloadService = new PreviewDownloadService(
@@ -207,17 +384,71 @@ async function main() {
       shareRepository,
       derivedReads,
       derivedReader,
+      control.admission,
     );
-    const uploadService = new UploadService(
+    const initialUploadService = new UploadService(
       uploadRepository,
       storageCapability,
       sharedCapacityGate,
     );
+    const initialTrashService = new TrashService(
+      new MySqlTrashRepository(database.pool),
+      storageCapability,
+    );
+    const uploadServices = new WeakMap<RuntimeMediaResources, UploadService>();
+    const trashServices = new WeakMap<RuntimeMediaResources, TrashService>();
+    const uploadService = mediaOwner
+      ? borrowedService<RuntimeMediaResources, UploadService>(
+          mediaOwner.resources,
+          (r) => {
+            let service = uploadServices.get(r);
+            if (!service) {
+              service = new UploadService(
+                uploadRepository,
+                r.capability,
+                r.gate,
+              );
+              uploadServices.set(r, service);
+            }
+            return service;
+          },
+          [
+            "create",
+            "result",
+            "targets",
+            "placement",
+            "operation",
+            "head",
+            "patch",
+            "status",
+            "finalize",
+            "abort",
+          ],
+          {
+            maxFileSize: initialUploadService.maxFileSize,
+            maxChunkSize: initialUploadService.maxChunkSize,
+          },
+        )
+      : initialUploadService;
+    const trashService = mediaOwner
+      ? borrowedService<RuntimeMediaResources, TrashService>(
+          mediaOwner.resources,
+          (r) => {
+            let service = trashServices.get(r);
+            if (!service) {
+              service = new TrashService(
+                new MySqlTrashRepository(database.pool),
+                r.capability,
+              );
+              trashServices.set(r, service);
+            }
+            return service;
+          },
+          ["list", "mutate", "permanentDelete", "purgeStatus"],
+        )
+      : initialTrashService;
     app = createApp({
-      trashService: new TrashService(
-        new MySqlTrashRepository(database.pool),
-        storageCapability,
-      ),
+      trashService,
       authService,
       phase1cService,
       albumService,
@@ -231,79 +462,100 @@ async function main() {
       trustedOrigins: new Set(env.TRUSTED_WEB_ORIGINS),
       trustedProxies: env.TRUSTED_PROXY_CIDRS,
       uploadMutex,
+      controlAdmission: control.admission,
+      admin: {
+        control: control.repository,
+        reads: new MySqlAdminReadRepository(database.pool),
+        localDeny: control.locallyDenied,
+        configuredRoles: requiredRoles,
+        observeStorage: (now) =>
+          mediaOwner
+            ? mediaOwner.observe(now)
+            : Promise.resolve({
+                state: "UNAVAILABLE",
+                observedAt: now.toISOString(),
+                staleAfter: new Date(now.getTime() + 5000).toISOString(),
+                source: "STORAGE_OWNER",
+                reasonCode: "WRITER_NOT_READY",
+                totalBytes: null,
+                availableBytes: null,
+              }),
+      },
     });
-    if (startupRecoveryReport) {
-      const safeFields = {
-        event: "recovery_action",
-        scope: "startup",
-        scannedUploads: startupRecoveryReport.scannedUploads,
-        expiredTransitioned: startupRecoveryReport.expiredTransitioned,
-        stagingCleaned: startupRecoveryReport.stagingCleaned,
-        orphanStagingCandidates: startupRecoveryReport.orphanStagingCandidates,
-        orphanFinalCandidates: startupRecoveryReport.orphanFinalCandidates,
-        integrityMismatches: startupRecoveryReport.integrityMismatches,
-        skippedUnsafeEntries: startupRecoveryReport.skippedUnsafeEntries,
-        capability: storageCapability.state,
-      };
-      if (storageCapability.state === "READ_WRITE")
-        app.log.info(safeFields, "storage reconciliation assessed");
-      else app.log.warn(safeFields, "storage reconciliation failed closed");
-    }
 
-    const enabled = process.env.DEV_MEDIA_PIPELINE_ENABLED;
-    if (enabled !== undefined && enabled !== "0" && enabled !== "1")
-      throw new Error("PIPELINE_ENABLE_INVALID");
     if (enabled === "1") {
       const target = new URL(env.DATABASE_URL);
       if (
         env.APP_ENV !== "dev" ||
         target.pathname !== "/family_album_dev" ||
         !env.DEV_STORAGE_MARKER_ID ||
-        decodeURIComponent(target.username).toLowerCase() === "root" ||
-        storageCapability.state !== "READ_WRITE" ||
-        !sharedCapacityGate ||
-        !originalReader
+        decodeURIComponent(target.username).toLowerCase() === "root"
       )
         throw new Error("PIPELINE_DEV_STARTUP_REFUSED");
-      const c = await acquireCheckedConnection(database.pool);
-      try {
-        await assertMigrationReadiness(c);
-        const [rows] = await c.query(
-          "SELECT DATABASE() db,CURRENT_USER() account",
+      // Loops exist while paused. Each admitted unit borrows the current
+      // generation; no pipeline captures an old writable root/store/reader.
+      if (mediaOwner) {
+        const owner = mediaOwner;
+        reconciler = new UploadPipelineReconciler(
+          {
+            repository: new MySqlUploadPipelineRepository(database.pool),
+            media: new MySqlMediaRepository(database.pool),
+            jobs: new MySqlJobRepository(database.pool),
+            acquire: async () => {
+              throw Error("PIPELINE_PROVIDER_REQUIRED");
+            },
+            withGuard: (candidate, operation) =>
+              owner.resources.withValue(async (r) => {
+                if (r.capability.state !== "READ_WRITE")
+                  throw new ControlAdmissionError("WRITE_PAUSED");
+                const guard = await UploadPipelineReconciler.acquire(
+                  r.capability.root,
+                )(candidate);
+                return operation(guard);
+              }),
+            admission: control.admission,
+          },
+          (counts) =>
+            app!.log.info(
+              { event: "upload_pipeline_round", counts },
+              "pipeline round assessed",
+            ),
         );
-        const row = (rows as { db: string; account: string }[])[0];
-        if (
-          row?.db !== "family_album_dev" ||
-          row.account.split("@")[0]?.toLowerCase() === "root"
-        )
-          throw new Error("PIPELINE_DEV_DATABASE_REQUIRED");
-      } finally {
-        c.release();
+        derivative = new ImageDerivativeDriver(
+          database.pool,
+          undefined,
+          undefined,
+          control.admission,
+          (operation) =>
+            owner.resources.withValue(async (r) => {
+              if (
+                r.capability.state !== "READ_WRITE" ||
+                !r.gate ||
+                !r.reader ||
+                !r.store
+              )
+                throw new ControlAdmissionError("WRITE_PAUSED");
+              const processor = ImageDerivativeDriver.createProcessor(
+                database.pool,
+                { capability: r.capability, gate: r.gate, store: r.store },
+                r.reader,
+              );
+              return control.track
+                ? control.track(
+                    "DERIVATIVE",
+                    () => operation(processor),
+                    (result) =>
+                      !(
+                        result &&
+                        typeof result === "object" &&
+                        "outcome" in result &&
+                        result.outcome === "IDLE"
+                      ),
+                  )
+                : operation(processor);
+            }),
+        );
       }
-      storageCapability.root.assertCoordinationNamespace();
-      derivedStore = DerivedStore.open(storageCapability);
-      reconciler = new UploadPipelineReconciler(
-        {
-          repository: new MySqlUploadPipelineRepository(database.pool),
-          media: new MySqlMediaRepository(database.pool),
-          jobs: new MySqlJobRepository(database.pool),
-          acquire: UploadPipelineReconciler.acquire(storageCapability.root),
-        },
-        (counts) =>
-          app!.log.info(
-            { event: "upload_pipeline_round", counts },
-            "pipeline round assessed",
-          ),
-      );
-      derivative = new ImageDerivativeDriver(
-        database.pool,
-        {
-          capability: storageCapability,
-          gate: sharedCapacityGate,
-          store: derivedStore,
-        },
-        originalReader,
-      );
     }
     app.addHook("onClose", cleanup);
     let shuttingDown: Promise<void> | undefined;
@@ -317,6 +569,7 @@ async function main() {
     });
     const shutdown = () =>
       (shuttingDown ??= (async () => {
+        await control.beginShutdown?.().catch(() => {});
         requestStop();
         await app!.close();
       })());
@@ -335,6 +588,22 @@ async function main() {
       process.removeListener("SIGTERM", signal);
     });
     await app.listen({ host: env.API_HOST, port: env.API_PORT });
+    control.onStopping?.(() => {
+      void app!.close().catch(() => {
+        process.exitCode = 1;
+      });
+    });
+    await control.start?.([
+      { role: "API", ready: () => app!.server.listening },
+      ...(enabled === "1"
+        ? [
+            {
+              role: "DERIVATIVE" as const,
+              ready: () => derivative !== undefined && !derivative.stopped,
+            },
+          ]
+        : []),
+    ]);
     const fatal = () => {
       process.exitCode = 1;
       app!.log.error(
@@ -344,7 +613,9 @@ async function main() {
         },
         "pipeline stopped",
       );
-      signal();
+      reconciler?.requestStop();
+      derivative?.requestStop();
+      void control.trip?.("RECOVERY_FAILED").catch(() => {});
     };
     // Observe both promises immediately; a fatal operation stops selection in both
     // loops and closes the owner only after requests/current operations drain.

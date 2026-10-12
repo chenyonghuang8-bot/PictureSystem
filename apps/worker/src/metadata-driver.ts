@@ -8,7 +8,11 @@ import {
   IsolatedProbeRunner,
   type LocationProjector,
 } from "@family-album/media";
-import type { OriginalReader } from "@family-album/storage";
+import {
+  denyControlAdmission,
+  type ControlAdmission,
+  type OriginalReader,
+} from "@family-album/storage";
 import { MetadataProcessingService } from "./metadata-processor.js";
 
 /** Read-only Original driver. Reuses existing claims, epochs, expiry and recovery;
@@ -28,6 +32,7 @@ export class MetadataJobDriver {
     private readonly reader: OriginalReader,
     projector: LocationProjector,
     onProjectionFailure?: () => void,
+    private readonly admission: ControlAdmission = denyControlAdmission,
   ) {
     this.jobs = new MySqlJobRepository(pool);
     this.metadata = new MySqlMetadataRepository(pool, {
@@ -41,6 +46,9 @@ export class MetadataJobDriver {
     );
   }
   async runNext() {
+    return this.admission.run("MEDIA_WRITE", () => this.runAdmitted());
+  }
+  private async runAdmitted() {
     if (this.stopping) return false;
     const job = await this.jobs.claimNext(this.identity, {
       jobType: "MEDIA_PROBE",
@@ -66,6 +74,9 @@ export class MetadataJobDriver {
     return true;
   }
   async recoverExpired() {
+    return this.admission.run("MEDIA_WRITE", () => this.recoverAdmitted());
+  }
+  private async recoverAdmitted() {
     const [rows] = await this.pool.query<RowDataPacket[]>(
       "SELECT CAST(family_id AS CHAR) familyId,CAST(media_id AS CHAR) mediaId,CAST(id AS CHAR) jobId,CAST(generation AS CHAR) generation FROM background_jobs WHERE job_type='MEDIA_PROBE' AND state='RUNNING' AND locked_until<=CURRENT_TIMESTAMP(3) ORDER BY id LIMIT 20",
     );

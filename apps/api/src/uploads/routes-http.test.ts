@@ -1,3 +1,4 @@
+import { unitAdmissionFixture } from "../../../../tests/helpers/unit-control-admission.js";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -108,6 +109,7 @@ describe("Phase 3C Fastify PATCH adapter", () => {
       authenticate: vi.fn(async () => authContext()),
     } as unknown as AuthService;
     app = createApp({
+      controlAdmission: unitAdmissionFixture,
       authService,
       uploadService: new UploadService(repository, {
         state: "READ_WRITE",

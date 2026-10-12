@@ -288,8 +288,8 @@ done:
 }
 
 static napi_value verify_sealed_output(napi_env env, napi_callback_info info) {
-  size_t argc = 4;
-  napi_value args[4];
+  size_t argc = 5;
+  napi_value args[5];
   napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   derived_sealed_t *sealed = argc >= 3 ? derived_get_sealed(env, args[0]) : NULL;
   derived_store_t *store = sealed == NULL ? NULL : derived_get_store(env, args[1]);
@@ -342,7 +342,7 @@ static napi_value verify_sealed_output(napi_env env, napi_callback_info info) {
   pthread_mutex_unlock(&store->mutex);
 
   ps_handoff_t *registered=NULL;
-  if(argc==4) {
+  if(argc>=4) {
     ps_coord_t *coord=ps_coord_get(env,args[3]);if(!coord)return NULL;
     if(!coord->locked||coord->basename[65]!='R'||coord->root_device!=store->device||
       coord->root_inode!=store->root_inode||strcmp(coord->marker,store->marker)||
@@ -363,6 +363,13 @@ static napi_value verify_sealed_output(napi_env env, napi_callback_info info) {
     }
   } else if(process_is_production()) {
     derived_throw(env,"HANDOFF_READ_GUARD_REQUIRED","Registered verifier requires R occupancy.");return NULL;
+  }
+  if(argc==5) {
+    ps_operation_gate *g=op_get(env,args[4]);
+    if(!g||!registered||op_create_bridge(g,registered)) {
+      if(registered)ps_handoff_finalize(env,registered,NULL);
+      throw_code(env,"OPERATION_BRIDGE_UNKNOWN","Verifier launch protection could not be established.");return NULL;
+    }
   }
   char output[4096];
   size_t output_size = 0;

@@ -82,12 +82,9 @@ const webLog =
     : null;
 
 const child = spawn(
-  "pnpm",
+  process.execPath,
   [
-    "--dir",
-    "apps/web",
-    "exec",
-    "next",
+    resolve(root, "apps/web/node_modules/next/dist/bin/next"),
     "dev",
     "--webpack",
     "--experimental-https",
@@ -101,7 +98,7 @@ const child = spawn(
     "3443",
   ],
   {
-    cwd: root,
+    cwd: resolve(root, "apps/web"),
     env: {
       ...process.env,
       FAMILY_ALBUM_API_ORIGIN: "http://127.0.0.1:4400",

@@ -1,0 +1,133 @@
+{
+  "purpose": "Byte-preserving publication of existing synthetic DEV acceptance evidence; not a new test execution or replacement of fixed review fingerprint.",
+  "files": [
+    {
+      "originalPath": ".cache/phase11-r1/final-20261012-evidence/phase11-resume-20261012-final-2-unit.log",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/phase11-resume-20261012-final-2-unit.log.base64.txt",
+      "sha256": "bdfbd4064eeda84544759dac190e4747f6e2c433edb6e5d23c423ff054885a5a",
+      "bytes": 37906,
+      "encoding": "base64",
+      "storedSHA256": "853003cfd0b90ed41905609fa8311eca81d98b28fe48cc64ea32c8be5a2fd28a"
+    },
+    {
+      "originalPath": ".cache/phase11-r1/final-20261012-evidence/phase11-resume-20261012-final-2-build.log",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/phase11-resume-20261012-final-2-build.log.txt",
+      "sha256": "5b484a6f0be207445634991fb6007d9b320a3cda0e6ec01b324b0775a260f91e",
+      "bytes": 5178
+    },
+    {
+      "originalPath": ".cache/phase11-r1/final-20261012-evidence/phase11-resume-20261012-final-4-apiE2E.log",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/phase11-resume-20261012-final-4-apiE2E.log.txt",
+      "sha256": "590d0a9e96173ee5c61ff2f04795c3a49edd94ccee0cf53c6a908118a43b713e",
+      "bytes": 1260
+    },
+    {
+      "originalPath": ".cache/phase11-r1/final-20261012-evidence/phase11-resume-20261012-final-4-strictAdminHttps.log",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/phase11-resume-20261012-final-4-strictAdminHttps.log.txt",
+      "sha256": "79a7860ad402a64b5d68c89851a7d139e529d8c400e9059c563e5ffd979620de",
+      "bytes": 885
+    },
+    {
+      "originalPath": ".cache/phase11-r1/final-20261012-evidence/phase11-resume-20261012-final-6-unitTargeted.log",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/phase11-resume-20261012-final-6-unitTargeted.log.base64.txt",
+      "sha256": "e6796a36279450e267cc98326a84508c3932d197de5b73dae0d7f0a333db6846",
+      "bytes": 207,
+      "encoding": "base64",
+      "storedSHA256": "4df4fbef7470e97d5f3cc5d01e8bf2b51bd709e6009b04b55d8b28e37ddce3d2"
+    },
+    {
+      "originalPath": ".cache/phase11-r1/final-20261012-evidence/phase11-resume-20261012-final-6-harnessTypecheck.log",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/phase11-resume-20261012-final-6-harnessTypecheck.log.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "originalPath": ".cache/phase11-r1/final-20261012-evidence/phase11-resume-20261012-final-6-format.log",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/phase11-resume-20261012-final-6-format.log.txt",
+      "sha256": "ed4fd1c3642e3d3c72b8f8cbbcaebe3ae63f8cdd945b11d8a4c489d9707653bc",
+      "bytes": 192
+    },
+    {
+      "originalPath": ".cache/phase11-r1/final-20261012-evidence/phase11-resume-20261012-final-6-lint.log",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/phase11-resume-20261012-final-6-lint.log.base64.txt",
+      "sha256": "c38730b9cd1b072a404baa4c41fa83088b4f41ef6fa904b6f3b75489e8d7d0d2",
+      "bytes": 82,
+      "encoding": "base64",
+      "storedSHA256": "2146fd28bdce0f8ca98bed4eab0d09e72b6c3ac6b059bb65f8bb5e9adb69f475"
+    },
+    {
+      "originalPath": ".cache/phase11-r1/final-20261012-evidence/phase11-resume-20261012-final-6-typecheck.log",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/phase11-resume-20261012-final-6-typecheck.log.txt",
+      "sha256": "8f3a3bef18d3a46bdfccbe988964380e89f52d07c373bd8abddc7be7ca1d1e6c",
+      "bytes": 1025
+    },
+    {
+      "originalPath": ".cache/phase11-r1/final-20261012-evidence/phase11-resume-20261012-final-6-webE2E.log",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/phase11-resume-20261012-final-6-webE2E.log.txt",
+      "sha256": "9a1d52eb8ed7f184c60e43469bf94d63982bb8b07308126420bef7be3b6443e0",
+      "bytes": 6783
+    },
+    {
+      "originalPath": ".cache/phase11-r1/final-20261012-evidence/phase11-resume-20261012-final-6-integration.log",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/phase11-resume-20261012-final-6-integration.log.base64.txt",
+      "sha256": "77cdcd025d547b2d7c1615fe3d65996770467360621f4e2aa1ab2e01938884cc",
+      "bytes": 16354,
+      "encoding": "base64",
+      "storedSHA256": "85ca36207cb644ef8f02fcddc48470b4770bf09a12554da7792eb56d78266061"
+    },
+    {
+      "originalPath": ".cache/phase11-r1/review-input-fingerprint-20261012.json",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/review-input-fingerprint-20261012.json",
+      "sha256": "1966bc3c35dc6dbd2e6cd4b33a5aa7c9c81822d3f31b56d0274b48c92ecfea0e",
+      "bytes": 366160
+    },
+    {
+      "originalPath": ".cache/phase11-r1/resume-20261012-final-6-run.json",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/resume-20261012-final-6-run.json",
+      "sha256": "211dcfda1bde7572b5c1339a4a98e26b56ecf33a83b6ddc974a66dcaf4ed8da7",
+      "bytes": 6812
+    },
+    {
+      "originalPath": ".cache/phase11-r1/final-acceptance-20261012.json",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/final-acceptance-20261012.json",
+      "sha256": "0b4f4cda671a31175e58a3e465ca9d0781c1e9df1fe493c6d8ab35d7888cb785",
+      "bytes": 3039
+    },
+    {
+      "originalPath": ".cache/phase11-r1/post-review-dev-proof-20261012.json",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/post-review-dev-proof-20261012.json",
+      "sha256": "16e6775f1cfd0729c5fae23067c891c0ed5cdad7d3e22b8b99db53c9c34a5e79",
+      "bytes": 1561
+    },
+    {
+      "originalPath": ".cache/phase11-r1/retired-control-fixtures.json",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/retired-control-fixtures.json",
+      "sha256": "e47aadb9eaa95cbec9496c65646a607fc357bd4b9ec7a5efb9295b14003e8915",
+      "bytes": 121730
+    },
+    {
+      "originalPath": ".cache/phase11-r1/retained-audit-fixtures.json",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/retained-audit-fixtures.json",
+      "sha256": "647564c18ffa3e236466d0d7a6641ba9fea12b0a5821c47b70b76811190510b6",
+      "bytes": 3092
+    },
+    {
+      "originalPath": ".cache/phase11-r1/resume-20261012-gate-6-source-baseline.json",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/resume-20261012-gate-6-source-baseline.json",
+      "sha256": "8619abe49f6dee386173cd3c843f7e3edbc9ad3dbabb4f8133c4f40ba9d934a3",
+      "bytes": 29788
+    },
+    {
+      "originalPath": ".cache/phase11-r1/delegation-recheck-20261012-dev-proof.json",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/delegation-recheck-20261012-dev-proof.json",
+      "sha256": "2076d91e51a3ad06ef2dd532a557ef9be9dd9bc27420f34c02da04bb97e481c3",
+      "bytes": 1561
+    },
+    {
+      "originalPath": ".cache/phase11-r1/delegation-recheck-20261012-receipt.json",
+      "archivePath": "docs/progress/phase11-acceptance-evidence/delegation-recheck-20261012-receipt.json",
+      "sha256": "676328d9b6e33b0c6dadd28856e7640a44aafe70c49ec59117c24684bfdff369",
+      "bytes": 1856
+    }
+  ]
+}

@@ -8,8 +8,12 @@
     "paths": {
       "@family-album/contracts": ["../contracts/dist/index.d.ts"],
       "@family-album/media": ["../media/dist/index.d.ts"],
-      "@family-album/permissions": ["../permissions/dist/index.d.ts"]
+      "@family-album/permissions": ["../permissions/dist/index.d.ts"],
+      "@family-album/contracts/internal/run-admission": [
+        "../contracts/dist/run-admission.d.ts"
+      ]
     }
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/retired-control-fixtures.test.ts"]
 }

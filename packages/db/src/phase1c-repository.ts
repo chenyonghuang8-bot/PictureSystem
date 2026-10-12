@@ -1,3 +1,7 @@
+import {
+  insertFamilyAdminAudit,
+  managementOperationId,
+} from "./admin-audit.js";
 import type {
   Pool,
   PoolConnection,
@@ -117,6 +121,7 @@ export class MySqlPhase1CRepository {
     expiresInHours: number;
     tokenHash: Buffer;
   }): Promise<{ id: string; expiresAt: Date; actorMemberId: string }> {
+    const auditOperationId = managementOperationId();
     return runCheckedTransaction(this.pool, async (connection) => {
       const state = await lockFamilyState(
         connection,
@@ -124,7 +129,7 @@ export class MySqlPhase1CRepository {
         input.actor,
       );
       const now = await readServerTime(connection);
-      const actor = assertActor(state, input.actor, now, true);
+      const actor = assertFamilyManagementActor(state, input.actor, now, true);
       assertActiveSuperAdmin(state);
       if (!canIssueInvitation(actor.role, input.role)) {
         throw new Phase1CRepositoryError("FORBIDDEN");
@@ -138,6 +143,16 @@ export class MySqlPhase1CRepository {
          VALUES (?, ?, ?, ?, ?, ?)`,
         [input.familyId, actor.id, input.role, input.tokenHash, expiresAt, now],
       );
+      await insertFamilyAdminAudit(connection, {
+        familyId: input.familyId,
+        userId: input.actor.userId,
+        memberId: actor.id,
+        role: actor.role,
+        action: "INVITATION_CREATED",
+        targetType: "INVITATION",
+        targetId: String(created.insertId),
+        operationId: auditOperationId,
+      });
       return {
         id: String(created.insertId),
         expiresAt,
@@ -211,6 +226,7 @@ export class MySqlPhase1CRepository {
     familyId: string;
     invitationId: string;
   }): Promise<{ actorMemberId: string }> {
+    const auditOperationId = managementOperationId();
     return runCheckedTransaction(this.pool, async (connection) => {
       const state = await lockFamilyState(
         connection,
@@ -223,7 +239,7 @@ export class MySqlPhase1CRepository {
         input.invitationId,
       );
       const now = await readServerTime(connection);
-      const actor = assertActor(state, input.actor, now, true);
+      const actor = assertFamilyManagementActor(state, input.actor, now, true);
       assertActiveSuperAdmin(state);
       if (!invitation) throw new Phase1CRepositoryError("NOT_FOUND");
       if (!canRevokeInvitation(actor.role, invitation.role)) {
@@ -241,6 +257,16 @@ export class MySqlPhase1CRepository {
       if (updated.affectedRows !== 1) {
         throw new Phase1CRepositoryError("CONFLICT");
       }
+      await insertFamilyAdminAudit(connection, {
+        familyId: input.familyId,
+        userId: input.actor.userId,
+        memberId: actor.id,
+        role: actor.role,
+        action: "INVITATION_REVOKED",
+        targetType: "INVITATION",
+        targetId: input.invitationId,
+        operationId: auditOperationId,
+      });
       return { actorMemberId: actor.id };
     });
   }
@@ -331,6 +357,7 @@ export class MySqlPhase1CRepository {
     passwordHash: string;
     displayName: string | null;
   }): Promise<{ familyId: string; userId: string; memberId: string }> {
+    const auditOperationId = managementOperationId();
     return runCheckedTransaction(this.pool, async (connection) => {
       const state = await lockFamilyState(connection, input.locator.familyId);
       const invitation = await lockInvitation(
@@ -408,6 +435,16 @@ export class MySqlPhase1CRepository {
       if (used.affectedRows !== 1) {
         throw new Phase1CRepositoryError("INVALID_INVITATION");
       }
+      await insertFamilyAdminAudit(connection, {
+        familyId: input.locator.familyId,
+        userId,
+        memberId,
+        role: invitation.role,
+        action: "INVITATION_CONSUMED",
+        targetType: "INVITATION",
+        targetId: input.locator.id,
+        operationId: auditOperationId,
+      });
       return { familyId: input.locator.familyId, userId, memberId };
     });
   }
@@ -461,6 +498,7 @@ export class MySqlPhase1CRepository {
     targetMemberId: string;
     mutation: MemberMutation;
   }): Promise<{ actorMemberId: string; member: MemberRecord }> {
+    const auditOperationId = managementOperationId();
     return runCheckedTransaction(this.pool, async (connection) => {
       const state = await lockFamilyState(
         connection,
@@ -475,7 +513,7 @@ export class MySqlPhase1CRepository {
         await lockInvitation(connection, input.familyId, invitationId);
       }
       const now = await readServerTime(connection);
-      const actor = assertActor(state, input.actor, now, true);
+      const actor = assertFamilyManagementActor(state, input.actor, now, true);
       assertActiveSuperAdmin(state);
       if (!target) throw new Phase1CRepositoryError("NOT_FOUND");
       if (
@@ -515,15 +553,41 @@ export class MySqlPhase1CRepository {
         (input.mutation.kind === "DISABLED" && input.mutation.disabled)
       ) {
         for (const invitationId of invitationIds) {
-          await connection.query<ResultSetHeader>(
+          const [revoked] = await connection.query<ResultSetHeader>(
             `UPDATE invitations SET revoked_at = ?, revoked_by_member_id = NULL
               WHERE id = ? AND family_id = ?
                 AND used_at IS NULL AND revoked_at IS NULL`,
             [now, invitationId, input.familyId],
           );
+          if (revoked.affectedRows === 1)
+            await insertFamilyAdminAudit(connection, {
+              familyId: input.familyId,
+              userId: input.actor.userId,
+              memberId: actor.id,
+              role: actor.role,
+              action: "INVITATION_REVOKED",
+              targetType: "INVITATION",
+              targetId: invitationId,
+              operationId: auditOperationId,
+            });
         }
       }
 
+      await insertFamilyAdminAudit(connection, {
+        familyId: input.familyId,
+        userId: input.actor.userId,
+        memberId: actor.id,
+        role: actor.role,
+        action:
+          input.mutation.kind === "ROLE"
+            ? "MEMBER_ROLE_CHANGED"
+            : input.mutation.disabled
+              ? "MEMBER_DISABLED"
+              : "MEMBER_RESTORED",
+        targetType: "MEMBER",
+        targetId: input.targetMemberId,
+        operationId: auditOperationId,
+      });
       const [rows] = await connection.query<RowDataPacket[]>(
         `SELECT CAST(m.id AS CHAR) AS id, CAST(m.user_id AS CHAR) AS userId,
                 u.username, u.display_name AS displayName, m.role,
@@ -549,7 +613,7 @@ export class MySqlPhase1CRepository {
   }
 }
 
-async function lockFamilyState(
+export async function lockFamilyState(
   connection: PoolConnection,
   familyId: string,
   actor?: Phase1CActor,
@@ -618,7 +682,7 @@ async function lockFamilyState(
   };
 }
 
-function assertActor(
+export function assertFamilyManagementActor(
   state: LockedFamilyState,
   actor: Phase1CActor,
   now: Date,

@@ -4,6 +4,9 @@ import { createServer } from "node:net";
 import { createHash, randomUUID } from "node:crypto";
 import {
   mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
   readFileSync,
   statSync,
   rmSync,
@@ -11,9 +14,14 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import type {
+  ResultSetHeader,
+  RowDataPacket,
+} from "../../packages/db/src/index.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cleanupOwnedFamilyRetainingAudit } from "../helpers/retained-audit-fixtures.js";
 import {
+  hashPassword,
   createSessionToken,
   hashSessionToken,
 } from "../../packages/auth/src/index.js";
@@ -26,19 +34,21 @@ import {
   MySqlLocationProjectionRepository,
   type LocationToken,
   CommitOutcomeUnknownError,
+  MySqlSystemRunRepository,
 } from "../../packages/db/src/index.js";
 import {
   StorageRoot,
-  DerivedStore,
-  CapacityGate,
   buildOriginalPath,
 } from "../../packages/storage/src/index.js";
 import { loadLocationProjector } from "../../packages/media/src/index.js";
 import { PurgeProcessor } from "../../apps/worker/src/purge-processor.js";
 import { UploadPipelineReconciler } from "../../apps/api/src/uploads/pipeline-reconciler.js";
-import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
+import { tmpdir } from "node:os";
 import { syntheticGpsJpeg } from "../fixtures/location-jpeg.js";
 import { ContentCoordination } from "../../packages/storage/src/phase7-coordination.js";
+
+import { DevControlHarness } from "../helpers/dev-control-harness.js";
+import { attachControlOwner } from "../helpers/attached-control-owner.js";
 
 if (!process.env.DATABASE_URL)
   throw new Error("PIPELINE_DEV_DATABASE_REQUIRED");
@@ -46,7 +56,10 @@ describe.sequential(
   "Phase8 actual API upload and durable runtime pipeline",
   () => {
     const db = createDatabase(process.env.DATABASE_URL!),
-      rootPath = freshStorageRootPath("p8-upload-pipeline-"),
+      rootPath = join(
+        mkdtempSync(join(realpathSync(tmpdir()), "p8-upload-pipeline-")),
+        "r",
+      ),
       suffix = randomUUID().replaceAll("-", "");
     const token = createSessionToken(),
       secondToken = createSessionToken();
@@ -60,6 +73,9 @@ describe.sequential(
       port = 0,
       api: ChildProcess | undefined,
       metadata: ChildProcess | undefined;
+    let control: DevControlHarness;
+    const children = new Set<ChildProcess>();
+    const joinedChildren = new Set<ChildProcess>();
     let diagnostics = "";
     let readyForPurge:
       | {
@@ -134,10 +150,17 @@ describe.sequential(
       await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
       port = (server.address() as { port: number }).port;
       await new Promise<void>((r) => server.close(() => r()));
+      control = await DevControlHarness.create(
+        db.pool,
+        await hashPassword("synthetic-pipeline-control-password"),
+        [familyId],
+        "API",
+      );
     });
     function environment(enabled: boolean) {
       return {
         ...process.env,
+        ...control.env,
         APP_ENV: "dev",
         NODE_ENV: "test",
         LOG_LEVEL: "silent",
@@ -149,9 +172,23 @@ describe.sequential(
         DEV_STORAGE_MARKER_ID: marker,
         LOCATION_DATA_DIR: resolve("resources/location/2026-10-03"),
         DEV_MEDIA_PIPELINE_ENABLED: enabled ? "1" : "0",
+        DEV_CONTROL_REQUIRED_ROLES: enabled ? "API,DERIVATIVE,METADATA" : "API",
+        PHASE11_METADATA_TEST_FAMILY: familyId,
       };
     }
-    async function start(enabled: boolean, preload?: string) {
+    async function start(
+      enabled: boolean,
+      preload?: string,
+      cleanup = false,
+      observeOnly = false,
+      metadataPreload?: string,
+    ) {
+      // A role stopping revokes the entire old run. Join both old processes
+      // before asking a successor to own R or register a fresh process set.
+      await stop(metadata);
+      await stop(api);
+      metadata = undefined;
+      api = undefined;
       diagnostics = "";
       api = spawn(
         process.execPath,
@@ -168,6 +205,7 @@ describe.sequential(
             : ["ignore", "ignore", "pipe"],
         },
       );
+      children.add(api);
       api.stderr!.on("data", (d) => {
         diagnostics = (diagnostics + String(d)).slice(-4096);
       });
@@ -179,13 +217,59 @@ describe.sequential(
           return false;
         }
       }, 15000);
+      if (observeOnly) return;
+      await control.observeRoles(
+        enabled ? ["API", "DERIVATIVE"] : ["API"],
+        true,
+      );
+      if (enabled) {
+        metadata = spawn(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            ...(metadataPreload ? ["--import", metadataPreload] : []),
+            "tests/integration/fixtures/phase11-metadata-standby.ts",
+          ],
+          {
+            env: environment(true),
+            stdio: ["ignore", "ignore", "pipe", "ipc"],
+          },
+        );
+        children.add(metadata);
+        metadata.stderr!.on("data", (d) => {
+          diagnostics = (diagnostics + String(d)).slice(-4096);
+        });
+        await control.observeRoles(["METADATA"], true);
+      }
+      await until(async () => {
+        const run = await new MySqlSystemRunRepository(
+          db.pool,
+        ).observeCurrent();
+        return run?.phase === "ACTIVE" || run?.phase === "RECOVERY_REQUIRED";
+      }, 15000);
+      const current = await control.repository.readCurrent();
+      if (current.transitionState === "RECOVERY_REQUIRED")
+        await control.recheck();
+      else if (current.transitionState !== "STABLE")
+        await control.waitStable("READ_ONLY");
+      if (
+        !cleanup &&
+        (await control.repository.readCurrent()).enforcedMode === "READ_ONLY"
+      )
+        await control.request("NORMAL");
     }
     async function stop(
       child: ChildProcess | undefined,
       signal: NodeJS.Signals | null = "SIGTERM",
+      expectedExitCode = 0,
     ) {
-      if (!child || child.exitCode !== null || child.signalCode !== null)
+      if (!child || joinedChildren.has(child)) return;
+      if (child.exitCode !== null || child.signalCode !== null) {
+        if (signal !== "SIGKILL") expect(child.exitCode).toBe(expectedExitCode);
+        joinedChildren.add(child);
         return;
+      }
       const done = once(child, "exit");
       if (signal) child.kill(signal);
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -194,15 +278,29 @@ describe.sequential(
           done,
           new Promise<never>((_, reject) => {
             timer = setTimeout(() => {
-              child.kill("SIGKILL");
               reject(new Error("PIPELINE_DRAIN_TIMEOUT"));
             }, 15000);
           }),
         ]);
-        if (signal !== "SIGKILL") expect(result[0]).toBe(0);
+        if (signal !== "SIGKILL") expect(result[0]).toBe(expectedExitCode);
+        joinedChildren.add(child);
       } finally {
         if (timer) clearTimeout(timer);
       }
+    }
+    async function assertRefusedRunClosed(runId: string) {
+      const [rows] = await db.pool.query<RowDataPacket[]>(
+        "SELECT phase,clean_at FROM system_control_runs WHERE id=?",
+        [runId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.phase).toBe("RECOVERY_REQUIRED");
+      expect(rows[0]!.clean_at).toBeNull();
+      const [audit] = await db.pool.query<RowDataPacket[]>(
+        "SELECT COUNT(*) n FROM admin_audit_events a JOIN system_control_runs r ON r.shutdown_operation_id=a.operation_id WHERE r.id=? AND a.action='RUN_CLEAN_CLOSED'",
+        [runId],
+      );
+      expect(String(audit[0]!.n)).toBe("0");
     }
     async function request(
       path: string,
@@ -278,47 +376,29 @@ describe.sequential(
       };
     }
     afterAll(async () => {
-      await stop(metadata);
-      await stop(api);
-      const c = await db.pool.getConnection();
       try {
-        await c.beginTransaction();
-        for (const table of [
-          "audit_logs",
-          "purge_files",
-          "media_location_projections",
-          "album_media",
-          "derived_assets",
-          "background_jobs",
-          "media_items",
-          "upload_sessions",
-          "storage_objects",
-          "purge_intents",
-          "albums",
-          "family_members",
-        ])
-          await c.query(`DELETE FROM ${table} WHERE family_id=?`, [familyId]);
-        await c.query("DELETE FROM sessions WHERE user_id IN (?,?)", [
-          userId,
-          secondUserId,
-        ]);
-        await c.query("DELETE FROM users WHERE id IN (?,?)", [
-          userId,
-          secondUserId,
-        ]);
-        await c.query("DELETE FROM families WHERE id=?", [familyId]);
-        await c.commit();
-      } catch (error) {
-        await c.rollback();
-        throw error;
+        await stop(metadata);
+        for (const child of children) await stop(child);
+        api = undefined;
+        await start(true, undefined, true);
+        if (
+          (await control.repository.readCurrent()).enforcedMode !== "READ_ONLY"
+        )
+          await control.request("READ_ONLY");
       } finally {
-        c.release();
-        await db.pool.end();
-        rmSync(rootPath, { recursive: true, force: true });
+        for (const child of children) await stop(child);
       }
-    });
+      await control.cleanup();
+      await db.pool.end();
+      await cleanupOwnedFamilyRetainingAudit(familyId, `p8-runtime-${suffix}`, [
+        userId,
+        secondUserId,
+      ]);
+      rmSync(rootPath, { recursive: true, force: true });
+    }, 120000);
     it("recovers real COMPLETE A/B windows and unknown T1, preserves dedup source, reaches native READY and ACL map through built API owner", async () => {
       await start(false);
+      console.log("PHASE11_PIPELINE_STAGE:api-disabled-ready");
       const bytes = syntheticGpsJpeg(),
         a = await upload(bytes);
       expect((await observer.observeUploadPipeline(a.candidate)).result).toBe(
@@ -337,12 +417,15 @@ describe.sequential(
       // Crash after durable COMPLETE and before attachment: persisted receipt is authority.
       await stop(api, "SIGKILL");
       api = undefined;
-      const root = StorageRoot.open(rootPath, {
-        initialize: false,
-        expectedMarkerId: marker,
+      const owned = await attachControlOwner(db.pool, control, {
+        path: rootPath,
+        marker,
       });
+      const root = owned.root;
+      console.log("PHASE11_PIPELINE_STAGE:offline-owner-ready");
       try {
         const broken = new UploadPipelineReconciler({
+          admission: owned.admission,
           repository: observer,
           media: {
             createOrGetCanonicalMedia: async (input) => {
@@ -360,10 +443,12 @@ describe.sequential(
           "MISSING_PROBE",
         );
       } finally {
-        root.close();
+        await owned.close();
+        console.log("PHASE11_PIPELINE_STAGE:offline-owner-closed");
       }
       // Authorized fresh process performs observation of B; no seeded media/job.
       await start(true);
+      console.log("PHASE11_PIPELINE_STAGE:api-full-run-ready");
       await until(
         async () =>
           (await observer.observeUploadPipeline(a.candidate)).result ===
@@ -373,11 +458,8 @@ describe.sequential(
       const attached = await observer.observeUploadPipeline(a.candidate),
         canonical = attached.media!;
       const duplicate = await upload(bytes, secondToken);
-      metadata = spawn(
-        process.execPath,
-        ["--import", "tsx", "apps/worker/dist/metadata-main.js"],
-        { env: environment(true), stdio: ["ignore", "ignore", "pipe"] },
-      );
+      metadata!.send("resume-metadata");
+      console.log("PHASE11_PIPELINE_STAGE:metadata-resumed");
       metadata.stderr!.on("data", (d) => {
         diagnostics = (diagnostics + String(d)).slice(-4096);
       });
@@ -387,7 +469,8 @@ describe.sequential(
           [familyId, canonical.id],
         );
         return r[0]?.state === "READY";
-      }, 30000);
+      }, 120000);
+      console.log("PHASE11_PIPELINE_STAGE:ready-observed");
       const [counts] = await db.pool.query<RowDataPacket[]>(
         "SELECT (SELECT COUNT(*) FROM media_items WHERE family_id=?) media,(SELECT COUNT(*) FROM background_jobs WHERE family_id=? AND job_type='MEDIA_PROBE') probe,(SELECT COUNT(*) FROM derived_assets WHERE family_id=? AND state='READY') assets",
         [familyId, familyId, familyId],
@@ -445,7 +528,7 @@ describe.sequential(
       await stop(api);
       api = undefined;
       expect(diagnostics).not.toContain("api_startup_refused");
-    }, 60000);
+    }, 180000);
     it("restarts the built owner directly from pure COMPLETE A and reaches READY without attachment helpers", async () => {
       await start(false);
       const bytes = syntheticGpsJpeg(36.1, -115.1),
@@ -456,11 +539,7 @@ describe.sequential(
       await stop(api, "SIGKILL");
       api = undefined;
       await start(true);
-      metadata = spawn(
-        process.execPath,
-        ["--import", "tsx", "apps/worker/dist/metadata-main.js"],
-        { env: environment(true), stdio: ["ignore", "ignore", "pipe"] },
-      );
+      metadata!.send("resume-metadata");
       await until(async () => {
         const observation = await observer.observeUploadPipeline(
           receipt.candidate,
@@ -469,7 +548,7 @@ describe.sequential(
           observation.result === "PIPELINE_ATTACHED" &&
           observation.media?.processingState === "READY"
         );
-      }, 30000);
+      }, 120000);
       const canonical = (
         await observer.observeUploadPipeline(receipt.candidate)
       ).media!;
@@ -532,7 +611,7 @@ describe.sequential(
       metadata = undefined;
       await stop(api);
       api = undefined;
-    }, 60000);
+    }, 180000);
     it("metadata SIGTERM drains the active real recovery transaction then selects no remaining recovery or claim", async () => {
       await start(false);
       const receipts = await Promise.all([
@@ -553,16 +632,6 @@ describe.sequential(
       );
       await stop(api);
       api = undefined;
-      const identity = MySqlJobRepository.createWorkerIdentity();
-      const claims = [
-        await jobs.claimNext(identity, { jobType: "MEDIA_PROBE" }),
-        await jobs.claimNext(identity, { jobType: "MEDIA_PROBE" }),
-      ];
-      expect(claims.every((c) => c && c.familyId === familyId)).toBe(true);
-      await db.pool.query(
-        "UPDATE background_jobs SET locked_at=UTC_TIMESTAMP(3)-INTERVAL 2 MINUTE,heartbeat_at=UTC_TIMESTAMP(3)-INTERVAL 2 MINUTE,locked_until=UTC_TIMESTAMP(3)-INTERVAL 1 MINUTE WHERE family_id=? AND id IN (?,?)",
-        [familyId, claims[0]!.id, claims[1]!.id],
-      );
       const preload = join(rootPath, "..", "metadata-stop.mjs");
       writeFileSync(
         preload,
@@ -579,19 +648,50 @@ describe.sequential(
       `,
         { mode: 0o600 },
       );
-      metadata = spawn(
-        process.execPath,
-        [
-          "--import",
-          "tsx",
-          "--import",
-          preload,
-          "apps/worker/dist/metadata-main.js",
-        ],
-        { env: environment(true), stdio: ["ignore", "ignore", "pipe", "ipc"] },
-      );
+      await start(true, undefined, false, false, preload);
+      const seeded = new Promise<
+        Array<{
+          id: string;
+          familyId: string;
+          mediaId: string;
+          generation: bigint;
+        }>
+      >((resolve, reject) => {
+        const timer = setTimeout(() => {
+          metadata!.off("message", receive);
+          reject(Error("METADATA_LEASE_PREPARATION_TIMEOUT"));
+        }, 5000);
+        const receive = (m: unknown) => {
+          if (!m || typeof m !== "object" || !("kind" in m)) return;
+          if (
+            m.kind !== "expired-test-leases-ready" &&
+            m.kind !== "expired-test-leases-failed"
+          )
+            return;
+          clearTimeout(timer);
+          metadata!.off("message", receive);
+          if (
+            m.kind === "expired-test-leases-failed" ||
+            !("claims" in m) ||
+            !Array.isArray(m.claims)
+          )
+            reject(Error("METADATA_LEASE_PREPARATION_FAILED"));
+          else
+            resolve(
+              m.claims.map((c) => ({ ...c, generation: BigInt(c.generation) })),
+            );
+        };
+        metadata!.on("message", receive);
+      });
+      metadata!.send("prepare-expired-test-leases");
+      const claims = await seeded;
+      expect(claims).toHaveLength(2);
+      expect(claims.every((c) => c.familyId === familyId)).toBe(true);
       const events: string[] = [];
-      metadata.on("message", (m) => events.push(String(m)));
+      metadata!.on("message", (m) => {
+        if (m !== "metadata-standby-ready") events.push(String(m));
+      });
+      metadata!.send("resume-metadata");
       await until(async () => events.includes("recovery-paused"), 5000);
       metadata.kill("SIGTERM");
       await delay(100);
@@ -614,13 +714,25 @@ describe.sequential(
       expect(rows.map((r) => Number(r.attempts))).toEqual([1, 1]);
       // This fixture deliberately stops selection. Settle its remaining lease
       // through the same recovery API; neither job is hand-created or reset.
-      await jobs.recoverExpiredLease({
-        familyId,
-        mediaId: claims[1]!.mediaId,
-        jobId: claims[1]!.id,
-        generation: claims[1]!.generation,
+      await stop(api);
+      api = undefined;
+      const owned = await attachControlOwner(db.pool, control, {
+        path: rootPath,
+        marker,
       });
-    }, 30000);
+      try {
+        await owned.admission.run("MEDIA_WRITE", () =>
+          jobs.recoverExpiredLease({
+            familyId,
+            mediaId: claims[1]!.mediaId,
+            jobId: claims[1]!.id,
+            generation: claims[1]!.generation,
+          }),
+        );
+      } finally {
+        await owned.close();
+      }
+    }, 120000);
     it("SIGTERM drains actual native render/publication and concurrent upload admission before closing owner resources", async () => {
       for (const phase of ["render", "publication"] as const) {
         await start(false);
@@ -638,18 +750,18 @@ describe.sequential(
           `
           import {OriginalReader,StorageRoot,CapacityGate,DerivedStore} from ${JSON.stringify(resolve("packages/storage/src/index.ts"))};
           import {MySqlDerivedAssetFence,MySqlUploadRepository,MySqlJobRepository} from ${JSON.stringify(resolve("packages/db/dist/index.js"))};
-          const phase=${JSON.stringify(phase)}, target=${JSON.stringify(familyId)};
+          const phase=${JSON.stringify(phase)}, target=${JSON.stringify(familyId)}, targetSha=${JSON.stringify(receipt.candidate.expectedSha256Hex)};
           const events=name=>process.send?.(name);const wait=name=>new Promise(r=>{const receive=m=>{if(m===name){process.off('message',receive);r();}};process.on('message',receive);});
-          let paused=false,admission=false;
+          let paused=false,admission=false,armed=false,targetMediaId;process.on('message',m=>{if(m&&m.kind==='arm-drain-test'){targetMediaId=m.mediaId;armed=true;events('drain-armed');}});
           const original=OriginalReader.prototype.withVerifiedOriginal;
-          OriginalReader.prototype.withVerifiedOriginal=function(input,callback){return original.call(this,input,async handle=>{const output=await callback(handle);if(phase==='render'&&!paused&&input.familyId===target){paused=true;events('render-paused');await wait('release-work');events('work-settled');}return output;});};
+          OriginalReader.prototype.withVerifiedOriginal=function(input,callback){return original.call(this,input,async handle=>{const output=await callback(handle);if(armed&&phase==='render'&&!paused&&input.familyId===target&&input.sha256Hex===targetSha){paused=true;events('render-paused');await wait('release-work');events('work-settled');}return output;});};
           const publishing=MySqlDerivedAssetFence.prototype.markPublishing;
-          MySqlDerivedAssetFence.prototype.markPublishing=async function(...args){const result=await publishing.apply(this,args);if(phase==='publication'&&!paused){paused=true;events('publication-paused');await wait('release-work');events('work-settled');}return result;};
+          MySqlDerivedAssetFence.prototype.markPublishing=async function(...args){const result=await publishing.apply(this,args);if(armed&&phase==='publication'&&!paused&&args[0].familyId===target&&args[0].mediaId===targetMediaId){paused=true;events('publication-paused');await wait('release-work');events('work-settled');}return result;};
           const create=MySqlUploadRepository.prototype.createUploadCapacityAdmitted;
-          MySqlUploadRepository.prototype.createUploadCapacityAdmitted=async function(...args){const result=await create.apply(this,args);if(!admission){admission=true;events('admission-paused');await wait('release-admission');events('admission-settled');}return result;};
+          MySqlUploadRepository.prototype.createUploadCapacityAdmitted=async function(...args){const result=await create.apply(this,args);if(armed&&!admission){admission=true;events('admission-paused');await wait('release-admission');events('admission-settled');}return result;};
           const claim=MySqlJobRepository.prototype.claimNext;
           MySqlJobRepository.prototype.claimNext=async function(...args){events('claim');return claim.apply(this,args);};
-          for(const [name,klass] of [['store',DerivedStore],['reader',OriginalReader],['gate',CapacityGate],['root',StorageRoot]]){const close=klass.prototype.close;klass.prototype.close=function(){events('close-'+name);const result=close.call(this);if(name==='root'&&process.connected)process.disconnect();return result;};}
+          for(const [name,klass] of [['store',DerivedStore],['reader',OriginalReader],['gate',CapacityGate],['root',StorageRoot]]){const close=klass.prototype.close;klass.prototype.close=function(){if(armed)events('close-'+name);const result=close.call(this);if(armed&&name==='root'&&process.connected)process.disconnect();return result;};}
           for(const method of ['describe','adoptReserved','markPublishing','confirmPublishing','commitSucceeded','commitAttempt']){const operation=MySqlDerivedAssetFence.prototype[method];MySqlDerivedAssetFence.prototype[method]=async function(...args){events('enter-'+method);try{const result=await operation.apply(this,args);events('done-'+method);return result;}catch(e){events('failed-'+method);throw e;}};}
           const admit=CapacityGate.prototype.withAdmissionLock;
           CapacityGate.prototype.withAdmissionLock=async function(...args){events('gate-enter');try{const result=await admit.apply(this,args);events('gate-done');return result;}catch(e){events('gate-failed');throw e;}};
@@ -667,11 +779,16 @@ describe.sequential(
             JSON.stringify(events),
           );
         });
-        metadata = spawn(
-          process.execPath,
-          ["--import", "tsx", "apps/worker/dist/metadata-main.js"],
-          { env: environment(true), stdio: ["ignore", "ignore", "pipe"] },
-        );
+        let targetMediaId: string | undefined;
+        await until(async () => {
+          targetMediaId = (
+            await observer.observeUploadPipeline(receipt.candidate)
+          ).media?.id;
+          return targetMediaId !== undefined;
+        }, 15000);
+        api!.send({ kind: "arm-drain-test", mediaId: targetMediaId });
+        await until(async () => events.includes("drain-armed"), 5000);
+        metadata!.send("resume-metadata");
         await until(async () => events.includes(`${phase}-paused`), 15000);
         // A separate real HTTP request competes for the SAME owner admission gate.
         const admission = fetch(
@@ -722,7 +839,7 @@ describe.sequential(
         await stop(metadata);
         metadata = undefined;
       }
-    }, 60000);
+    }, 180000);
     it("real COMPLETE discovery spans three pages, advances past a deferred low key, and catches late low and new high receipts next round", async () => {
       await start(false);
       let releaseLate!: () => void, lateStaged!: () => void;
@@ -750,12 +867,21 @@ describe.sequential(
       }
       const first = receipts[0]!.candidate;
       const high = await observer.readUploadPipelineHighWater();
+      await stop(api);
+      api = undefined;
+      let owned = await attachControlOwner(db.pool, control, {
+        path: rootPath,
+        marker,
+      });
       const pages: string[][] = [],
         waits: number[] = [];
       let finished = 0,
         deferred = true;
       const worker = new UploadPipelineReconciler(
         {
+          admission: {
+            run: (action, operation) => owned.admission.run(action, operation),
+          },
           repository: {
             readUploadPipelineHighWater: async () =>
               finished === 0 ? high : observer.readUploadPipelineHighWater(),
@@ -792,9 +918,17 @@ describe.sequential(
         },
       );
       await worker.page();
+      await owned.close();
+      await start(false);
       releaseLate();
       const late = await latePromise;
       const higher = await upload(syntheticGpsJpeg(17, 21));
+      await stop(api);
+      api = undefined;
+      owned = await attachControlOwner(db.pool, control, {
+        path: rootPath,
+        marker,
+      });
       await worker.page();
       await worker.page();
       await worker.page();
@@ -817,9 +951,8 @@ describe.sequential(
         expect(
           (await observer.observeUploadPipeline(receipt.candidate)).result,
         ).toBe("PIPELINE_ATTACHED");
-      await stop(api);
-      api = undefined;
-    }, 60000);
+      await owned.close();
+    }, 180000);
     it("races two real same-K receipts under native shared guards and keeps one canonical source and probe", async () => {
       await start(false);
       const bytes = syntheticGpsJpeg(25, 25),
@@ -829,10 +962,11 @@ describe.sequential(
         ]);
       await stop(api);
       api = undefined;
-      const root = StorageRoot.open(rootPath, {
-        initialize: false,
-        expectedMarkerId: marker,
+      const owned = await attachControlOwner(db.pool, control, {
+        path: rootPath,
+        marker,
       });
+      const root = owned.root;
       try {
         let arrivals = 0,
           release!: () => void;
@@ -858,6 +992,7 @@ describe.sequential(
         const workers = receipts.map(
           () =>
             new UploadPipelineReconciler({
+              admission: owned.admission,
               repository: sharedObserver,
               media,
               jobs,
@@ -887,6 +1022,7 @@ describe.sequential(
           expect(
             (
               await new UploadPipelineReconciler({
+                admission: owned.admission,
                 repository: observer,
                 media,
                 jobs,
@@ -902,9 +1038,9 @@ describe.sequential(
         expect(rows[0]!.source).toBe(winner.sourceUploadId);
         expect(Number(rows[0]!.probe)).toBe(1);
       } finally {
-        root.close();
+        await owned.close();
       }
-    }, 30000);
+    }, 120000);
     it("resolves committed and rolled-back unknown T1/T2 from fresh locking observations", async () => {
       await start(false);
       const receipts = [
@@ -915,10 +1051,11 @@ describe.sequential(
       ];
       await stop(api);
       api = undefined;
-      const root = StorageRoot.open(rootPath, {
-        initialize: false,
-        expectedMarkerId: marker,
+      let owned = await attachControlOwner(db.pool, control, {
+        path: rootPath,
+        marker,
       });
+      let root = owned.root;
       try {
         for (const [n, receipt] of receipts.entries()) {
           const step = n < 2 ? "T1" : "T2";
@@ -953,6 +1090,7 @@ describe.sequential(
             },
           });
           const worker = new UploadPipelineReconciler({
+            admission: owned.admission,
             repository: observer,
             media: step === "T1" ? new MySqlMediaRepository(faultPool) : media,
             jobs: step === "T2" ? new MySqlJobRepository(faultPool) : jobs,
@@ -962,7 +1100,7 @@ describe.sequential(
             worker.reconcile(receipt.candidate),
           ).rejects.toBeInstanceOf(CommitOutcomeUnknownError);
           await expect(worker.reconcile(receipt.candidate)).rejects.toThrow(
-            "PIPELINE_STOPPED_RESTART_REQUIRED",
+            "WRITE_PAUSED",
           );
           expect(
             (await observer.observeUploadPipeline(receipt.candidate)).result,
@@ -975,7 +1113,14 @@ describe.sequential(
                 ? "PIPELINE_ATTACHED"
                 : "MISSING_PROBE",
           );
+          await owned.close();
+          owned = await attachControlOwner(db.pool, control, {
+            path: rootPath,
+            marker,
+          });
+          root = owned.root;
           const fresh = new UploadPipelineReconciler({
+            admission: owned.admission,
             repository: observer,
             media,
             jobs,
@@ -995,18 +1140,19 @@ describe.sequential(
           expect(Number(count[0]!.attempts)).toBe(0);
         }
       } finally {
-        root.close();
+        await owned.close();
       }
-    }, 30000);
+    }, 120000);
     it("holds native L-S through both transactions while lifecycle L-X waits, and defers bounded contention", async () => {
       await start(false);
       const receipt = await upload(syntheticGpsJpeg(52.52, 13.4));
       await stop(api);
       api = undefined;
-      const root = StorageRoot.open(rootPath, {
-        initialize: false,
-        expectedMarkerId: marker,
+      const owned = await attachControlOwner(db.pool, control, {
+        path: rootPath,
+        marker,
       });
+      const root = owned.root;
       try {
         const k = receipt.candidate;
         const coordination = new ContentCoordination(root, {
@@ -1017,6 +1163,7 @@ describe.sequential(
         const exclusive = await coordination.acquireLifecycle("X", 0);
         try {
           const contended = new UploadPipelineReconciler({
+            admission: owned.admission,
             repository: observer,
             media,
             jobs,
@@ -1060,6 +1207,7 @@ describe.sequential(
           },
         };
         const worker = new UploadPipelineReconciler({
+          admission: owned.admission,
           repository: observer,
           media: protectedMedia,
           jobs: protectedJobs,
@@ -1070,18 +1218,19 @@ describe.sequential(
         expect(acquired).toBe(true);
         guard.close();
       } finally {
-        root.close();
+        await owned.close();
       }
-    }, 30000);
+    }, 120000);
     it("preserves inactive and terminal media and repairs a restored unstarted generation", async () => {
       await start(false);
       const receipt = await upload(syntheticGpsJpeg(51.5, -0.12));
       await stop(api);
       api = undefined;
-      const root = StorageRoot.open(rootPath, {
-        initialize: false,
-        expectedMarkerId: marker,
+      const owned = await attachControlOwner(db.pool, control, {
+        path: rootPath,
+        marker,
       });
+      const root = owned.root;
       try {
         const created = await media.createOrGetCanonicalMedia({
             familyId,
@@ -1089,6 +1238,7 @@ describe.sequential(
           }),
           m = created.media;
         const worker = new UploadPipelineReconciler({
+          admission: owned.admission,
           repository: observer,
           media,
           jobs,
@@ -1142,9 +1292,9 @@ describe.sequential(
           "PIPELINE_TERMINAL_FAILED",
         );
       } finally {
-        root.close();
+        await owned.close();
       }
-    }, 30000);
+    }, 120000);
     it("purges a real runtime READY item with projection and excludes a concurrent reconciler through retirement", async () => {
       expect(readyForPurge).toBeDefined();
       const fixture = readyForPurge!;
@@ -1191,15 +1341,11 @@ describe.sequential(
       );
       await stop(api);
       api = undefined;
-      const root = StorageRoot.open(rootPath, {
-        initialize: false,
-        expectedMarkerId: marker,
+      const owned = await attachControlOwner(db.pool, control, {
+        path: rootPath,
+        marker,
       });
-      const store = DerivedStore.open({ state: "READ_WRITE", root }),
-        gate = CapacityGate.open({
-          mediaRoot: rootPath,
-          expectedMarkerId: marker,
-        });
+      const { root, store, gate } = owned;
       try {
         const [projections] = await db.pool.query<RowDataPacket[]>(
           "SELECT COUNT(*) n FROM media_location_projections WHERE family_id=? AND media_id=?",
@@ -1222,9 +1368,12 @@ describe.sequential(
             await c.commit();
           },
         });
-        const lease = await purge.repository.claim();
+        const admission = owned.admission;
+        const lease = await admission.run("MEDIA_WRITE", () =>
+          purge.repository.claim(),
+        );
         expect(lease).not.toBeNull();
-        const running = purge.run(lease!);
+        const running = admission.run("MEDIA_WRITE", () => purge.run(lease!));
         await inside;
         const k = fixture.candidate,
           coord = new ContentCoordination(root, {
@@ -1233,6 +1382,7 @@ describe.sequential(
             byteSize: k.expectedByteSize,
           });
         const reconciler = new UploadPipelineReconciler({
+          admission: owned.admission,
           repository: observer,
           media,
           jobs,
@@ -1245,14 +1395,24 @@ describe.sequential(
             backfillSettled = true;
             return result;
           });
+        const reconciling = reconciler.reconcile(k);
+        let reconcilerSettled = false;
+        void reconciling.finally(() => {
+          reconcilerSettled = true;
+        });
         try {
-          expect((await reconciler.reconcile(k)).result).toBe("DEFERRED");
           await delay(50);
+          // Actual admission first waits on the owner's capacity health lock,
+          // held by this real purge transaction; no stale proof bypasses it.
+          expect(reconcilerSettled).toBe(false);
           expect(backfillSettled).toBe(false);
         } finally {
           release();
         }
         expect(await running).toBe("COMPLETED");
+        expect(["DEFERRED", "NOT_APPLICABLE"]).toContain(
+          (await reconciling).result,
+        );
         expect(await waitingBackfill).toBe("STALE");
         expect((await reconciler.reconcile(k)).result).toBe("NOT_APPLICABLE");
         const [rows] = await db.pool.query<RowDataPacket[]>(
@@ -1287,11 +1447,9 @@ describe.sequential(
           }),
         ).toHaveLength(0);
       } finally {
-        store.close();
-        gate.close();
-        root.close();
+        await owned.close();
       }
-    }, 30000);
+    }, 120000);
     it("enabled startup refuses separate writer and missing namespace before claims, and listen failure releases handles", async () => {
       const [before] = await db.pool.query<RowDataPacket[]>(
         "SELECT SUM(attempts) attempts FROM background_jobs WHERE family_id=?",
@@ -1301,11 +1459,39 @@ describe.sequential(
         initialize: false,
         expectedMarkerId: marker,
       });
+      let refusedRunId: string | undefined;
       try {
-        await expect(start(true)).rejects.toThrow("BUILT_API_STARTUP_FAILED");
+        await start(true, undefined, true, true);
+        const denied = await fetch(
+          `http://127.0.0.1:${port}/api/v1/families/${familyId}/uploads/tus`,
+          {
+            method: "POST",
+            headers: {
+              cookie: `__Host-family_session=${token}`,
+              origin: "https://localhost:3000",
+              "tus-resumable": "1.0.0",
+              "upload-length": "16",
+            },
+          },
+        );
+        expect(denied.status).toBe(503);
+        expect((await control.repository.readCurrent()).enforcedMode).toBe(
+          "READ_ONLY",
+        );
+        const refusedRun = await new MySqlSystemRunRepository(
+          db.pool,
+        ).observeCurrent();
+        expect(refusedRun?.phase).toBe("RECOVERY_REQUIRED");
+        expect(refusedRun?.clean_at).toBeNull();
+        refusedRunId = refusedRun!.id;
       } finally {
-        root.close();
-        api = undefined;
+        try {
+          await stop(api, "SIGTERM", 1);
+          if (refusedRunId) await assertRefusedRunClosed(refusedRunId);
+        } finally {
+          root.close();
+          api = undefined;
+        }
       }
       const [after] = await db.pool.query<RowDataPacket[]>(
         "SELECT SUM(attempts) attempts FROM background_jobs WHERE family_id=?",
@@ -1318,6 +1504,7 @@ describe.sequential(
         await expect(start(true)).rejects.toThrow("BUILT_API_STARTUP_FAILED");
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
+        await stop(api, "SIGTERM", 1);
         api = undefined;
       }
       const reopened = StorageRoot.open(rootPath, {
@@ -1326,10 +1513,39 @@ describe.sequential(
       });
       reopened.close();
       // Only this task's disposable synthetic namespace is removed.
-      rmSync(join(rootPath, ".coord"), { recursive: true, force: true });
-      await expect(start(true)).rejects.toThrow("BUILT_API_STARTUP_FAILED");
-      api = undefined;
-    }, 30000);
+      const namespace = join(rootPath, ".coord"),
+        retained = join(rootPath, `.coord-${suffix}`);
+      renameSync(namespace, retained);
+      try {
+        await start(true, undefined, true, true);
+        const denied = await fetch(
+          `http://127.0.0.1:${port}/api/v1/families/${familyId}/uploads/tus`,
+          {
+            method: "POST",
+            headers: {
+              cookie: `__Host-family_session=${token}`,
+              origin: "https://localhost:3000",
+              "tus-resumable": "1.0.0",
+              "upload-length": "16",
+            },
+          },
+        );
+        expect(denied.status).toBe(503);
+      } finally {
+        try {
+          const refusedRun = await new MySqlSystemRunRepository(
+            db.pool,
+          ).observeCurrent();
+          expect(refusedRun?.phase).toBe("RECOVERY_REQUIRED");
+          expect(refusedRun?.clean_at).toBeNull();
+          await stop(api, "SIGTERM", 1);
+          await assertRefusedRunClosed(refusedRun!.id);
+        } finally {
+          renameSync(retained, namespace);
+          api = undefined;
+        }
+      }
+    }, 120000);
   },
 );
 async function until(check: () => Promise<boolean>, ms: number) {

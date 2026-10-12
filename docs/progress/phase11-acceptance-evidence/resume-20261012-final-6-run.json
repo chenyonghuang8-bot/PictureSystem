@@ -1,0 +1,222 @@
+{
+  "runId": "5bef884b-4e38-4eac-b473-c56fdbbb0b60",
+  "runnerPID": 57872,
+  "startedAtUTC": "2026-10-12T07:27:32.245539+00:00",
+  "status": "PASS",
+  "stages": [
+    {
+      "name": "unit",
+      "status": "PASS",
+      "startedAtUTC": "2026-10-12T06:12:45.604835+00:00",
+      "log": "/tmp/phase11-resume-20261012-final-2-unit.log",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--project",
+        "unit",
+        "--no-file-parallelism"
+      ],
+      "childPID": 38971,
+      "exitCode": 0,
+      "skipsObserved": false,
+      "finishedAtUTC": "2026-10-12T06:16:00.357201+00:00",
+      "summaries": [
+        "\n Test Files  148 passed (148)",
+        "      Tests  1381 passed (1381)"
+      ],
+      "inheritedFrom": ".cache/phase11-r1/resume-20261012-final-2-run.json",
+      "applicability": "Unit and production/build sources unchanged (SHA verified); current changes only E2E lifecycle and test-helper type-only import. Targeted helper unit and harness tsc rerun before remaining full gates. "
+    },
+    {
+      "name": "build",
+      "status": "PASS",
+      "startedAtUTC": "2026-10-12T06:16:00.357835+00:00",
+      "log": "/tmp/phase11-resume-20261012-final-2-build.log",
+      "command": [
+        "pnpm",
+        "build"
+      ],
+      "childPID": 41557,
+      "exitCode": 0,
+      "skipsObserved": false,
+      "finishedAtUTC": "2026-10-12T06:16:17.391053+00:00",
+      "summaries": [],
+      "inheritedFrom": ".cache/phase11-r1/resume-20261012-final-2-run.json",
+      "applicability": "Unit and production/build sources unchanged (SHA verified); current changes only E2E lifecycle and test-helper type-only import. Targeted helper unit and harness tsc rerun before remaining full gates. "
+    },
+    {
+      "name": "apiE2E",
+      "status": "PASS",
+      "startedAtUTC": "2026-10-12T07:11:44.021215+00:00",
+      "log": "/tmp/phase11-resume-20261012-final-4-apiE2E.log",
+      "command": [
+        "pnpm",
+        "test:e2e"
+      ],
+      "childPID": 56683,
+      "exitCode": 0,
+      "skipsObserved": false,
+      "finishedAtUTC": "2026-10-12T07:11:46.293811+00:00",
+      "summaries": [
+        "\n  5 passed (1.9s)"
+      ],
+      "inheritedFrom": ".cache/phase11-r1/resume-20261012-final-4-run.json",
+      "applicability": "Unchanged API E2E and standalone Admin config/spec/product/Next/storage sources; only separate controlled legacy Web lifecycle helper changed."
+    },
+    {
+      "name": "strictAdminHttps",
+      "status": "PASS",
+      "startedAtUTC": "2026-10-12T07:11:46.294169+00:00",
+      "log": "/tmp/phase11-resume-20261012-final-4-strictAdminHttps.log",
+      "command": [
+        "pnpm",
+        "exec",
+        "playwright",
+        "test",
+        "--config",
+        "playwright.phase11-admin.config.ts"
+      ],
+      "childPID": 56710,
+      "exitCode": 0,
+      "skipsObserved": false,
+      "finishedAtUTC": "2026-10-12T07:14:05.730040+00:00",
+      "summaries": [
+        "\n  3 passed (2.3m)"
+      ],
+      "inheritedFrom": ".cache/phase11-r1/resume-20261012-final-4-run.json",
+      "applicability": "Unchanged API E2E and standalone Admin config/spec/product/Next/storage sources; only separate controlled legacy Web lifecycle helper changed."
+    },
+    {
+      "name": "unitTargeted",
+      "status": "PASS",
+      "startedAtUTC": "2026-10-12T07:27:32.245806+00:00",
+      "log": "/tmp/phase11-resume-20261012-final-6-unitTargeted.log",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--config",
+        "vitest.config.ts",
+        "packages/db/src/retired-control-fixtures.test.ts"
+      ],
+      "childPID": 57873,
+      "exitCode": 0,
+      "skipsObserved": false,
+      "finishedAtUTC": "2026-10-12T07:27:32.677193+00:00",
+      "summaries": [
+        "\n\n Test Files  1 passed (1)",
+        "      Tests  11 passed (11)"
+      ]
+    },
+    {
+      "name": "harnessTypecheck",
+      "status": "PASS",
+      "startedAtUTC": "2026-10-12T07:27:32.677592+00:00",
+      "log": "/tmp/phase11-resume-20261012-final-6-harnessTypecheck.log",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsc",
+        "-p",
+        ".cache/phase11-r1/web-harness-tsconfig.json"
+      ],
+      "childPID": 57881,
+      "exitCode": 0,
+      "skipsObserved": false,
+      "finishedAtUTC": "2026-10-12T07:27:34.314109+00:00",
+      "summaries": []
+    },
+    {
+      "name": "format",
+      "status": "PASS",
+      "startedAtUTC": "2026-10-12T07:27:34.314513+00:00",
+      "log": "/tmp/phase11-resume-20261012-final-6-format.log",
+      "command": [
+        "pnpm",
+        "format:check"
+      ],
+      "childPID": 57888,
+      "exitCode": 0,
+      "skipsObserved": false,
+      "finishedAtUTC": "2026-10-12T07:27:37.935131+00:00",
+      "summaries": []
+    },
+    {
+      "name": "lint",
+      "status": "PASS",
+      "startedAtUTC": "2026-10-12T07:27:37.935482+00:00",
+      "log": "/tmp/phase11-resume-20261012-final-6-lint.log",
+      "command": [
+        "pnpm",
+        "lint"
+      ],
+      "childPID": 57910,
+      "exitCode": 0,
+      "skipsObserved": false,
+      "finishedAtUTC": "2026-10-12T07:27:41.328919+00:00",
+      "summaries": []
+    },
+    {
+      "name": "typecheck",
+      "status": "PASS",
+      "startedAtUTC": "2026-10-12T07:27:41.329440+00:00",
+      "log": "/tmp/phase11-resume-20261012-final-6-typecheck.log",
+      "command": [
+        "pnpm",
+        "typecheck"
+      ],
+      "childPID": 57936,
+      "exitCode": 0,
+      "skipsObserved": false,
+      "finishedAtUTC": "2026-10-12T07:27:48.667686+00:00",
+      "summaries": []
+    },
+    {
+      "name": "webE2E",
+      "status": "PASS",
+      "startedAtUTC": "2026-10-12T07:27:48.668028+00:00",
+      "log": "/tmp/phase11-resume-20261012-final-6-webE2E.log",
+      "command": [
+        "pnpm",
+        "test:e2e:web"
+      ],
+      "childPID": 58265,
+      "exitCode": 0,
+      "skipsObserved": false,
+      "finishedAtUTC": "2026-10-12T07:34:02.192935+00:00",
+      "summaries": [
+        "\n  10 passed (1.3m)",
+        "\n  10 passed (18.2s)",
+        "\n  1 passed (1.2m)",
+        "\n  6 passed (58.0s)",
+        "\n  3 passed (2.3m)"
+      ]
+    },
+    {
+      "name": "integration",
+      "status": "PASS",
+      "startedAtUTC": "2026-10-12T07:34:02.193397+00:00",
+      "log": "/tmp/phase11-resume-20261012-final-6-integration.log",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--project",
+        "integration"
+      ],
+      "childPID": 59499,
+      "exitCode": 0,
+      "skipsObserved": false,
+      "finishedAtUTC": "2026-10-12T07:55:43.709727+00:00",
+      "summaries": [
+        "\n Test Files  50 passed (50)",
+        "      Tests  541 passed (541)"
+      ]
+    }
+  ],
+  "finishedAtUTC": "2026-10-12T07:55:43.710738+00:00"
+}

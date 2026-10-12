@@ -1,0 +1,31 @@
+
+> family-album@0.0.0 typecheck /Users/toby/PictureSystem
+> pnpm -r --if-present typecheck
+
+Scope: 13 of 14 workspace projects
+packages/auth typecheck$ tsc --noEmit
+packages/config typecheck$ tsc --noEmit
+packages/i18n typecheck$ tsc --noEmit
+packages/contracts typecheck$ tsc --noEmit
+packages/i18n typecheck: Done
+packages/permissions typecheck$ tsc --noEmit
+packages/config typecheck: Done
+packages/ui-tokens typecheck$ tsc --noEmit
+packages/auth typecheck: Done
+packages/permissions typecheck: Done
+packages/contracts typecheck: Done
+packages/ui-tokens typecheck: Done
+apps/mobile typecheck$ tsc --noEmit
+packages/storage typecheck$ tsc --noEmit
+apps/web typecheck$ tsc --noEmit
+apps/web typecheck: Done
+packages/storage typecheck: Done
+apps/mobile typecheck: Done
+packages/media typecheck$ tsc --noEmit
+packages/media typecheck: Done
+packages/db typecheck$ tsc --noEmit
+packages/db typecheck: Done
+apps/worker typecheck$ tsc --noEmit
+apps/api typecheck$ tsc --noEmit
+apps/worker typecheck: Done
+apps/api typecheck: Done

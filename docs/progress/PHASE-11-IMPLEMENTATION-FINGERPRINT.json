@@ -1,0 +1,172 @@
+{
+  "scope": "PHASE11_INCOMPLETE_R3_CHILD_BARRIER_BLOCK",
+  "utc": "2026-10-07T05:23:11.326116+00:00",
+  "head": "209b8d36e4a9337ee6c9975878f6031e52a62ace",
+  "files": [
+    {
+      "path": "packages/contracts/src/admin.ts",
+      "bytes": 4074,
+      "sha256": "e18317192779e958dbd3c1ae5d8af82a05aa855a79ab06780dc1f6ed22b607d5"
+    },
+    {
+      "path": "packages/contracts/src/index.ts",
+      "bytes": 721,
+      "sha256": "ba72152283ce0857b0d84e9efd162495c9458a5cc8742cd43c111414ce89f1bc"
+    },
+    {
+      "path": "packages/db/drizzle/0010_phase_11_admin.sql",
+      "bytes": 8418,
+      "sha256": "d5f57248d1cea744d6ab1cbd8d5519a1d8f3023849b1b6ba6648675c3e7b04d8"
+    },
+    {
+      "path": "packages/db/drizzle/meta/0010_snapshot.json",
+      "bytes": 160861,
+      "sha256": "88c13cf680a2b0bb13f1bb3703abce9cfe1f83814302759e0914cd23e72d7f23"
+    },
+    {
+      "path": "packages/db/drizzle/meta/_journal.json",
+      "bytes": 1707,
+      "sha256": "f0657b6d69761a8c54feb87cdf6c5c1068da3eb1f797d0310cde39fd247b30f5"
+    },
+    {
+      "path": "packages/db/src/admin-audit.ts",
+      "bytes": 1322,
+      "sha256": "d871c5747cf033639c7b7b129eea24f3c691d8cc9c687abf0817cd5c933ada48"
+    },
+    {
+      "path": "packages/db/src/migration-readiness.ts",
+      "bytes": 22302,
+      "sha256": "eb5a481a44fba021ae686aaa37587e997507883a3fe726eb35dbee100b174b34"
+    },
+    {
+      "path": "packages/db/src/phase11-migration.test.ts",
+      "bytes": 2491,
+      "sha256": "6584dc752bf46e516dde05b959657f5dbbbb5917025d3fbdedea720335c2bf83"
+    },
+    {
+      "path": "packages/db/src/phase1c-repository.ts",
+      "bytes": 26806,
+      "sha256": "a0c70b85154a7a31776a9e618362ee64aded4dd6d6bb27c3d72212f3b9c227f6"
+    },
+    {
+      "path": "packages/db/src/schema.ts",
+      "bytes": 73512,
+      "sha256": "6a07bc3e4e420701fbd094577109f5ed17e8938af69ea80f68f6f4fa6f3345d3"
+    },
+    {
+      "path": "packages/db/src/system-control-repository.ts",
+      "bytes": 11052,
+      "sha256": "c26e591fe8a6e4e7d2e4710bb145df33e414ad720880c05ebe279dca4aaf5c85"
+    },
+    {
+      "path": "packages/storage/native/operation_gate.h",
+      "bytes": 12268,
+      "sha256": "b730a6bb5a6ad92ccd7f593d5db05c227a0ffed481e4859beedba4ed617a66f3"
+    },
+    {
+      "path": "packages/storage/native/storage_native.c",
+      "bytes": 102092,
+      "sha256": "b3eb16f33ebb0a12fa3149ee63ece87654b193fb7b258462c940de298afe22a4"
+    },
+    {
+      "path": "packages/storage/src/control-admission.ts",
+      "bytes": 3612,
+      "sha256": "041b730ae0694af1bdc6ad13251a777c6a57b73b8afff30f05aa3b51caa91d91"
+    },
+    {
+      "path": "packages/storage/src/index.ts",
+      "bytes": 59754,
+      "sha256": "a1b2ea2abf6806e799ba919ff105b06610071e6256a45e503c5a56d8206db8c8"
+    },
+    {
+      "path": "packages/storage/src/operation-gate.test.ts",
+      "bytes": 4066,
+      "sha256": "2ae96c6630f885f7446051a348f9d2c4623744dedf8b4c5e6d360563c0d486fc"
+    },
+    {
+      "path": "packages/storage/src/operation-gate.ts",
+      "bytes": 4672,
+      "sha256": "85c3c6751949c32dfde1f274bb94a8005b1f83861cbfb2d2c08dbf9186d7f39a"
+    }
+  ],
+  "handoff": {
+    "path": "docs/progress/PHASE-11-IMPLEMENTATION-HANDOFF.md",
+    "bytes": 9919,
+    "sha256": "e84478f7b78bbd7d906f3b2729c209ed753923e96ef4b034e1aa49231adb9c43"
+  },
+  "localUnsafeReproArchive": [
+    {
+      "path": ".cache/phase11-safety-block/operation-gate.test.ts",
+      "bytes": 5479,
+      "sha256": "255d84f21e75898fe0069ec4b5527b80882ba913f2d65596e147cd6fc3f68cbb"
+    },
+    {
+      "path": ".cache/phase11-safety-block/operation-gate.ts",
+      "bytes": 5270,
+      "sha256": "a652425e52e8e7eec7316d660b05d8397b5ea4e1fdca4807f8f80cef58125585"
+    },
+    {
+      "path": ".cache/phase11-safety-block/operation_gate.h",
+      "bytes": 12882,
+      "sha256": "9bb11e8656e51c34fd0906f3bfa349eec4f00b3b4a18348a1d5b2caef7c12a5b"
+    },
+    {
+      "path": ".cache/phase11-safety-block/phase11-inheritance-safety.log",
+      "bytes": 1240,
+      "sha256": "db18897ea80e536d3a663b48e107085087f1f3ccfc131afd1d6dc765f7833f0f"
+    },
+    {
+      "path": ".cache/phase11-safety-block/phase11-inheritance-safety.test.ts",
+      "bytes": 1929,
+      "sha256": "5049d35ae0e6d3176cffe4c2b245f691f7b2f44da4305d76f799520756a16aff"
+    }
+  ],
+  "logs": [
+    {
+      "localPath": "/tmp/phase11-native-withdrawal-build.log",
+      "bytes": 120,
+      "sha256": "48aa36159a579f94741a45d1adf42890438f4396386dd2a7fc6fe97ff632348c",
+      "exitCode": 0
+    },
+    {
+      "localPath": "/tmp/phase11-blocked-targeted-final.log",
+      "bytes": 209,
+      "sha256": "ca54c6b510f530a2352aa34de1a82919ead2ac7da8a4392ca9e604fc601749c4",
+      "exitCode": 0
+    },
+    {
+      "localPath": "/tmp/phase11-db-typecheck-final.log",
+      "bytes": 90,
+      "sha256": "f117a57359b8bac785d025504d564e9e19b107c24920de6bfe4fbbf355f3abb4",
+      "exitCode": 0
+    },
+    {
+      "localPath": "/tmp/phase11-inheritance-safety.log",
+      "bytes": 1240,
+      "sha256": "db18897ea80e536d3a663b48e107085087f1f3ccfc131afd1d6dc765f7833f0f",
+      "exitCode": 1
+    }
+  ],
+  "currentTargeted": {
+    "files": 2,
+    "pass": 8,
+    "fail": 0,
+    "skip": 0
+  },
+  "unsafeAttemptReproduction": {
+    "files": 1,
+    "pass": 0,
+    "fail": 1,
+    "skip": 0,
+    "directChildFDInterfaceWithdrawn": true
+  },
+  "migrationApplied": false,
+  "databaseConnectionsMade": false,
+  "systemGrantCreated": false,
+  "modeChanged": false,
+  "oldMigrationBytesPreserved": true,
+  "fullGateExecuted": false,
+  "independentReviewExecuted": false,
+  "complete": false,
+  "next": "Astra concrete child/supervisor settlement bridge correction before wiring"
+}

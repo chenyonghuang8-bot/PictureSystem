@@ -263,7 +263,11 @@ importers:
 
   packages/permissions: {}
 
-  packages/storage: {}
+  packages/storage:
+    dependencies:
+      '@family-album/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/ui-tokens: {}
 

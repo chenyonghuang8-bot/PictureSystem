@@ -1,0 +1,75 @@
+
+> family-album@0.0.0 test:e2e:web /Users/toby/PictureSystem
+> node tests/e2e-web/run-suites.mjs
+
+
+Running 10 tests using 1 worker
+
+(node:58366) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/e2e-web/authenticated-gallery.spec.ts:251:3 › Phase 5 authenticated Web UI acceptance › 7D Trash reauth requires a second confirmation and keeps the asynchronous status card without media requests (2.3s)
+  ✓   2 tests/e2e-web/authenticated-gallery.spec.ts:412:3 › Phase 5 authenticated Web UI acceptance › 7D unknown permanent-delete never replays, 404 status is unresolved, positive read permits a new confirmation (1.1s)
+  ✓   3 tests/e2e-web/authenticated-gallery.spec.ts:490:3 › Phase 5 authenticated Web UI acceptance › 7D Trash paging, retention, Restore conflict/success and actor expiry remain read-coordinated (1.2s)
+  ✓   4 tests/e2e-web/authenticated-gallery.spec.ts:621:3 › Phase 5 authenticated Web UI acceptance › 7D private Viewer confirms exact selected-album Trash once and removes cached display (2.3s)
+  ✓   5 tests/e2e-web/authenticated-gallery.spec.ts:686:3 › Phase 5 authenticated Web UI acceptance › nonlocation real HTTPS search applies all filters, options, keysets, Viewer refresh and URL history (3.6s)
+  ✓   6 tests/e2e-web/authenticated-gallery.spec.ts:1039:3 › Phase 5 authenticated Web UI acceptance › desktop UI uses real login, media, viewer, and share flows (4.9s)
+  ✓   7 tests/e2e-web/authenticated-gallery.spec.ts:1233:3 › Phase 5 authenticated Web UI acceptance › Phase 6E owner integrates mutations, CAS conflict and browser attachment downloads (1.8s)
+  ✓   8 tests/e2e-web/authenticated-gallery.spec.ts:1421:3 › Phase 5 authenticated Web UI acceptance › Phase 6E viewer-only actor receives view capabilities and hidden selected album stays denied (1.5s)
+  ✓   9 tests/e2e-web/authenticated-gallery.spec.ts:1493:3 › Phase 5 authenticated Web UI acceptance › Phase 6E discards delayed detail from the previous Viewer target (42.4s)
+  ✓  10 tests/e2e-web/authenticated-gallery.spec.ts:1564:3 › Phase 5 authenticated Web UI acceptance › mobile UI collapses sidebars and keeps real navigation and viewer (2.0s)
+
+  10 passed (1.3m)
+OWNED_WEB_FINALIZATION_PASS
+
+Running 10 tests using 1 worker
+
+(node:58682) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/e2e-web/download-validation.spec.ts:348:3 › Phase 6D5 real HTTPS download validation › uses real Secure-cookie login and blocks HEAD metadata (211ms)
+  ✓   2 tests/e2e-web/download-validation.spec.ts:362:3 › Phase 6D5 real HTTPS download validation › enforces the complete private authorization matrix through real HTTPS login (990ms)
+  ✓   3 tests/e2e-web/download-validation.spec.ts:429:3 › Phase 6D5 real HTTPS download validation › keeps sensitive assertion failures category-only (0ms)
+  ✓   4 tests/e2e-web/download-validation.spec.ts:446:3 › Phase 6D5 real HTTPS download validation › streams the exact 64 MiB Original with safe network headers (419ms)
+  ✓   5 tests/e2e-web/download-validation.spec.ts:471:3 › Phase 6D5 real HTTPS download validation › falls back to octet-stream/bin and ignores every Range form (56ms)
+  ✓   6 tests/e2e-web/download-validation.spec.ts:500:3 › Phase 6D5 real HTTPS download validation › serves private Preview exactly and ignores Range (103ms)
+  ✓   7 tests/e2e-web/download-validation.spec.ts:598:3 › Phase 6D5 real HTTPS download validation › propagates real HTTPS Original abort and allows a later full download (547ms)
+  ✓   8 tests/e2e-web/download-validation.spec.ts:621:3 › Phase 6D5 real HTTPS download validation › keeps the HTTPS API responsive while a consumer pauses and resumes (402ms)
+  ✓   9 tests/e2e-web/download-validation.spec.ts:639:3 › Phase 6D5 real HTTPS download validation › propagates real HTTPS Preview abort and preserves all canonical state (159ms)
+  ✓  10 tests/e2e-web/download-validation.spec.ts:671:3 › Phase 6D5 real HTTPS download validation › application logs expose no private download material (0ms)
+
+  10 passed (18.2s)
+OWNED_WEB_FINALIZATION_PASS
+
+Running 1 test using 1 worker
+
+(node:58904) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e-web/memories-validation.spec.ts:47:1 › real HTTPS login and historical EXIF uploads reach native READY, home cards/full page/Viewer without seeded media or clock override (54.5s)
+
+  1 passed (1.2m)
+OWNED_WEB_FINALIZATION_PASS
+
+Running 6 tests using 1 worker
+
+(node:59135) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e-web/phase10-mobile-client.spec.ts:42:1 › mobile H5 real Cookie login, durable UUID response-loss/reselect and READY placement (27.5s)
+  ✓  2 tests/e2e-web/phase10-mobile-client.spec.ts:235:1 › strict H5 rejects changed-content reselect without sending PATCH (6.5s)
+  ✓  3 tests/e2e-web/phase10-mobile-client.spec.ts:284:1 › strict H5 unavailable IndexedDB never starts create and keeps upload disabled (1.1s)
+  ✓  4 tests/e2e-web/phase10-mobile-client.spec.ts:321:3 › strict H5 real album page held across auth-lost stays private (2.0s)
+  ✓  5 tests/e2e-web/phase10-mobile-client.spec.ts:321:3 › strict H5 real album page held across hide/restore stays private (2.0s)
+  ✓  6 tests/e2e-web/phase10-mobile-client.spec.ts:321:3 › strict H5 real album page held across account-mismatch stays private (1.5s)
+
+  6 passed (58.0s)
+OWNED_WEB_FINALIZATION_PASS
+
+Running 3 tests using 1 worker
+
+(node:59313) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e-web/phase11-admin.spec.ts:386:5 › Phase11 strict existing DEV HTTPS Admin › real Admin login/member/invite/audit/mode and two-family isolation 1440 (42.1s)
+STRICT_HTTPS_AUTH_RATE_WINDOW_WAIT
+  ✓  2 tests/e2e-web/phase11-admin.spec.ts:386:5 › Phase11 strict existing DEV HTTPS Admin › real Admin login/member/invite/audit/mode and two-family isolation 390 (38.7s)
+STRICT_HTTPS_NATIVE_BFCACHE_RESTORED_CURRENT_GRANT_RECHECKED
+  ✓  3 tests/e2e-web/phase11-admin.spec.ts:561:3 › Phase11 strict existing DEV HTTPS Admin › actual Chrome history restores or conservatively reloads private Admin after current system grant revocation (44.2s)
+
+  3 passed (2.3m)

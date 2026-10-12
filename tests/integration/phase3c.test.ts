@@ -1,3 +1,4 @@
+import { InProcessControlOwner } from "../helpers/in-process-control-owner.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -28,7 +29,7 @@ import {
   MySqlAuthRepository,
   MySqlUploadRepository,
   type Phase1CActor,
-} from "../../packages/db/dist/index.js";
+} from "../../packages/db/src/index.js";
 import {
   buildUploadPayloadPath,
   buildOriginalPath,
@@ -1361,9 +1362,18 @@ describe("Phase 3C/3D MySQL/native upload integration and races", () => {
         createPasswordEngine(),
       );
       expect(await authService.authenticate(holder.sessionToken)).toBeTruthy();
+      const control = await InProcessControlOwner.start(
+        database.pool,
+        [familyId, crossFamilyId, crashFamilyId],
+        recoveredRoot,
+        {},
+        crashFamilyId,
+      );
+      const capability = await control.withResources(async (r) => r.capability);
       const app = createApp({
         authService,
-        uploadService: new UploadService(repository, startup.capability),
+        controlAdmission: control.admission,
+        uploadService: new UploadService(repository, capability),
         publicApiOrigin: "https://localhost:4000",
         trustedOrigins: new Set(["https://localhost:3000"]),
         uploadMutex: mutex,
@@ -1381,24 +1391,30 @@ describe("Phase 3C/3D MySQL/native upload integration and races", () => {
         });
         expect(response.statusCode).toBe(200);
         expect(response.json().state).toBe("COMPLETE");
+        if (capability.state === "UNAVAILABLE")
+          throw Error("FIXTURE_OWNER_UNAVAILABLE");
+        expect(
+          capability.root.verifyOriginal(
+            crashFamilyId,
+            sha,
+            String(bytes.length),
+          ).byteSize,
+        ).toBe(BigInt(bytes.length));
+        expect(
+          existsSync(
+            join(
+              capability.root.canonicalPath,
+              buildUploadPayloadPath(crashFamilyId, created.publicId),
+            ),
+          ),
+        ).toBe(false);
       } finally {
         await app.close();
+        await control.close();
       }
       expect(
         (await repository.trustedState(publicId)).storageObjectId,
       ).not.toBeNull();
-      expect(
-        recoveredRoot.verifyOriginal(crashFamilyId, sha, String(bytes.length))
-          .byteSize,
-      ).toBe(BigInt(bytes.length));
-      expect(
-        existsSync(
-          join(
-            recoveredRoot.canonicalPath,
-            buildUploadPayloadPath(crashFamilyId, created.publicId),
-          ),
-        ),
-      ).toBe(false);
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
         const exited = once(child, "exit");
@@ -1422,7 +1438,7 @@ describe("Phase 3C/3D MySQL/native upload integration and races", () => {
         crashFamilyId,
       ]);
     }
-  }, 25_000);
+  }, 45_000);
 
   async function create(name: string, size: bigint) {
     const publicId = randomBytes(16);

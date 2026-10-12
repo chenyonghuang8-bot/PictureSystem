@@ -1248,3 +1248,101 @@ button,
     max-height: 90dvh;
   }
 }
+
+.admin-workspace {
+  display: grid;
+  gap: var(--fa-space-6);
+}
+.admin-workspace header p,
+.admin-card > p {
+  color: var(--fa-color-text-muted);
+  line-height: 1.65;
+}
+.admin-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+.admin-card,
+.admin-stats article {
+  background: var(--fa-color-surface);
+  border: 1px solid var(--fa-color-border);
+  border-radius: 1.2rem;
+  padding: 1.4rem;
+  box-shadow: 0 4px 16px rgb(36 59 39 / 3%);
+  overflow-wrap: anywhere;
+}
+.admin-card h2,
+.admin-stats h2 {
+  font-size: 1.05rem;
+  margin: 0 0 1rem;
+}
+.admin-stats strong {
+  display: block;
+  color: var(--fa-color-accent);
+  font-size: 1.7rem;
+  margin-bottom: 1rem;
+}
+.admin-card ul {
+  padding-left: 1.2rem;
+}
+.admin-card li {
+  margin: 0.8rem 0;
+  line-height: 1.65;
+}
+.admin-card dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.6rem 1rem;
+}
+.admin-card dd {
+  margin: 0;
+}
+.admin-workspace button,
+.admin-workspace select,
+.admin-workspace input {
+  font: inherit;
+  border: 1px solid var(--fa-color-border);
+  border-radius: 0.7rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--fa-color-background);
+  color: inherit;
+}
+.admin-workspace button {
+  cursor: pointer;
+  margin: 0.3rem;
+}
+.admin-workspace button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.admin-workspace label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.4rem 0.8rem 0.4rem 0;
+}
+.admin-audit li {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.admin-mode-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+@media (max-width: 720px) {
+  .gallery-nav .desktop-admin {
+    display: none;
+  }
+  .admin-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-card {
+    padding: 1rem;
+  }
+  .admin-card dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

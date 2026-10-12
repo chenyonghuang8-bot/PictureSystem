@@ -15,7 +15,7 @@ import type {
   RowDataPacket,
 } from "mysql2/promise";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AlbumRepositoryError as ApiAlbumRepositoryError } from "../../packages/db/dist/index.js";
+import { AlbumRepositoryError as ApiAlbumRepositoryError } from "../../packages/db/src/index.js";
 
 import {
   AlbumRepositoryError,

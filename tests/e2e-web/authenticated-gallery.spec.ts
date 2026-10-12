@@ -1,3 +1,4 @@
+import { pauseControlledWebRuntime } from "../helpers/controlled-web-runtime.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   chmodSync,
@@ -169,6 +170,7 @@ test.describe.serial("Phase 5 authenticated Web UI acceptance", () => {
   }, 60_000);
 
   test.afterAll(async () => {
+    await pauseControlledWebRuntime(database.pool);
     const connection = await database.pool.getConnection();
     try {
       if (familyId) {

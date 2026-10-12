@@ -8,24 +8,7 @@ export async function acquireCheckedConnection(
 ): Promise<PoolConnection> {
   const connection = await pool.getConnection();
   try {
-    await connection.query("SET SESSION time_zone = '+00:00'");
-    await validateDatabaseHealth(connection);
-    const [rows] = await connection.query<RowDataPacket[]>(
-      "SELECT @@SESSION.time_zone AS timeZone, @@SESSION.sql_mode AS sqlMode",
-    );
-    const row = rows[0];
-    if (!row || row.timeZone !== "+00:00") {
-      throw new Error("DB_UTC_REQUIRED: @@SESSION.time_zone must be +00:00");
-    }
-    if (
-      !String(row.sqlMode)
-        .split(",")
-        .some((mode) => mode.startsWith("STRICT_"))
-    ) {
-      throw new Error(
-        "DB_STRICT_MODE_REQUIRED: strict SQL mode must be enabled",
-      );
-    }
+    await checkDatabaseConnection(connection);
     return connection;
   } catch (error) {
     connection.release();
@@ -53,4 +36,26 @@ export async function readServerTime(
     throw new Error("Database server time is unavailable.");
   }
   return serverNow;
+}
+
+/** The same UTC/strict/native-FK checks used by normal transactions. */
+export async function checkDatabaseConnection(
+  connection: PoolConnection,
+): Promise<void> {
+  await connection.query("SET SESSION time_zone = '+00:00'");
+  await validateDatabaseHealth(connection);
+  const [rows] = await connection.query<RowDataPacket[]>(
+    "SELECT @@SESSION.time_zone AS timeZone, @@SESSION.sql_mode AS sqlMode",
+  );
+  const row = rows[0];
+  if (!row || row.timeZone !== "+00:00") {
+    throw new Error("DB_UTC_REQUIRED: @@SESSION.time_zone must be +00:00");
+  }
+  if (
+    !String(row.sqlMode)
+      .split(",")
+      .some((mode) => mode.startsWith("STRICT_"))
+  ) {
+    throw new Error("DB_STRICT_MODE_REQUIRED: strict SQL mode must be enabled");
+  }
 }

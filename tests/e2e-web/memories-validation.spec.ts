@@ -1,6 +1,8 @@
+import {
+  assertControlledMetadataAvailable,
+  pauseControlledWebRuntime,
+} from "../helpers/controlled-web-runtime.js";
 import { test, expect } from "@playwright/test";
-import { spawn, type ChildProcess } from "node:child_process";
-import { once } from "node:events";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
@@ -26,49 +28,15 @@ if (
 const db = createDatabase(process.env.DATABASE_URL),
   f = new MemoriesFixture(db.pool);
 const password = "phase9-synthetic-password";
-let metadata: ChildProcess | undefined;
 test.beforeAll(async () => {
   await f.setup();
   await db.pool.query("UPDATE users SET password_hash=? WHERE id=?", [
     await hashPassword(password),
     f.users[0],
   ]);
-  metadata = spawn(
-    process.execPath,
-    ["--env-file=.env", "--import=tsx", "apps/worker/src/metadata-main.ts"],
-    {
-      env: {
-        ...process.env,
-        APP_ENV: "dev",
-        NODE_ENV: "test",
-        LOG_LEVEL: "silent",
-        DEV_MEDIA_ROOT: process.env.PHASE5_WEB_E2E_MEDIA_ROOT,
-        DEV_STORAGE_MARKER_ID: process.env.PHASE5_WEB_E2E_MARKER_ID,
-        LOCATION_DATA_DIR: resolve("resources/location/2026-10-03"),
-      },
-      stdio: ["ignore", "ignore", "pipe"],
-    },
-  );
 });
 test.afterAll(async () => {
-  if (metadata && metadata.exitCode === null && metadata.signalCode === null) {
-    const done = once(metadata, "exit");
-    metadata.kill("SIGTERM");
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        done,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            metadata?.kill("SIGKILL");
-            reject(new Error("MEMORIES_METADATA_DRAIN_TIMEOUT"));
-          }, 15000);
-        }),
-      ]);
-    } finally {
-      clearTimeout(timer);
-    }
-  }
+  await pauseControlledWebRuntime(db.pool);
   try {
     await f.cleanup();
   } finally {
@@ -155,8 +123,7 @@ test("real HTTPS login and historical EXIF uploads reach native READY, home card
     await expect
       .poll(
         async () => {
-          if (metadata?.exitCode !== null || metadata?.signalCode !== null)
-            throw new Error("REAL_METADATA_EXITED");
+          await assertControlledMetadataAvailable(db.pool);
           const [rows] = await db.pool.query<RowDataPacket[]>(
             "SELECT CAST(m.id AS CHAR) id,m.processing_state state FROM media_items m JOIN upload_sessions s ON s.family_id=m.family_id AND s.id=m.source_upload_id WHERE s.public_id=UNHEX(?)",
             [publicId],

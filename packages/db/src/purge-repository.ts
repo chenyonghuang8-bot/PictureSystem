@@ -159,12 +159,25 @@ export class PurgeIntentRepository {
   }
 
   async claim(workerId = randomBytes(16)) {
+    return this.claimExisting(workerId, false);
+  }
+
+  /** Private owner recovery selects only already-detached checkpoints. The
+   * original expiry, attempt budget, epoch CAS and transaction stay identical. */
+  async claimRecoveryCheckpoint(workerId = randomBytes(16)) {
+    return this.claimExisting(workerId, true);
+  }
+
+  private async claimExisting(workerId: Buffer, recovery: boolean) {
     if (workerId.length !== 16) throw new Error("INVALID_WORKER_ID");
+    const checkpoint = recovery
+      ? "AND progress IN ('DETACHED','FILES_REMOVED')"
+      : "";
     return runCheckedTransaction(this.pool, async (connection) => {
       const [rows] = await connection.execute<RowDataPacket[]>(
         `SELECT CAST(id AS CHAR) id, CAST(lease_epoch AS CHAR) epoch, execution_state executionState
          FROM purge_intents
-         WHERE attempts < max_attempts AND
+         WHERE attempts < max_attempts ${checkpoint} AND
            ((execution_state IN ('QUEUED','RETRY_WAIT') AND available_at <= CURRENT_TIMESTAMP(3))
             OR (execution_state='RUNNING' AND locked_until < CURRENT_TIMESTAMP(3))
            )
@@ -190,7 +203,7 @@ export class PurgeIntentRepository {
           heartbeat_at=CURRENT_TIMESTAMP(3),
           locked_until=CURRENT_TIMESTAMP(3) + INTERVAL 90 SECOND,
           attempts=attempts+1, failure_category=NULL
-         WHERE id=? AND lease_epoch=? AND attempts < max_attempts`,
+         WHERE id=? AND lease_epoch=? AND attempts < max_attempts ${checkpoint}`,
         [workerId, epoch.toString(), row.id, row.epoch],
       );
       if (changed.affectedRows !== 1) return null;

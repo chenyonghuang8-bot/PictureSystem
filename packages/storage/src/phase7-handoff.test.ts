@@ -1,6 +1,8 @@
 import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
 import {
   appendFileSync,
+  mkdtempSync,
+  realpathSync,
   rmSync,
   readdirSync,
   openSync,
@@ -14,7 +16,9 @@ import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { createRequire } from "node:module";
-import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
+import { OperationGate } from "./operation-gate.js";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { createInterface } from "node:readline";
 import type { Duplex } from "node:stream";
@@ -33,19 +37,22 @@ const {createInterface}=require('node:readline');
 const n=require(${JSON.stringify(join(import.meta.dirname, "../build/storage_native_test.node"))});
 const build=${JSON.stringify(join(import.meta.dirname, "../build"))};
 const profile=${JSON.stringify(join(import.meta.dirname, "../native/original-probe.sb"))};
-const [root,marker,sha,size,holdSettlement]=process.argv.slice(1);
+const [root,marker,sha,size,holdSettlement,controlPath,deployment]=process.argv.slice(1);
 const r=n.openCoordination(root,marker,'1',sha,size,'R');
 if(!n.tryAcquireCoordination(r,'S'))throw Error('R');
 let held=true;
+let gate;
+if(controlPath){gate=n.openOperationGate(controlPath,deployment,'G',false);if(!n.tryOperationGate(gate,'S'))throw Error('GATE');}
 const launch=n.createRegisteredLaunch(r);
+if(gate)n.bridgeRegisteredLaunch(gate,launch.handle);
 const reader=n.openOriginalReader(root,marker).handle;
 const original=n.openVerifiedOriginal(reader,'1',sha,size);
 const sup=spawn(build+'/original_probe_supervisor_phase7_test',
  [profile,build+'/original_probe_child_phase7_test','/','/','phase7-hold','30000'],
- {stdio:['ignore','pipe','pipe',launch.childFd,'pipe','ignore',6],env:{PATH:'/usr/bin:/bin',LANG:'C',...(holdSettlement==='yes'?{PS_P7_HOLD_SETTLEMENT:'1'}:{})}});
+ {stdio:['ignore','pipe','pipe',launch.childFd,'pipe','ignore',6],env:{PATH:'/usr/bin:/bin',LANG:'C',...(holdSettlement==='yes'?{PS_P7_HOLD_SETTLEMENT:'1'}:holdSettlement==='after'?{PS_P11_HOLD_SETTLED:'1'}:{})}});
 const send=(event,extra={})=>process.stdout.write(JSON.stringify({event,...extra})+'\\n');
 let trace='';sup.stderr.on('data',b=>trace+=String(b));
-sup.stdio[4].on('data',b=>{if(String(b)==='REAPED\\n')send('REAPED');});
+sup.stdio[4].on('data',b=>{if(String(b)==='REAPED\\n')send('REAPED');if(String(b)==='SETTLED_SUP_LIVE\\n')send('SETTLED_SUP_LIVE');});
 sup.once('close',(code,signal)=>send('SUP_CLOSED',{code,signal,reaps:trace.split('WAITPID_REAPED').length-1}));
 try {n.transferRegisteredOriginal(launch.handle,original);throw Error('PREARM_TRANSFER');}
 catch(error){if(error.message==='PREARM_TRANSFER')throw error;send('PREARM_DENIED');}
@@ -67,7 +74,7 @@ createInterface({input:process.stdin}).on('line',line=>{
  if(line==='VERIFY'){n.verifyRegisteredSettlement(launch.handle);send('SETTLED');}
  if(line==='EXIT'){
   n.closeOriginalHandle(original);n.closeOriginalReader(reader);n.closeRegisteredLaunch(launch.handle);
-  if(held){n.releaseCoordination(r);n.closeCoordination(r);}process.exit(0);
+  if(gate)n.closeOperationGate(gate);if(held){n.releaseCoordination(r);n.closeCoordination(r);}process.exit(0);
  }
 });
 `;
@@ -101,7 +108,8 @@ async function registeredFixture(
     consumerChannel: NodeJS.ReadWriteStream;
     rootPath: string;
   }) => Promise<void>,
-  holdSettlement = false,
+  holdSettlement: boolean | "after" = false,
+  control?: { path: string; deploymentId: string },
 ) {
   const dir = freshStorageRootPath("phase7-registered-");
   const root = StorageRoot.open(dir, { initialize: true });
@@ -123,7 +131,8 @@ async function registeredFixture(
       root.markerId,
       digest,
       String(bytes.length),
-      holdSettlement ? "yes" : "no",
+      holdSettlement === "after" ? "after" : holdSettlement ? "yes" : "no",
+      ...(control ? [control.path, control.deploymentId] : []),
     ],
     {
       stdio: ["pipe", "pipe", "pipe", "ignore", "ignore", "ignore", "pipe"],
@@ -758,4 +767,95 @@ print('OK',flush=True)
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+describe("Phase11 real registered child deployment bridge", () => {
+  it.each(["node", "supervisor-and-node"])(
+    "blocks DRAINED_X and LOCK_UN after %s dies while receiver lives",
+    async (mode) => {
+      const path = mkdtempSync(
+        join(realpathSync(tmpdir()), "phase11-bridge-crash-"),
+      );
+      const namespace = { path, deploymentId: randomUUID() },
+        gate = OperationGate.provisionDev(namespace);
+      try {
+        await registeredFixture(
+          async ({ processHandle, event, consumerChannel }) => {
+            let live = once(consumerChannel, "data");
+            processHandle.stdin!.write("DELIVER\n");
+            expect(String((await live)[0])).toBe("LIVE\n");
+            live = once(consumerChannel, "data");
+            consumerChannel.write("U");
+            expect(String((await live)[0])).toBe("UNLOCK_ATTEMPTED\n");
+            await expect(gate.acquire("X", 0)).rejects.toThrow(
+              "OPERATION_GATE_BUSY",
+            );
+            if (mode === "supervisor-and-node") {
+              processHandle.stdin!.write("KILL_SUP\n");
+              await event("SUP_CLOSED");
+            }
+            const exited = once(processHandle, "exit");
+            processHandle.kill("SIGKILL");
+            await exited;
+            await expect(gate.acquire("X", 0)).rejects.toThrow(
+              "Deployment children have not been proven drained",
+            );
+            consumerChannel.write("E");
+            const deadline = Date.now() + 8000;
+            let drained = false;
+            while (Date.now() < deadline) {
+              try {
+                const x = await gate.acquire("X", 0);
+                expect(x.drained).toBe(true);
+                x.close();
+                drained = true;
+                break;
+              } catch (error) {
+                if (
+                  !(error instanceof Error) ||
+                  !error.message.includes("Deployment children")
+                )
+                  throw error;
+                await nextTurn();
+              }
+            }
+            expect(drained).toBe(true);
+          },
+          false,
+          namespace,
+        );
+      } finally {
+        rmSync(path, { recursive: true, force: true });
+      }
+    },
+    12000,
+  );
+  it("does not trust SETTLED while the registered supervisor is still alive", async () => {
+    const path = mkdtempSync(
+      join(realpathSync(tmpdir()), "phase11-bridge-settled-"),
+    );
+    const namespace = { path, deploymentId: randomUUID() },
+      gate = OperationGate.provisionDev(namespace);
+    try {
+      await registeredFixture(
+        async ({ processHandle, event, consumerChannel }) => {
+          const live = once(consumerChannel, "data");
+          processHandle.stdin!.write("DELIVER\n");
+          await live;
+          consumerChannel.write("E");
+          await event("SETTLED_SUP_LIVE");
+          const exited = once(processHandle, "exit");
+          processHandle.kill("SIGKILL");
+          await exited;
+          await expect(gate.acquire("X", 0)).rejects.toThrow(
+            "Deployment children have not been proven drained",
+          );
+        },
+        "after",
+        namespace,
+      );
+    } finally {
+      rmSync(path, { recursive: true, force: true });
+    }
+  }, 12000);
 });

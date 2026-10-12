@@ -1,3 +1,4 @@
+import { InProcessControlOwner } from "../helpers/in-process-control-owner.js";
 import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { rmSync, mkdirSync, chmodSync, writeFileSync } from "node:fs";
@@ -31,7 +32,7 @@ import {
   MySqlDerivedReadRepository,
   MySqlShareRepository,
   type LeaseFence,
-} from "../../packages/db/dist/index.js";
+} from "../../packages/db/src/index.js";
 import {
   createPhase6SchemaFixture,
   cleanupPhase6MigrationFixture,
@@ -254,8 +255,9 @@ describe.sequential("Phase 7B live lifecycle authorization and fences", () => {
       [Buffer.from(sha, "hex"), bytes.length, f.familyId, f.objectId],
     );
     await c.query(
-      "UPDATE upload_sessions SET computed_sha256=?,declared_size=?,committed_offset=? WHERE family_id=? AND id=?",
+      "UPDATE upload_sessions SET public_id=UNHEX(?),computed_sha256=?,declared_size=?,committed_offset=? WHERE family_id=? AND id=?",
       [
+        "7".repeat(32),
         Buffer.from(sha, "hex"),
         bytes.length,
         bytes.length,
@@ -423,7 +425,21 @@ describe.sequential("Phase 7B live lifecycle authorization and fences", () => {
   });
 
   it("serves strict authenticated lifecycle routes and rejects unknown fields and mixed auth", async () => {
+    const control = await InProcessControlOwner.start(
+      db.pool,
+      [f.familyId],
+      root,
+      { ...(gate ? { gate } : {}) },
+    );
+    await control.withResources(async (r) => {
+      if (r.capability.state === "UNAVAILABLE")
+        throw Error("FIXTURE_OWNER_UNAVAILABLE");
+      root = r.capability.root;
+      gate = r.gate;
+      service = new TrashService(repo, r.capability);
+    });
     const app = createApp({
+      controlAdmission: control.admission,
       authService: { authenticate: async () => owner } as never,
       trashService: service,
       trustedOrigins: new Set(["https://family.test"]),
@@ -490,6 +506,7 @@ describe.sequential("Phase 7B live lifecycle authorization and fences", () => {
       expect(restored.statusCode).toBe(200);
     } finally {
       await app.close();
+      await control.close();
     }
   });
 
@@ -839,7 +856,7 @@ describe.sequential("Phase 7B live lifecycle authorization and fences", () => {
                 if (key === "readNext")
                   return async () => {
                     const buffer = await target.readNext();
-                    if (buffer.final) {
+                    if (!buffer.done && buffer.final) {
                       const life = await content.acquireLifecycle("X", 0);
                       try {
                         const read = await content.acquireRead(life, "X", 0);

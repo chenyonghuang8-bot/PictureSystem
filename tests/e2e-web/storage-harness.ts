@@ -68,8 +68,9 @@ export function prepareWebAcceptanceStorage(): WebAcceptanceStorage {
   mkdirSync(join(mediaRoot, "derived"), { mode: 0o700 });
   try {
     storage.provisionSharedCapacityLockForDev();
-    if (process.env.DEV_MEDIA_PIPELINE_ENABLED === "1")
-      storage.provisionDerivedWriterLockForDev();
+    // The controlled owner's recovery inventory opens DerivedStore even when
+    // this suite does not schedule derivative processing.
+    storage.provisionDerivedWriterLockForDev();
     const result: WebAcceptanceStorage = {
       runRoot,
       ownershipNonce,
@@ -123,6 +124,12 @@ export function cleanupWebAcceptanceStorage(
   rmSync(candidate.runRoot, { recursive: true, force: false });
   ownedRuns.delete(candidate.runRoot);
   clearMatchingHarnessEnvironment(candidate);
+}
+
+export function assertOwnedWebAcceptanceStorage(
+  candidate: WebAcceptanceStorage,
+) {
+  assertOwnedLayout(candidate);
 }
 
 function assertOwnedLayout(candidate: WebAcceptanceStorage) {

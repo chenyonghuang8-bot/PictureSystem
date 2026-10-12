@@ -11,6 +11,9 @@ import {
   type StorageCapability,
   type CapacityGate,
   type DerivedStore,
+  denyControlAdmission,
+  ControlAdmissionError,
+  type ControlAdmission,
 } from "@family-album/storage";
 import { ImageDerivativeProcessor } from "./image-derivative-processor.js";
 import { SerialJobLoop } from "./serial-job-loop.js";
@@ -19,20 +22,58 @@ import { SerialJobLoop } from "./serial-job-loop.js";
 export class ImageDerivativeDriver {
   private readonly identity = MySqlJobRepository.createWorkerIdentity();
   private readonly jobs: MySqlJobRepository;
-  private readonly processor: ImageDerivativeProcessor;
+  private readonly processor: ImageDerivativeProcessor | undefined;
   private readonly loop: SerialJobLoop;
   constructor(
     private readonly pool: Pool,
+    storage:
+      | {
+          capability: StorageCapability & { state: "READ_WRITE" };
+          gate: CapacityGate;
+          store: DerivedStore;
+        }
+      | undefined,
+    reader: OriginalReader | undefined,
+    private readonly admission: ControlAdmission = denyControlAdmission,
+    private readonly withProcessor?: <T>(
+      operation: (processor: ImageDerivativeProcessor) => Promise<T>,
+    ) => Promise<T>,
+  ) {
+    this.jobs = new MySqlJobRepository(pool);
+    this.processor =
+      storage && reader
+        ? ImageDerivativeDriver.createProcessor(
+            pool,
+            storage,
+            reader,
+            this.jobs,
+          )
+        : undefined;
+    if (!this.processor && !withProcessor)
+      throw Error("DERIVATIVE_PROVIDER_REQUIRED");
+    this.loop = new SerialJobLoop(async () => {
+      try {
+        await this.recoverExpired();
+        if (!this.loop.stopped && !(await this.runNext()))
+          await this.loop.wait(1000);
+      } catch (error) {
+        if (!(error instanceof ControlAdmissionError)) throw error;
+        await this.loop.wait(1000);
+      }
+    });
+  }
+  static createProcessor(
+    pool: Pool,
     storage: {
       capability: StorageCapability & { state: "READ_WRITE" };
       gate: CapacityGate;
       store: DerivedStore;
     },
     reader: OriginalReader,
+    jobs = new MySqlJobRepository(pool),
   ) {
-    this.jobs = new MySqlJobRepository(pool);
-    this.processor = new ImageDerivativeProcessor(
-      this.jobs,
+    return new ImageDerivativeProcessor(
+      jobs,
       new MySqlDerivedAdmissionRepository(pool),
       new MySqlDerivedAssetFence(pool),
       storage,
@@ -41,11 +82,6 @@ export class ImageDerivativeDriver {
           renderUnverifiedCandidate(handle, input.kind),
         ),
     );
-    this.loop = new SerialJobLoop(async () => {
-      await this.recoverExpired();
-      if (!this.loop.stopped && !(await this.runNext()))
-        await this.loop.wait(1000);
-    });
   }
   start() {
     return this.loop.start();
@@ -56,11 +92,19 @@ export class ImageDerivativeDriver {
   drain() {
     return this.loop.drain();
   }
+  get stopped() {
+    return this.loop.stopped;
+  }
   async runNext() {
+    return this.admission.run("MEDIA_WRITE", () => this.runAdmitted());
+  }
+  private async runAdmitted() {
     if (this.loop.stopped)
       throw new Error("DERIVATIVE_STOPPED_RESTART_REQUIRED");
     try {
-      const outcome = await this.processor.run(this.identity);
+      const outcome = this.withProcessor
+        ? await this.withProcessor((processor) => processor.run(this.identity))
+        : await this.processor!.run(this.identity);
       if (outcome.outcome === "COMMIT_UNKNOWN")
         throw new Error("DERIVATIVE_OUTCOME_UNKNOWN");
       return outcome.outcome !== "IDLE";
@@ -70,6 +114,9 @@ export class ImageDerivativeDriver {
     }
   }
   async recoverExpired() {
+    return this.admission.run("MEDIA_WRITE", () => this.recoverAdmitted());
+  }
+  private async recoverAdmitted() {
     try {
       const rows = await runCheckedTransaction(this.pool, async (c) => {
         const [rows] = await c.query<RowDataPacket[]>(

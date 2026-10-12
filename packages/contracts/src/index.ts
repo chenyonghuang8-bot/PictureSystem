@@ -23,3 +23,10 @@ export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
 export * from "./client-upload.js";
 export * from "./content-sha256.js";
+
+export * from "./admin.js";
+
+export {
+  verifyRunAdmissionProof,
+  type RunAdmissionProof,
+} from "./run-admission.js";

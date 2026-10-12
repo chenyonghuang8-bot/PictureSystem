@@ -143,6 +143,11 @@ int main(int argc, char **argv) {
     unsigned char byte;if(pread(3,&byte,1,0)!=1)return 70;
     if(write(0,"LIVE\n",5)!=5)return 70;
     if(read(0,&byte,1)!=1)return 70;
+    if(byte=='U') {
+      /* Attack the actual bootstrap FD boundary: no gate descriptor may exist. */
+      for(int fd=0;fd<8192;fd++)if(fcntl(fd,F_GETFD)!=-1)(void)flock(fd,LOCK_UN);
+      if(write(0,"UNLOCK_ATTEMPTED\n",17)!=17||read(0,&byte,1)!=1)return 70;
+    }
     dprintf(STDOUT_FILENO,"{\"settled\":true}\n");
     return 0;
   }

@@ -11,7 +11,13 @@ import {
   type UploadPipelineObservation,
   type UploadPipelineOutcome,
 } from "@family-album/db";
-import { type StorageRoot } from "@family-album/storage";
+import {
+  type StorageRoot,
+  type ControlAdmission,
+  type ControlRecoveryPermit,
+  denyControlAdmission,
+  ControlAdmissionError,
+} from "@family-album/storage";
 import { ContentCoordination } from "../../../../packages/storage/src/phase7-coordination.js";
 import { SerialJobLoop } from "../../../worker/src/serial-job-loop.js";
 
@@ -26,6 +32,11 @@ type Dependencies = {
   media: Pick<MySqlMediaRepository, "createOrGetCanonicalMedia">;
   jobs: Pick<MySqlJobRepository, "enqueue">;
   acquire: (candidate: UploadPipelineCandidate) => Promise<Guard>;
+  withGuard?: <T>(
+    candidate: UploadPipelineCandidate,
+    operation: (guard: Guard) => Promise<T>,
+  ) => Promise<T>;
+  admission?: ControlAdmission;
 };
 export class UploadPipelineReconciler {
   private readonly loop: SerialJobLoop;
@@ -42,6 +53,10 @@ export class UploadPipelineReconciler {
       try {
         await this.page();
       } catch (error) {
+        if (error instanceof ControlAdmissionError) {
+          await this.pause(1000);
+          return;
+        }
         this.requestStop();
         throw error;
       }
@@ -92,8 +107,8 @@ export class UploadPipelineReconciler {
     }
     for (const candidate of candidates) {
       if (this.loop.stopped) break;
-      this.afterId = candidate.uploadId;
       const observed = await this.reconcile(candidate);
+      this.afterId = candidate.uploadId;
       this.counts[observed.result] = (this.counts[observed.result] ?? 0) + 1;
     }
     await this.pause(250);
@@ -101,12 +116,40 @@ export class UploadPipelineReconciler {
   async reconcile(
     candidate: UploadPipelineCandidate,
   ): Promise<{ result: UploadPipelineOutcome; jobState?: string }> {
+    return (this.dependencies.admission ?? denyControlAdmission).run(
+      "MEDIA_WRITE",
+      () => this.reconcileAdmitted(candidate),
+    );
+  }
+  /** Existing one-candidate reconciliation under owner-exclusive recovery. No
+   * normal S admission/claim/render is reachable through this entry point. */
+  async reconcileFenced(
+    permit: ControlRecoveryPermit,
+    candidate: UploadPipelineCandidate,
+  ) {
+    return permit.run("CANONICAL_RECONCILE", () =>
+      this.reconcileAdmitted(candidate),
+    );
+  }
+  private async reconcileAdmitted(
+    candidate: UploadPipelineCandidate,
+  ): Promise<{ result: UploadPipelineOutcome; jobState?: string }> {
     if (this.loop.stopped) throw new Error("PIPELINE_STOPPED_RESTART_REQUIRED");
     if (!validUploadPipelineCandidate(candidate))
       return { result: "INVARIANT_REJECTED" };
+    if (this.dependencies.withGuard)
+      return this.dependencies.withGuard(candidate, (guard) =>
+        this.reconcileLocked(candidate, guard),
+      );
+    return this.reconcileLocked(candidate);
+  }
+  private async reconcileLocked(
+    candidate: UploadPipelineCandidate,
+    providedGuard?: Guard,
+  ): Promise<{ result: UploadPipelineOutcome; jobState?: string }> {
     let guard: Guard | undefined;
     try {
-      guard = await this.dependencies.acquire(candidate);
+      guard = providedGuard ?? (await this.dependencies.acquire(candidate));
       let observation =
         await this.dependencies.repository.observeUploadPipeline(candidate);
       if (observation.result === "MISSING_MEDIA") {

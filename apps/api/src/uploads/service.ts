@@ -322,16 +322,20 @@ export class UploadService {
   }
 
   async head(context: AuthContext, publicId: Buffer) {
-    const upload = await this.inspect(context, publicId, undefined, true);
+    const upload = await this.inspect(
+      context,
+      publicId,
+      undefined,
+      true,
+      false,
+    );
     if (upload.state === "COMPLETE") {
-      await this.verifyCompletedUpload(upload);
+      await this.verifyCompletedUpload(upload, false);
       return upload;
     }
     if (upload.state === "FINALIZING" || upload.state === "RETIRED")
       return upload;
     if (upload.state === "EXPIRED") {
-      if (this.#capabilityState === "READ_WRITE")
-        await this.cleanupExpired(publicId);
       throw new UploadServiceError(410, "UPLOAD_EXPIRED");
     }
     if (upload.state !== "CREATED" && upload.state !== "UPLOADING") {
@@ -343,11 +347,6 @@ export class UploadService {
     );
     if (size !== upload.committedOffset) {
       this.#frozen.add(upload.publicId);
-      if (size < upload.committedOffset) {
-        await this.database(() =>
-          this.repository.markFailed(publicId, "STAGING_INTEGRITY_MISMATCH"),
-        );
-      }
       throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
     }
     return upload;
@@ -445,15 +444,15 @@ export class UploadService {
   }
 
   async status(context: AuthContext, publicId: Buffer) {
-    const upload = await this.inspect(context, publicId, undefined, true);
-    if (upload.state === "COMPLETE") await this.verifyCompletedUpload(upload);
-    if (
-      upload.state === "EXPIRED" &&
-      !upload.stagingCleanedAt &&
-      this.#capabilityState === "READ_WRITE"
-    ) {
-      await this.cleanupExpired(publicId);
-    }
+    const upload = await this.inspect(
+      context,
+      publicId,
+      undefined,
+      true,
+      false,
+    );
+    if (upload.state === "COMPLETE")
+      await this.verifyCompletedUpload(upload, false);
     return upload;
   }
 
@@ -780,12 +779,15 @@ export class UploadService {
     }
   }
 
-  private async verifyCompletedUpload(upload: {
-    familyId: string;
-    declaredSize: bigint;
-    computedSha256: Buffer | null;
-    storageObjectId: string | null;
-  }) {
+  private async verifyCompletedUpload(
+    upload: {
+      familyId: string;
+      declaredSize: bigint;
+      computedSha256: Buffer | null;
+      storageObjectId: string | null;
+    },
+    allowMutation = true,
+  ) {
     if (!upload.computedSha256 || !upload.storageObjectId) {
       throw new UploadServiceError(503, "STORAGE_UNAVAILABLE");
     }
@@ -817,7 +819,7 @@ export class UploadService {
           upload.declaredSize.toString(),
         );
       } catch (error) {
-        if (isNotFound(error) || isCorruptOriginal(error)) {
+        if (allowMutation && (isNotFound(error) || isCorruptOriginal(error))) {
           await this.database(() =>
             this.repository.markStorageIntegrityIssue({
               familyId: upload.familyId,
@@ -872,6 +874,7 @@ export class UploadService {
     publicId: Buffer,
     expectedOffset?: bigint,
     allowTerminal = false,
+    allowMutation = true,
   ) {
     try {
       return await this.database(() =>
@@ -880,7 +883,7 @@ export class UploadService {
           publicId,
           ...(expectedOffset === undefined ? {} : { expectedOffset }),
           ...(allowTerminal ? { allowTerminal: true } : {}),
-          ...(this.#capabilityState === "READ_WRITE"
+          ...(allowMutation && this.#capabilityState === "READ_WRITE"
             ? {}
             : { transitionExpiry: false }),
         }),
@@ -890,7 +893,7 @@ export class UploadService {
         error instanceof UploadServiceError &&
         error.code === "UPLOAD_EXPIRED"
       ) {
-        if (this.#capabilityState === "READ_WRITE")
+        if (allowMutation && this.#capabilityState === "READ_WRITE")
           await this.cleanupExpired(publicId);
       }
       throw error;

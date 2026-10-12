@@ -6,7 +6,7 @@ import {
   MySqlAlbumRepository,
   buildFamilyMemoriesQuery,
   MemoriesAnchorExpiredError,
-} from "../../packages/db/dist/index.js";
+} from "../../packages/db/src/index.js";
 import {
   memoriesCalendar,
   memoriesQuerySchema,

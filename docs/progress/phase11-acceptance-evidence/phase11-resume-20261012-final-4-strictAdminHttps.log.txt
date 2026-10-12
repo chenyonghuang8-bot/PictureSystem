@@ -1,0 +1,12 @@
+
+Running 3 tests using 1 worker
+
+(node:56717) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e-web/phase11-admin.spec.ts:386:5 › Phase11 strict existing DEV HTTPS Admin › real Admin login/member/invite/audit/mode and two-family isolation 1440 (42.6s)
+STRICT_HTTPS_AUTH_RATE_WINDOW_WAIT
+  ✓  2 tests/e2e-web/phase11-admin.spec.ts:386:5 › Phase11 strict existing DEV HTTPS Admin › real Admin login/member/invite/audit/mode and two-family isolation 390 (38.2s)
+STRICT_HTTPS_NATIVE_BFCACHE_RESTORED_CURRENT_GRANT_RECHECKED
+  ✓  3 tests/e2e-web/phase11-admin.spec.ts:561:3 › Phase11 strict existing DEV HTTPS Admin › actual Chrome history restores or conservatively reloads private Admin after current system grant revocation (44.1s)
+
+  3 passed (2.3m)

@@ -175,7 +175,18 @@ P7_FN int p7_supervisor_settle(p7_supervisor *s,int exact_reaped) {
     if(write(4,"REAPED\n",7)!=7||read(4,&release,1)!=1||release!='S')return -1;
   }
 #endif
-  fresh.stage=PS_HANDOFF_SETTLED;return p7_record_write(s->record_fd,&fresh);
+  fresh.stage=PS_HANDOFF_SETTLED;
+  int written=p7_record_write(s->record_fd,&fresh);
+#ifdef PS_P7_TEST_BARRIERS
+  if(!written&&getenv("PS_P11_HOLD_SETTLED")) {
+    char release;
+    if(write(4,"SETTLED_SUP_LIVE\n",17)!=17)return -1;
+    /* Test-only widening of SETTLED-before-exit; never a death proof. */
+    usleep(1000000);
+    if(read(4,&release,1)!=1||release!='S')return -1;
+  }
+#endif
+  return written;
 }
 P7_FN int p7_bootstrap_receive(int fd) {
   int media=-1;if(p7_receive(fd,NULL,P7_MEDIA,1,&media,30000))return -1;

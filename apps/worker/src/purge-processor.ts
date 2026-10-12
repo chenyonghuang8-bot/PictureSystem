@@ -1,4 +1,9 @@
 import { performance } from "node:perf_hooks";
+import {
+  denyControlAdmission,
+  type ControlAdmission,
+  type ControlRecoveryPermit,
+} from "@family-album/storage";
 import type {
   StorageRoot,
   DerivedStore,
@@ -48,29 +53,47 @@ export class PurgeProcessor {
       nativeFilesBinding?: ConstructorParameters<typeof PurgeFilesNative>[3];
       commit?: (name: string, c: PurgeNormalizationConnection) => Promise<void>;
     },
+    private readonly admission: ControlAdmission = denyControlAdmission,
   ) {
     if (hooksForTest && process.env.NODE_ENV !== "test")
       throw new Error("PURGE_TEST_ONLY");
     this.repository = new PurgeIntentRepository(pool);
   }
   async runNext() {
+    return this.admission.run("MEDIA_WRITE", () => this.runAdmitted());
+  }
+  async recoverFenced(permit: ControlRecoveryPermit) {
+    return permit.run("PURGE_RECONCILE", async () => {
+      this.root.assertIdentity();
+      assertPurgeOwners(this.root, this.store);
+      let completed = 0;
+      for (let n = 0; n < 20; n++) {
+        const lease = await this.repository.claimRecoveryCheckpoint();
+        if (!lease) break;
+        if ((await this.run(lease)) === "COMMIT_UNKNOWN")
+          throw new Error("PURGE_COMMIT_UNKNOWN");
+        completed++;
+      }
+      return completed;
+    });
+  }
+  private async runAdmitted() {
     // Startup obtains both exclusive native writers before this processor exists.
     this.root.assertIdentity();
     assertPurgeOwners(this.root, this.store);
     const lease = await this.repository.claim();
     if (!lease) return false;
     try {
-      await this.run(lease);
+      if ((await this.run(lease)) === "COMMIT_UNKNOWN")
+        throw new Error("PURGE_COMMIT_UNKNOWN");
     } catch (error) {
       const text = error instanceof Error ? error.message : "";
       const normalizedCode = text.startsWith("CAPACITY_GATE_FAILED:PURGE_")
         ? text.slice("CAPACITY_GATE_FAILED:".length)
         : text;
-      if (
-        normalizedCode.includes("PURGE_COMMIT_UNKNOWN") ||
-        normalizedCode.includes("PURGE_STALE")
-      )
-        return true;
+      if (normalizedCode.includes("PURGE_COMMIT_UNKNOWN"))
+        throw new Error("PURGE_COMMIT_UNKNOWN", { cause: error });
+      if (normalizedCode.includes("PURGE_STALE")) return true;
       // Only the positively identified busy result is a normal retry. Native
       // identity and uncertain-ledger errors must retain fail-closed handling.
       const category =

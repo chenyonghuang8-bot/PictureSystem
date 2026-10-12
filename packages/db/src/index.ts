@@ -74,3 +74,8 @@ export {
 } from "./album-repository.js";
 
 export type { UploadPlacementKey } from "./upload-completion.js";
+
+export * from "./system-control-repository.js";
+export * from "./admin-read-repository.js";
+
+export * from "./system-run-repository.js";

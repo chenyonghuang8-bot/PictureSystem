@@ -27,7 +27,7 @@ import {
   createDatabase,
   MySqlUploadRepository,
   type Phase1CActor,
-} from "../../packages/db/dist/index.js";
+} from "../../packages/db/src/index.js";
 import {
   buildOriginalPath,
   buildUploadPayloadPath,

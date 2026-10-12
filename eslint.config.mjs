@@ -31,6 +31,7 @@ export default tseslint.config(
       "apps/web/scripts/**/*.mjs",
       "apps/mobile/plugins/**/*.cjs",
       "apps/mobile/*.cjs",
+      "docs/progress/phase10-branding-artifacts/visible/*.mjs",
     ],
     languageOptions: {
       globals: {

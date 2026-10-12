@@ -21,7 +21,7 @@ import type {
 } from "mysql2/promise";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AlbumRepositoryError as ApiAlbumRepositoryError } from "../../packages/db/dist/index.js";
+import { AlbumRepositoryError as ApiAlbumRepositoryError } from "../../packages/db/src/index.js";
 
 import { createApp } from "../../apps/api/src/app.js";
 import type { AlbumService } from "../../apps/api/src/albums/service.js";

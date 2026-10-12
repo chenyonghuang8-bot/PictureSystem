@@ -1721,6 +1721,26 @@ static napi_value remove_file(napi_env env, napi_callback_info info) {
   return undefined_value(env);
 }
 
+static napi_value assert_root_writable_mount(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value arg;
+  napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
+  storage_root_t *root = get_root(env, arg);
+  if (root == NULL) return NULL;
+  struct statfs disk;
+  if (fstatfs(root->root_fd, &disk) != 0) {
+    throw_code(env, "STORAGE_MOUNT_UNAVAILABLE", "Storage mount observation unavailable.");
+    return NULL;
+  }
+  if ((disk.f_flags & MNT_RDONLY) != 0) {
+    throw_code(env, "STORAGE_READ_ONLY_MOUNT", "Storage mount is read only.");
+    return NULL;
+  }
+  napi_value result;
+  napi_get_undefined(env, &result);
+  return result;
+}
+
 static napi_value verify_root_identity(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value arg;
@@ -2229,6 +2249,17 @@ static napi_value close_original_reader(napi_env env, napi_callback_info info) {
   return undefined_value(env);
 }
 
+static napi_value assert_original_reader_identity(napi_env env, napi_callback_info info) {
+  napi_value arg; size_t argc=1;
+  napi_get_cb_info(env, info, &argc, &arg, NULL, NULL);
+  original_reader_t *reader=argc==1?get_original_reader(env,arg):NULL;
+  if(!reader)return NULL;
+  if(reader_identity_is_current(reader)!=0) {
+    throw_code(env,"ORIGINAL_READER_IDENTITY_CHANGED","Original reader identity is unavailable.");
+    return NULL;
+  }
+  return undefined_value(env);
+}
 static napi_value open_verified_original(napi_env env, napi_callback_info info) {
   size_t argc = 4;
   napi_value args[4];
@@ -2408,6 +2439,7 @@ static napi_value consume_original_handle(napi_env env, napi_callback_info info)
 #include "derived_store.h"
 #include "phase7_coordination.h"
 #include "phase7_handoff.h"
+#include "operation_gate.h"
 #include "registered_consumer_binding.h"
 #include "image_verifier_launch.h"
 #include "derived_publish.h"
@@ -2418,6 +2450,17 @@ static napi_value consume_original_handle(napi_env env, napi_callback_info info)
 
 static napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
+      {"bridgeRegisteredLaunch", NULL, p7_bridge_launch, NULL, NULL, NULL, napi_default, NULL},
+      {"registerOperationRunOwner", NULL, op_run_owner, NULL, NULL, NULL, napi_default, NULL},
+      {"verifyOperationRunOwner", NULL, op_verify_run_owner, NULL, NULL, NULL, napi_default, NULL},
+      {"openOperationGate", NULL, op_open, NULL, NULL, NULL, napi_default, NULL},
+      {"tryOperationGate", NULL, op_try, NULL, NULL, NULL, napi_default, NULL},
+      {"closeOperationGate", NULL, op_close, NULL, NULL, NULL, napi_default, NULL},
+      {"operationGateIdentity", NULL, op_identity_value, NULL, NULL, NULL, napi_default, NULL},
+      {"readOperationDeny", NULL, op_read_marker, NULL, NULL, NULL, napi_default, NULL},
+      {"latchOperationDeny", NULL, op_latch_marker, NULL, NULL, NULL, napi_default, NULL},
+      {"recoverOperationBridges", NULL, op_recover_bridges, NULL, NULL, NULL, napi_default, NULL},
+      {"clearOperationDeny", NULL, op_clear_marker, NULL, NULL, NULL, napi_default, NULL},
       {"openCoordination", NULL, ps_open_coordination, NULL, NULL, NULL,
        napi_default, NULL},
       {"tryAcquireCoordination", NULL, ps_try_coordination, NULL, NULL, NULL,
@@ -2446,6 +2489,7 @@ static napi_value init(napi_env env, napi_value exports) {
       {"closeHandoff", NULL, ps_close_handoff, NULL, NULL, NULL,
        napi_default, NULL},
 #ifdef PS_STORAGE_TEST_HOOKS
+      {"phase11TestDenyFault",NULL,op_test_deny_fault,NULL,NULL,NULL,napi_default,NULL},
       {"phase7TestMarkerParse",NULL,sm_test_parse,NULL,NULL,NULL,napi_default,NULL},
       {"phase7TestLegacyMarkerParse",NULL,sm_test_legacy_parse,NULL,NULL,NULL,napi_default,NULL},
       {"phase7TestNamespaceBinding",NULL,sm_test_binding,NULL,NULL,NULL,napi_default,NULL},
@@ -2505,6 +2549,8 @@ static napi_value init(napi_env env, napi_value exports) {
       {"truncateFile", NULL, truncate_file, NULL, NULL, NULL, napi_default,
        NULL},
       {"removeFile", NULL, remove_file, NULL, NULL, NULL, napi_default, NULL},
+      {"assertRootWritableMount", NULL, assert_root_writable_mount, NULL, NULL, NULL,
+       napi_default, NULL},
       {"verifyRootIdentity", NULL, verify_root_identity, NULL, NULL, NULL,
        napi_default, NULL},
       {"listDirectory", NULL, list_directory, NULL, NULL, NULL,
@@ -2516,6 +2562,8 @@ static napi_value init(napi_env env, napi_value exports) {
       {"openOriginalReader", NULL, open_original_reader, NULL, NULL, NULL,
        napi_default, NULL},
       {"closeOriginalReader", NULL, close_original_reader, NULL, NULL, NULL,
+       napi_default, NULL},
+      {"assertOriginalReaderIdentity", NULL, assert_original_reader_identity, NULL, NULL, NULL,
        napi_default, NULL},
       {"openVerifiedOriginal", NULL, open_verified_original, NULL, NULL, NULL,
        napi_default, NULL},

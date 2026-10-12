@@ -6,6 +6,7 @@ import { createDatabase, MySqlUploadRepository } from "@family-album/db";
 import { probeStorageCapability } from "@family-album/storage";
 
 import { UploadMutex } from "./uploads/mutex.js";
+import { loadDeploymentControl } from "../../worker/src/deployment-control.js";
 import {
   type ReconciliationMode,
   publicReconciliationReport,
@@ -27,6 +28,7 @@ async function main() {
     throw new Error("RECOVERY_DEV_ONLY");
   const plan = parsePlan(process.argv.slice(2));
   const database = createDatabase(env.DATABASE_URL);
+  const control = await loadDeploymentControl(database.pool, env);
   let root: ReturnType<typeof probeStorageCapability> | null = null;
   try {
     const repository = new MySqlUploadRepository(database.pool);
@@ -40,11 +42,15 @@ async function main() {
     });
     if (root.state !== "READ_WRITE")
       throw new Error("RECOVERY_WRITER_LOCK_OR_ROOT_UNAVAILABLE");
-    const result = await new StorageReconciler(
-      repository,
-      root,
-      new UploadMutex(),
-    ).run(plan);
+    const capability = root;
+    const operation = () =>
+      new StorageReconciler(repository, capability, new UploadMutex()).run(
+        plan,
+      );
+    const result =
+      plan.mode === "dry-run"
+        ? await operation()
+        : await control.admission.run("MEDIA_WRITE", operation);
     process.stdout.write(
       `${JSON.stringify(publicReconciliationReport(result))}\n`,
     );

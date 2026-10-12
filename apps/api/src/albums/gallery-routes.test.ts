@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createSessionToken } from "@family-album/auth";
 
 import { createApp } from "../app.js";
+import { unitAdmissionFixture } from "../../../../tests/helpers/unit-control-admission.js";
 import type { AuthService } from "../auth/service.js";
 import { encodeGalleryCursor, type AlbumService } from "./service.js";
 
@@ -72,6 +73,7 @@ function setup(media = mediaRow()) {
     authService,
     albumService,
     app: createApp({
+      controlAdmission: unitAdmissionFixture,
       authService,
       albumService,
       trustedOrigins: new Set([origin]),

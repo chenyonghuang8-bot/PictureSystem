@@ -71,6 +71,18 @@ export function canonicalCheck(value: string): string {
           requireToken(")");
           return { text: `regexp_like(${arg.text},${pattern.text})` };
         }
+        if (name === "find_in_set") {
+          requireToken(",");
+          const list = primary();
+          if (
+            arg.text !== "owner_role" ||
+            list.atom !== "id" ||
+            list.text !== "expected_roles"
+          )
+            throw new Error("UNSUPPORTED_CHECK");
+          requireToken(")");
+          return { text: `find_in_set(${arg.text},${list.text})` };
+        }
         if (name === "mod") {
           requireToken(",");
           const divisor = primary();

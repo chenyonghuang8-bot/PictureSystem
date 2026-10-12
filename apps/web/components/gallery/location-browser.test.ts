@@ -286,6 +286,11 @@ it("uses real hosted interactive basemap with no private URL, referrer, or authe
     );
     expect(await page.getByText(/底图暂不可用/).count()).toBe(0);
     expect(await page.locator(".maplibregl-canvas").count()).toBe(1);
+    // Style readiness precedes the viewport fetch and marker effect. Wait for
+    // the actual private overlay rather than observing their intermediate frame.
+    await page
+      .getByRole("button", { name: "粗略地区 2 张照片" })
+      .waitFor({ state: "visible" });
     expect(
       await page.getByRole("button", { name: "粗略地区 2 张照片" }).count(),
     ).toBeGreaterThan(0);

@@ -1,3 +1,4 @@
+import { unitAdmissionFixture } from "../../../../tests/helpers/unit-control-admission.js";
 import { describe, expect, it, vi } from "vitest";
 
 import { createSessionToken } from "@family-album/auth";
@@ -54,6 +55,7 @@ function setup() {
     authService,
     phase1cService,
     app: createApp({
+      controlAdmission: unitAdmissionFixture,
       authService,
       phase1cService,
       trustedOrigins: new Set([origin]),

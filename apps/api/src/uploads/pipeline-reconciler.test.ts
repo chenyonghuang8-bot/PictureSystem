@@ -6,6 +6,7 @@ import {
   type UploadPipelineCandidate,
 } from "@family-album/db";
 import { UploadPipelineReconciler } from "./pipeline-reconciler.js";
+import { unitAdmissionFixture } from "../../../../tests/helpers/unit-control-admission.js";
 
 const candidate: UploadPipelineCandidate = {
   familyId: "1",
@@ -52,6 +53,7 @@ function fixture(observations: UploadPipelineObservation[]) {
       media: { createOrGetCanonicalMedia: create },
       jobs: { enqueue },
       acquire,
+      admission: unitAdmissionFixture,
     },
     undefined,
     wait,

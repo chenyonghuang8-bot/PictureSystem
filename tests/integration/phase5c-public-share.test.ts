@@ -1,7 +1,15 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { StorageRoot } from "../../packages/storage/src/index.js";
+import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
-import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import type {
+  ResultSetHeader,
+  RowDataPacket,
+} from "../../packages/db/src/index.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { InProcessControlOwner } from "../helpers/in-process-control-owner.js";
 import { assertSensitiveCategoryAbsent } from "../helpers/security-assertions.js";
 
 import {
@@ -11,6 +19,7 @@ import {
 } from "../../packages/auth/src/token.js";
 import {
   assertMigrationReadiness,
+  acquireCheckedConnection,
   createDatabase,
   MySqlAlbumRepository,
   MySqlAuthRepository,
@@ -32,18 +41,30 @@ describe.sequential("Phase 5C public share API", () => {
   const management = new ShareService(shares);
   const derived = new MySqlDerivedReadRepository(database.pool);
   const reads: string[] = [];
-  const service = new PublicShareService(management, shares, derived, {
-    async read(identity) {
-      reads.push(identity.kind);
-      return Buffer.alloc(Number(identity.byteSize), 7);
-    },
+  let control: InProcessControlOwner;
+  const root = StorageRoot.open(freshStorageRootPath("phase11-public-owner-"), {
+    initialize: true,
   });
+  const service = new PublicShareService(
+    management,
+    shares,
+    derived,
+    {
+      async read(identity) {
+        reads.push(identity.kind);
+        return Buffer.alloc(Number(identity.byteSize), 7);
+      },
+    },
+    { run: (action, callback) => control.admission.run(action, callback) },
+  );
   const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
   const ownerSessionToken = createSessionToken();
   const ownerHash = hashSessionToken(ownerSessionToken);
+  let identity: NonNullable<
+    Awaited<ReturnType<MySqlAuthRepository["findSession"]>>
+  >;
   let familyId = "";
   let ownerUserId = "";
-  let ownerSessionId = "";
   let ownerMemberId = "";
   let albumId = "";
   let mediaId = "";
@@ -51,7 +72,7 @@ describe.sequential("Phase 5C public share API", () => {
   let shareId = "";
 
   beforeAll(async () => {
-    const connection = await database.pool.getConnection();
+    const connection = await acquireCheckedConnection(database.pool);
     try {
       const [identity] = await connection.query<RowDataPacket[]>(
         `SELECT DATABASE() AS db, VERSION() AS version, CURRENT_USER() AS account,
@@ -98,14 +119,19 @@ describe.sequential("Phase 5C public share API", () => {
                  DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 1 DAY))`,
         [ownerUserId, ownerHash],
       );
-      ownerSessionId = String(session.insertId);
+      expect(String(session.insertId)).toMatch(/^[1-9][0-9]*$/u);
       const [album] = await connection.query<ResultSetHeader>(
         `INSERT INTO albums (family_id, owner_member_id, name, visibility)
          VALUES (?,?,?,'CUSTOM')`,
         [familyId, ownerMemberId, "公开相册"],
       );
       albumId = String(album.insertId);
-      const media = await insertMedia(connection, familyId, ownerMemberId);
+      const media = await insertMedia(
+        connection,
+        familyId,
+        ownerMemberId,
+        root,
+      );
       mediaId = media.mediaId;
       await connection.query(
         "INSERT INTO album_media (family_id, album_id, media_id) VALUES (?,?,?)",
@@ -127,14 +153,31 @@ describe.sequential("Phase 5C public share API", () => {
         mediaId,
         media.jobId,
         "THUMBNAIL",
+        root.canonicalPath,
       );
-      await insertReady(connection, familyId, mediaId, media.jobId, "PREVIEW");
+      await insertReady(
+        connection,
+        familyId,
+        mediaId,
+        media.jobId,
+        "PREVIEW",
+        root.canonicalPath,
+      );
     } finally {
       connection.release();
     }
+    identity = (await new MySqlAuthRepository(database.pool).findSession(
+      ownerHash,
+    ))!;
+    expect(identity).toBeTruthy();
+    control = await InProcessControlOwner.start(
+      database.pool,
+      [familyId],
+      root,
+    );
     const created = await management.createShare(
       {
-        identity: { userId: ownerUserId, sessionId: ownerSessionId },
+        identity,
         tokenHash: ownerHash,
       },
       albumId,
@@ -142,9 +185,11 @@ describe.sequential("Phase 5C public share API", () => {
     );
     token = created.token;
     shareId = created.shareId;
-  }, 30_000);
+  }, 45_000);
 
   afterAll(async () => {
+    await control?.close();
+    root.close();
     if (familyId) {
       await database.pool.query(
         `DELETE FROM share_events WHERE family_id = ?`,
@@ -265,7 +310,7 @@ describe.sequential("Phase 5C public share API", () => {
       ).toBeGreaterThan(0);
       const revoked = await management.createShare(
         {
-          identity: { userId: ownerUserId, sessionId: ownerSessionId },
+          identity,
           tokenHash: ownerHash,
         },
         albumId,
@@ -288,7 +333,7 @@ describe.sequential("Phase 5C public share API", () => {
       ).rejects.toMatchObject({ statusCode: 404 });
       const expired = await management.createShare(
         {
-          identity: { userId: ownerUserId, sessionId: ownerSessionId },
+          identity,
           tokenHash: ownerHash,
         },
         albumId,
@@ -327,7 +372,11 @@ describe.sequential("Phase 5C public share API", () => {
     await expect(
       authService.authenticate(ownerSessionToken),
     ).resolves.toMatchObject({
-      identity: { userId: ownerUserId, sessionId: ownerSessionId },
+      identity: {
+        userId: identity.userId,
+        sessionId: identity.sessionId,
+        clientType: identity.clientType,
+      },
     });
     const app = createApp({
       authService,
@@ -406,7 +455,7 @@ describe.sequential("Phase 5C public share API", () => {
 
     const again = await management.createShare(
       {
-        identity: { userId: ownerUserId, sessionId: ownerSessionId },
+        identity,
         tokenHash: ownerHash,
       },
       albumId,
@@ -414,7 +463,7 @@ describe.sequential("Phase 5C public share API", () => {
     );
     await management.revokeShare(
       {
-        identity: { userId: ownerUserId, sessionId: ownerSessionId },
+        identity,
         tokenHash: ownerHash,
       },
       again.shareId,
@@ -427,7 +476,7 @@ describe.sequential("Phase 5C public share API", () => {
 
     const live = await management.createShare(
       {
-        identity: { userId: ownerUserId, sessionId: ownerSessionId },
+        identity,
         tokenHash: ownerHash,
       },
       albumId,
@@ -476,8 +525,18 @@ async function insertMedia(
   },
   familyId: string,
   memberId: string,
+  root: StorageRoot,
 ) {
-  const sha = randomBytes(32);
+  const bytes = randomBytes(8),
+    sha = createHash("sha256").update(bytes).digest();
+  const payloadId = randomBytes(16).toString("hex");
+  root.createUploadPayload(familyId, payloadId, bytes);
+  root.publishOriginal({
+    familyId,
+    uploadId: payloadId,
+    sha256Hex: sha.toString("hex"),
+    byteSize: "8",
+  });
   const [object] = await connection.query(
     `INSERT INTO storage_objects
       (family_id, sha256, byte_size, key_version, state, durable_at, verified_at)
@@ -492,7 +551,13 @@ async function insertMedia(
      VALUES (?,?,?,'synthetic.png',8,8,'COMPLETE',?,
        CURRENT_TIMESTAMP(3),?,CURRENT_TIMESTAMP(3),
        DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 1 DAY))`,
-    [randomBytes(16), familyId, memberId, sha, String(object.insertId)],
+    [
+      Buffer.from(payloadId, "hex"),
+      familyId,
+      memberId,
+      sha,
+      String(object.insertId),
+    ],
   );
   const [media] = await connection.query(
     `INSERT INTO media_items
@@ -521,8 +586,19 @@ async function insertReady(
   mediaId: string,
   jobId: string,
   kind: "THUMBNAIL" | "PREVIEW",
+  mediaRoot?: string,
 ) {
-  const digest = createHash("sha256").update(`${kind}-${mediaId}`).digest();
+  const bytes = Buffer.alloc(8, 7);
+  const digest = createHash("sha256").update(bytes).digest();
+  if (mediaRoot) {
+    const directory = join(mediaRoot, "derived", familyId, mediaId, "r1", "g1");
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    writeFileSync(
+      join(directory, kind === "THUMBNAIL" ? "thumbnail.webp" : "preview.webp"),
+      bytes,
+      { mode: 0o400 },
+    );
+  }
   await connection.query(
     `INSERT INTO derived_assets
       (family_id, media_id, generation, recipe_id, kind, state, reserved_bytes,

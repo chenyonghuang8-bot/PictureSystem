@@ -1,0 +1,60 @@
+{
+  "capturedAtUTC": "2026-10-12T08:05:57.210Z",
+  "readiness": {
+    "migrationCount": 12
+  },
+  "instanceProof": {
+    "ownUidWorkspaceProcesses": 0,
+    "otherVisibleDevConnections": 0,
+    "runningJobs": "0",
+    "inspectedProcesses": 20,
+    "observedAt": "2026-10-12T08:05:57.030Z"
+  },
+  "current": [
+    {
+      "requested_mode": "READ_ONLY",
+      "enforced_mode": "READ_ONLY",
+      "transition_state": "RECOVERY_REQUIRED",
+      "revision": "1",
+      "healthGeneration": "1",
+      "fault_latched": 1,
+      "reason_code": "NOT_INITIALIZED",
+      "deployment_id": "00000000-0000-0000-0000-000000000000",
+      "namespace_identity": null,
+      "current_run_id": null,
+      "runEpoch": "882"
+    }
+  ],
+  "counts": [
+    {
+      "families": "20",
+      "users": "44",
+      "retainedMemberUsers": "44",
+      "albums": "0",
+      "placements": "0",
+      "invitations": "0",
+      "derived": "0",
+      "media": "0",
+      "objects": "0",
+      "uploads": "0",
+      "jobs": "0",
+      "retainedPurges": "13",
+      "unfinishedPurges": "0",
+      "operations": "73",
+      "grants": "0",
+      "sessions": "0",
+      "adminAuditEvents": "7971",
+      "lifecycleAuditEvents": "62",
+      "runtimeHistory": "1302",
+      "activeRuntime": "0",
+      "runHistory": "882"
+    }
+  ],
+  "retiredAuditGraphCount": 20,
+  "retiredAuditGraphsVerified": true,
+  "historicalAdminAuditPrefixExpected": 395,
+  "historicalAdminAuditPrefixActual": 395,
+  "historicalRuntimeBootsExpected": 77,
+  "historicalRuntimeBootsActual": 77,
+  "historyDeletedForZero": false
+}

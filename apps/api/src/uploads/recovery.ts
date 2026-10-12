@@ -79,6 +79,7 @@ type ScanBudget = {
 
 export class StorageReconciler {
   private readonly root: StorageRoot | null;
+  private confirmOnly = false;
 
   constructor(
     private readonly repository: RecoveryRepository,
@@ -91,6 +92,7 @@ export class StorageReconciler {
   async run(
     input: {
       mode?: ReconciliationMode;
+      confirmOnly?: boolean;
       scope?: ReconciliationScope;
       familyScope?: string;
       maxCandidates?: number;
@@ -102,6 +104,9 @@ export class StorageReconciler {
     } = {},
   ): Promise<ReconciliationResult> {
     const mode = input.mode ?? "dry-run";
+    this.confirmOnly = input.confirmOnly === true;
+    if (this.confirmOnly && mode !== "dry-run")
+      throw Error("READ_ONLY_CONFIRMATION_REQUIRED");
     const scope = input.scope ?? "global";
     const maximum = input.maxCandidates ?? 128;
     if (
@@ -302,6 +307,7 @@ export class StorageReconciler {
           );
         }
       } else if (size > upload.committedOffset) {
+        if (this.confirmOnly) result.integrityMismatches += 1;
         // The DB committed prefix is authoritative after a new healthy
         // connection has resolved any unknown prior writer outcome.
         if (mode === "recover") {

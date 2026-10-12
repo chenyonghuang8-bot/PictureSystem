@@ -15,7 +15,7 @@ import {
   createDatabase,
   MySqlAuthRepository,
 } from "../../packages/db/src/index.js";
-import { AuthRepositoryStateError as ServiceAuthRepositoryStateError } from "../../packages/db/dist/index.js";
+import { AuthRepositoryStateError as ServiceAuthRepositoryStateError } from "../../packages/db/src/index.js";
 import {
   AuthService,
   type AuthRepository,

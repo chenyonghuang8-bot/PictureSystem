@@ -28,6 +28,10 @@ const FAMILY_DERIVED_CAP = 32n * 1_024n ** 3n;
 const GLOBAL_DERIVED_CAP = 64n * 1_024n ** 3n;
 const SCRATCH_RESERVE = 64n * 1_024n ** 2n;
 const MIN_FREE_RESERVE = 10n * 1_024n ** 3n;
+export const storageSafetyBudget = Object.freeze({
+  minFreeReserve: MIN_FREE_RESERVE,
+  scratchReserve: SCRATCH_RESERVE,
+});
 
 export type DerivedReservationIdentity = {
   lifecycleRevision: bigint;

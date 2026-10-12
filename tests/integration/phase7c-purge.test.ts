@@ -1,3 +1,4 @@
+import { InProcessControlOwner } from "../helpers/in-process-control-owner.js";
 import { freshStorageRootPath } from "../fixtures/fresh-storage-root.js";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import {
@@ -40,7 +41,7 @@ import { MySqlDerivedAssetFence } from "../../packages/db/src/derived-asset-fenc
 import {
   MySqlTrashRepository,
   MySqlUploadRepository,
-} from "../../packages/db/dist/index.js";
+} from "../../packages/db/src/index.js";
 import { TrashService } from "../../apps/api/src/trash/service.js";
 import { PurgeScheduleRepository } from "../../packages/db/src/purge-scheduler.js";
 
@@ -482,7 +483,6 @@ describe.sequential("Phase 7C pre-detach normalization live DEV", () => {
             familyId: f.familyId,
             mediaId: f.mediaId,
             generation: 1n,
-            recipeId: 1,
             jobId,
             workerId: producerWorker,
             leaseEpoch: 7n,
@@ -517,6 +517,7 @@ describe.sequential("Phase 7C pre-detach normalization live DEV", () => {
         rmSync(mediaRoot, { recursive: true, force: true });
       }
     },
+    45_000,
   );
 });
 
@@ -537,6 +538,9 @@ import { runCapacityTransaction } from "../../packages/db/src/capacity-transacti
 describe.sequential("Phase 7C full purge live DEV", () => {
   it.each([
     "success",
+    "control-AFTER_QUARANTINE",
+    "control-original-BEFORE_UNLINK",
+    "control-BEFORE_COMPLETE",
     "DETACHED",
     "AFTER_QUARANTINE",
     "UNLINK_ARMED",
@@ -616,8 +620,36 @@ describe.sequential("Phase 7C full purge live DEV", () => {
           mediaRoot: dir,
           expectedMarkerId: root.markerId,
         });
+      let control: InProcessControlOwner | undefined;
       let f: Awaited<ReturnType<typeof createPhase6SchemaFixture>> | undefined;
       try {
+        if (
+          [
+            "reader-retry",
+            "unsafe-ledger",
+            "derived-replacement-before-claim",
+            "coord-v1-before-claim",
+            "coord-parent-before-claim",
+            "scheduled-worker",
+          ].includes(scenario) ||
+          scenario.startsWith("control-")
+        ) {
+          control = await InProcessControlOwner.start(db.pool, [], root, {
+            store,
+            gate,
+          });
+          await control.withResources(async (resources) => {
+            if (
+              resources.capability.state === "UNAVAILABLE" ||
+              !resources.store ||
+              !resources.gate
+            )
+              throw Error("FIXTURE_OWNER_UNAVAILABLE");
+            root = resources.capability.root;
+            store = resources.store;
+            gate = resources.gate;
+          });
+        }
         await c.beginTransaction();
         f = await createPhase6SchemaFixture(c);
         ownedFamilies.add(f.familyId);
@@ -796,7 +828,8 @@ describe.sequential("Phase 7C full purge live DEV", () => {
             "derived-replacement-before-claim",
             "coord-v1-before-claim",
             "coord-parent-before-claim",
-          ].includes(scenario)
+          ].includes(scenario) ||
+          scenario.startsWith("control-")
         ) {
           const [other] = await c.query<RowDataPacket[]>(
             `SELECT COUNT(*) n FROM purge_intents WHERE id<>? AND
@@ -846,6 +879,7 @@ describe.sequential("Phase 7C full purge live DEV", () => {
           intent = { id: scheduled[0]!.id, created: true };
           lease = { id: intent.id, epoch: 1n, workerId };
         }
+        let pendingRestriction: Promise<void> | undefined;
         let injected = false;
         const seen = new Map<string, number>();
         const faultBinding = scenario.startsWith("fsync-")
@@ -858,267 +892,301 @@ describe.sequential("Phase 7C full purge live DEV", () => {
               ConstructorParameters<typeof PurgeFilesNative>[3]
             > & { failNextPurgeDirectorySync(store: object): void })
           : undefined;
-        const processor = new PurgeProcessor(db.pool, root, store, gate, {
-          nativeFilesBinding: faultBinding,
-          boundary: async (name) => {
-            seen.set(name, (seen.get(name) ?? 0) + 1);
-            if (
-              (name === "BEFORE_QUARANTINE" || name === "BEFORE_UNLINK") &&
-              seen.get(name) === 3
-            ) {
-              const [bytes] = await c.query<RowDataPacket[]>(
-                "SELECT CAST(derived_bytes AS CHAR) derivedBytes,CAST(released_bytes AS CHAR) releasedBytes FROM purge_intents WHERE id=?",
-                [intent.id],
-              );
-              expect(BigInt(bytes[0]!.releasedBytes)).toBeGreaterThanOrEqual(
-                BigInt(bytes[0]!.derivedBytes),
-              );
-            }
-            if (injected) return;
-            const lastDerived = name === "REMOVED" && seen.get(name) === 2;
-            const oldOriginal =
-              (scenario === "unreleased-original-quarantined" &&
-                name === "QUARANTINED" &&
-                seen.get(name) === 3) ||
-              (scenario === "unreleased-original-armed" &&
-                name === "UNLINK_ARMED" &&
-                seen.get(name) === 3);
-            if (
-              (lastDerived && scenario.startsWith("last-derived-removed")) ||
-              oldOriginal
-            ) {
-              injected = true;
-              if (oldOriginal)
-                await c.execute(
-                  "UPDATE purge_intents SET released_bytes=0 WHERE id=?",
-                  [intent.id],
-                );
-              const rejected = await gate.withAdmissionLock((deadline) =>
-                runCapacityTransaction(
-                  db.pool,
-                  deadline,
-                  async (connection) => {
-                    const view = await lockPurgeExecution(
-                      connection,
-                      lease,
-                      f!.familyId,
-                    );
-                    const originalFile = view.files.find(
-                      (file) => file.fileKind === "ORIGINAL",
-                    )!;
-                    await changePurgeFile(
-                      connection,
-                      lease,
-                      f!.familyId,
-                      originalFile,
-                      originalFile.stage === "CATALOGUED"
-                        ? "QUARANTINED"
-                        : originalFile.stage === "QUARANTINED"
-                          ? "UNLINK_ARMED"
-                          : "REMOVED",
-                      { device: root.device, inode: "1" },
-                    );
-                  },
-                ),
-              );
-              expect(rejected.transaction).toBe("ROLLED_BACK");
-              if (rejected.transaction === "ROLLED_BACK")
-                expect(rejected.error).toMatchObject({
-                  message: "PURGE_DERIVED_UNRELEASED",
-                });
-              if (scenario === "last-derived-removed-original-blocked") {
-                chmodSync(original, 0o600);
-                writeFileSync(original, Buffer.from("different-origin"));
-                chmodSync(original, 0o400);
-              }
-              throw new Error("PURGE_SIMULATED_CRASH");
-            }
-            if (
-              name === "DETACHED" &&
-              scenario === "derived-replacement-before-physical"
-            ) {
-              injected = true;
-              replaceDerived();
-            }
-            if (
-              name === "BEFORE_QUARANTINE" &&
-              seen.get(name) === 1 &&
-              scenario.startsWith("coord-") &&
-              scenario.endsWith("before-physical")
-            ) {
-              injected = true;
-              replaceCoord();
-            }
-            if (
-              faultBinding &&
-              ((name === "BEFORE_QUARANTINE" &&
-                scenario.endsWith("quarantine")) ||
-                (name === "BEFORE_UNLINK" && scenario.endsWith("unlink"))) &&
-              seen.get(name) === (scenario.includes("original-") ? 3 : 1)
-            ) {
-              injected = true;
-              faultBinding.failNextPurgeDirectorySync(
-                purgeBindings(root, store).derived,
-              );
-            }
-            if (name === "DETACHED") {
-              expect(
-                (await readDerivedCapacityInventory(c)).familyUsage.get(
-                  f!.familyId,
-                ),
-              ).toBe(BigInt(derived.length * 2));
-              const [receipts] = await c.query<RowDataPacket[]>(
-                "SELECT state FROM upload_sessions WHERE family_id=?",
-                [f!.familyId],
-              );
-              expect(receipts.map((r) => r.state)).toEqual([
-                "RETIRED",
-                "RETIRED",
-              ]);
-              if (scenario !== "original-absent")
-                expect(existsSync(original)).toBe(true);
-            }
-            if (name === "REMOVED" && seen.get(name) === 1) {
-              expect(
-                (await readDerivedCapacityInventory(c)).familyUsage.get(
-                  f!.familyId,
-                ),
-              ).toBe(BigInt(derived.length * 2));
-              if (scenario !== "original-absent")
-                expect(existsSync(original)).toBe(true);
-            }
-            if (
-              scenario === name ||
-              (scenario === `original-${name}` && seen.get(name) === 3)
-            ) {
-              injected = true;
-              throw new Error("PURGE_SIMULATED_CRASH");
-            }
-            if (
-              name === "DETACHED" &&
-              scenario.startsWith("original-") &&
-              [
-                "original-sha-conflict",
-                "original-size-conflict",
-                "original-mode",
-                "original-hardlink",
-                "original-symlink",
-              ].includes(scenario)
-            ) {
-              injected = true;
-              if (scenario === "original-mode") chmodSync(original, 0o600);
+        const processor = new PurgeProcessor(
+          db.pool,
+          root,
+          store,
+          gate,
+          {
+            nativeFilesBinding: faultBinding,
+            boundary: async (name) => {
+              seen.set(name, (seen.get(name) ?? 0) + 1);
               if (
-                scenario === "original-sha-conflict" ||
-                scenario === "original-size-conflict"
+                scenario.startsWith("control-") &&
+                !pendingRestriction &&
+                name === scenario.replace(/^control-(?:original-)?/, "") &&
+                seen.get(name) ===
+                  (scenario.startsWith("control-original-") ? 3 : 1)
               ) {
-                chmodSync(original, 0o600);
-                writeFileSync(
-                  original,
-                  scenario === "original-size-conflict"
-                    ? Buffer.from("wrong-size")
-                    : Buffer.from("different-origin"),
+                pendingRestriction = control!.fixture.request("READ_ONLY");
+                const end = Date.now() + 5000;
+                while (
+                  (await control!.fixture.repository.readCurrent())
+                    .transitionState !== "DRAINING"
+                ) {
+                  if (Date.now() > end)
+                    throw Error("PURGE_CONTROL_DRAIN_WITNESS_TIMEOUT");
+                  await new Promise((r) => setTimeout(r, 20));
+                }
+                await expect(processor.runNext()).rejects.toThrow(
+                  "WRITE_PAUSED",
                 );
-                chmodSync(original, 0o400);
+                expect(
+                  (await control!.fixture.repository.readCurrent())
+                    .transitionState,
+                ).toBe("DRAINING");
               }
-              if (scenario === "original-hardlink")
-                linkSync(original, join(dir, "temp", "synthetic-hardlink"));
-              if (scenario === "original-symlink") {
-                const other = make(["temp"], "synthetic-link-target", bytes);
-                rmSync(original);
-                symlinkSync(other, original);
-              }
-            }
-            if (
-              name === "UNLINK_ARMED" &&
-              scenario === "armed-inode-conflict"
-            ) {
-              injected = true;
-              const [files] = await c.query<RowDataPacket[]>(
-                "SELECT LOWER(HEX(quarantine_slot)) slot FROM purge_files WHERE purge_intent_id=? AND stage='UNLINK_ARMED'",
-                [intent.id],
-              );
-              const replacement = make(
-                ["temp"],
-                "synthetic-slot-replacement",
-                derived,
-              );
-              const slot = join(dir, ".purge", "v1", files[0]!.slot);
-              rmSync(slot);
-              renameSync(replacement, slot);
-            }
-            if (name === "AFTER_QUARANTINE" && scenario === "lease-loss") {
-              injected = true;
-              await c.execute(
-                "UPDATE purge_intents SET locked_until=CURRENT_TIMESTAMP(3)-INTERVAL 1 SECOND WHERE id=?",
-                [intent.id],
-              );
-            }
-            if (
-              name === "UNLINK_ARMED" &&
-              (scenario === "armed-absence" ||
-                (scenario === "original-armed-absence" && seen.get(name) === 3))
-            ) {
-              injected = true;
-              const [files] = await c.query<RowDataPacket[]>(
-                "SELECT CAST(id AS CHAR) id FROM purge_files WHERE purge_intent_id=? AND stage='UNLINK_ARMED'",
-                [intent.id],
-              );
-              rmSync(
-                join(
-                  dir,
-                  ".purge",
-                  "v1",
-                  purgeSlot(intent.id, files[0]!.id).toString("hex"),
-                ),
-              );
-              throw new Error("PURGE_SIMULATED_CRASH");
-            }
-            if (name === "DETACHED" && scenario === "slot-conflict") {
-              injected = true;
-              const [files] = await c.query<RowDataPacket[]>(
-                "SELECT CAST(id AS CHAR) id FROM purge_files WHERE purge_intent_id=? AND file_kind='DERIVED'",
-                [intent.id],
-              );
-              make(
-                [".purge", "v1"],
-                purgeSlot(intent.id, files[0]!.id).toString("hex"),
-                derived,
-              );
-            }
-            if (name === "UNLINK_ARMED" && scenario === "quarantine-missing")
-              return;
-            if (name === "QUARANTINED" && scenario === "quarantine-missing") {
-              // A missing unarmed quarantine must fail closed.
-              injected = true;
-              const [files] = await c.query<RowDataPacket[]>(
-                "SELECT LOWER(HEX(quarantine_slot)) slot FROM purge_files WHERE purge_intent_id=? AND stage='QUARANTINED'",
-                [intent.id],
-              );
-              rmSync(join(dir, ".purge", "v1", files[0]!.slot));
-              throw new Error("PURGE_SIMULATED_CRASH");
-            }
-          },
-          commit: async (name, connection) => {
-            const target = `unknown-${name}-`;
-            if (!injected && scenario.startsWith(target)) {
-              if (name === "RELEASE") {
-                const [pending] = await connection.query<RowDataPacket[]>(
-                  "SELECT COUNT(*) n FROM purge_files WHERE purge_intent_id=? AND file_kind='DERIVED' AND stage NOT IN ('REMOVED','ABSENT_DERIVED')",
+
+              if (
+                (name === "BEFORE_QUARANTINE" || name === "BEFORE_UNLINK") &&
+                seen.get(name) === 3
+              ) {
+                const [bytes] = await c.query<RowDataPacket[]>(
+                  "SELECT CAST(derived_bytes AS CHAR) derivedBytes,CAST(released_bytes AS CHAR) releasedBytes FROM purge_intents WHERE id=?",
                   [intent.id],
                 );
-                if (Number(pending[0]!.n)) {
-                  await connection.commit();
-                  return;
+                expect(BigInt(bytes[0]!.releasedBytes)).toBeGreaterThanOrEqual(
+                  BigInt(bytes[0]!.derivedBytes),
+                );
+              }
+              if (injected) return;
+              const lastDerived = name === "REMOVED" && seen.get(name) === 2;
+              const oldOriginal =
+                (scenario === "unreleased-original-quarantined" &&
+                  name === "QUARANTINED" &&
+                  seen.get(name) === 3) ||
+                (scenario === "unreleased-original-armed" &&
+                  name === "UNLINK_ARMED" &&
+                  seen.get(name) === 3);
+              if (
+                (lastDerived && scenario.startsWith("last-derived-removed")) ||
+                oldOriginal
+              ) {
+                injected = true;
+                if (oldOriginal)
+                  await c.execute(
+                    "UPDATE purge_intents SET released_bytes=0 WHERE id=?",
+                    [intent.id],
+                  );
+                const rejected = await gate.withAdmissionLock((deadline) =>
+                  runCapacityTransaction(
+                    db.pool,
+                    deadline,
+                    async (connection) => {
+                      const view = await lockPurgeExecution(
+                        connection,
+                        lease,
+                        f!.familyId,
+                      );
+                      const originalFile = view.files.find(
+                        (file) => file.fileKind === "ORIGINAL",
+                      )!;
+                      await changePurgeFile(
+                        connection,
+                        lease,
+                        f!.familyId,
+                        originalFile,
+                        originalFile.stage === "CATALOGUED"
+                          ? "QUARANTINED"
+                          : originalFile.stage === "QUARANTINED"
+                            ? "UNLINK_ARMED"
+                            : "REMOVED",
+                        { device: root.device, inode: "1" },
+                      );
+                    },
+                  ),
+                );
+                expect(rejected.transaction).toBe("ROLLED_BACK");
+                if (rejected.transaction === "ROLLED_BACK")
+                  expect(rejected.error).toMatchObject({
+                    message: "PURGE_DERIVED_UNRELEASED",
+                  });
+                if (scenario === "last-derived-removed-original-blocked") {
+                  chmodSync(original, 0o600);
+                  writeFileSync(original, Buffer.from("different-origin"));
+                  chmodSync(original, 0o400);
+                }
+                throw new Error("PURGE_SIMULATED_CRASH");
+              }
+              if (
+                name === "DETACHED" &&
+                scenario === "derived-replacement-before-physical"
+              ) {
+                injected = true;
+                replaceDerived();
+              }
+              if (
+                name === "BEFORE_QUARANTINE" &&
+                seen.get(name) === 1 &&
+                scenario.startsWith("coord-") &&
+                scenario.endsWith("before-physical")
+              ) {
+                injected = true;
+                replaceCoord();
+              }
+              if (
+                faultBinding &&
+                ((name === "BEFORE_QUARANTINE" &&
+                  scenario.endsWith("quarantine")) ||
+                  (name === "BEFORE_UNLINK" && scenario.endsWith("unlink"))) &&
+                seen.get(name) === (scenario.includes("original-") ? 3 : 1)
+              ) {
+                injected = true;
+                faultBinding.failNextPurgeDirectorySync(
+                  purgeBindings(root, store).derived,
+                );
+              }
+              if (name === "DETACHED") {
+                expect(
+                  (await readDerivedCapacityInventory(c)).familyUsage.get(
+                    f!.familyId,
+                  ),
+                ).toBe(BigInt(derived.length * 2));
+                const [receipts] = await c.query<RowDataPacket[]>(
+                  "SELECT state FROM upload_sessions WHERE family_id=?",
+                  [f!.familyId],
+                );
+                expect(receipts.map((r) => r.state)).toEqual([
+                  "RETIRED",
+                  "RETIRED",
+                ]);
+                if (scenario !== "original-absent")
+                  expect(existsSync(original)).toBe(true);
+              }
+              if (name === "REMOVED" && seen.get(name) === 1) {
+                expect(
+                  (await readDerivedCapacityInventory(c)).familyUsage.get(
+                    f!.familyId,
+                  ),
+                ).toBe(BigInt(derived.length * 2));
+                if (scenario !== "original-absent")
+                  expect(existsSync(original)).toBe(true);
+              }
+              if (
+                scenario === name ||
+                (scenario === `original-${name}` && seen.get(name) === 3)
+              ) {
+                injected = true;
+                throw new Error("PURGE_SIMULATED_CRASH");
+              }
+              if (
+                name === "DETACHED" &&
+                scenario.startsWith("original-") &&
+                [
+                  "original-sha-conflict",
+                  "original-size-conflict",
+                  "original-mode",
+                  "original-hardlink",
+                  "original-symlink",
+                ].includes(scenario)
+              ) {
+                injected = true;
+                if (scenario === "original-mode") chmodSync(original, 0o600);
+                if (
+                  scenario === "original-sha-conflict" ||
+                  scenario === "original-size-conflict"
+                ) {
+                  chmodSync(original, 0o600);
+                  writeFileSync(
+                    original,
+                    scenario === "original-size-conflict"
+                      ? Buffer.from("wrong-size")
+                      : Buffer.from("different-origin"),
+                  );
+                  chmodSync(original, 0o400);
+                }
+                if (scenario === "original-hardlink")
+                  linkSync(original, join(dir, "temp", "synthetic-hardlink"));
+                if (scenario === "original-symlink") {
+                  const other = make(["temp"], "synthetic-link-target", bytes);
+                  rmSync(original);
+                  symlinkSync(other, original);
                 }
               }
-              injected = true;
-              if (scenario.endsWith("after")) await connection.commit();
-              else await connection.rollback();
-              throw new Error("PURGE_SIMULATED_COMMIT_UNKNOWN");
-            }
-            await connection.commit();
+              if (
+                name === "UNLINK_ARMED" &&
+                scenario === "armed-inode-conflict"
+              ) {
+                injected = true;
+                const [files] = await c.query<RowDataPacket[]>(
+                  "SELECT LOWER(HEX(quarantine_slot)) slot FROM purge_files WHERE purge_intent_id=? AND stage='UNLINK_ARMED'",
+                  [intent.id],
+                );
+                const replacement = make(
+                  ["temp"],
+                  "synthetic-slot-replacement",
+                  derived,
+                );
+                const slot = join(dir, ".purge", "v1", files[0]!.slot);
+                rmSync(slot);
+                renameSync(replacement, slot);
+              }
+              if (name === "AFTER_QUARANTINE" && scenario === "lease-loss") {
+                injected = true;
+                await c.execute(
+                  "UPDATE purge_intents SET locked_until=CURRENT_TIMESTAMP(3)-INTERVAL 1 SECOND WHERE id=?",
+                  [intent.id],
+                );
+              }
+              if (
+                name === "UNLINK_ARMED" &&
+                (scenario === "armed-absence" ||
+                  (scenario === "original-armed-absence" &&
+                    seen.get(name) === 3))
+              ) {
+                injected = true;
+                const [files] = await c.query<RowDataPacket[]>(
+                  "SELECT CAST(id AS CHAR) id FROM purge_files WHERE purge_intent_id=? AND stage='UNLINK_ARMED'",
+                  [intent.id],
+                );
+                rmSync(
+                  join(
+                    dir,
+                    ".purge",
+                    "v1",
+                    purgeSlot(intent.id, files[0]!.id).toString("hex"),
+                  ),
+                );
+                throw new Error("PURGE_SIMULATED_CRASH");
+              }
+              if (name === "DETACHED" && scenario === "slot-conflict") {
+                injected = true;
+                const [files] = await c.query<RowDataPacket[]>(
+                  "SELECT CAST(id AS CHAR) id FROM purge_files WHERE purge_intent_id=? AND file_kind='DERIVED'",
+                  [intent.id],
+                );
+                make(
+                  [".purge", "v1"],
+                  purgeSlot(intent.id, files[0]!.id).toString("hex"),
+                  derived,
+                );
+              }
+              if (name === "UNLINK_ARMED" && scenario === "quarantine-missing")
+                return;
+              if (name === "QUARANTINED" && scenario === "quarantine-missing") {
+                // A missing unarmed quarantine must fail closed.
+                injected = true;
+                const [files] = await c.query<RowDataPacket[]>(
+                  "SELECT LOWER(HEX(quarantine_slot)) slot FROM purge_files WHERE purge_intent_id=? AND stage='QUARANTINED'",
+                  [intent.id],
+                );
+                rmSync(join(dir, ".purge", "v1", files[0]!.slot));
+                throw new Error("PURGE_SIMULATED_CRASH");
+              }
+            },
+            commit: async (name, connection) => {
+              const target = `unknown-${name}-`;
+              if (!injected && scenario.startsWith(target)) {
+                if (name === "RELEASE") {
+                  const [pending] = await connection.query<RowDataPacket[]>(
+                    "SELECT COUNT(*) n FROM purge_files WHERE purge_intent_id=? AND file_kind='DERIVED' AND stage NOT IN ('REMOVED','ABSENT_DERIVED')",
+                    [intent.id],
+                  );
+                  if (Number(pending[0]!.n)) {
+                    await connection.commit();
+                    return;
+                  }
+                }
+                injected = true;
+                if (scenario.endsWith("after")) await connection.commit();
+                else await connection.rollback();
+                throw new Error("PURGE_SIMULATED_COMMIT_UNKNOWN");
+              }
+              await connection.commit();
+            },
           },
-        });
+          control?.admission,
+        );
         if (
           scenario.startsWith("coord-") &&
           scenario.endsWith("before-claim")
@@ -1131,7 +1199,7 @@ describe.sequential("Phase 7C full purge live DEV", () => {
           try {
             replaceCoord();
             await expect(processor.runNext()).rejects.toThrow(
-              /COORD_NAMESPACE_UNCERTAIN/,
+              /CONTROL_UNAVAILABLE/,
             );
             const [state] = await c.query<RowDataPacket[]>(
               "SELECT progress,execution_state state,attempts,CAST(released_bytes AS CHAR) releasedBytes FROM purge_intents WHERE id=?",
@@ -1386,6 +1454,31 @@ describe.sequential("Phase 7C full purge live DEV", () => {
             mediaRoot: dir,
             expectedMarkerId: root.markerId,
           });
+        } else if (scenario.startsWith("control-")) {
+          expect(await processor.runNext()).toBe(true);
+          expect(pendingRestriction).toBeDefined();
+          await pendingRestriction;
+          expect(
+            (await control!.fixture.repository.readCurrent()).enforcedMode,
+          ).toBe("READ_ONLY");
+          const [done] = await c.query<RowDataPacket[]>(
+            "SELECT execution_state,progress,CAST(released_bytes AS CHAR) released FROM purge_intents WHERE id=?",
+            [intent.id],
+          );
+          expect(done[0]).toMatchObject({
+            execution_state: "DONE",
+            progress: "COMPLETED",
+            released: String(bytes.length + derived.length * 2),
+          });
+          expect(existsSync(original)).toBe(false);
+          expect(existsSync(final)).toBe(false);
+          expect(existsSync(preview)).toBe(false);
+          expect(
+            (await readDerivedCapacityInventory(c)).familyUsage.get(
+              f.familyId,
+            ) ?? 0n,
+          ).toBe(0n);
+          return;
         } else if (
           scenario === "scheduled-worker" ||
           scenario === "reader-retry"
@@ -1686,11 +1779,33 @@ describe.sequential("Phase 7C full purge live DEV", () => {
           await cleanupPhase6MigrationFixture(c, f);
         }
         c.release();
+        if (control) {
+          // Restore only this fixture's deliberately displaced native namespace.
+          for (const relative of [".coord", ".coord/v1"]) {
+            const target = join(dir, relative);
+            if (existsSync(`${target}-held`)) {
+              rmSync(target, { recursive: true, force: true });
+              renameSync(`${target}-held`, target);
+            }
+          }
+          if (existsSync(join(dir, "moved-derived"))) {
+            rmSync(join(dir, "derived"), { recursive: true, force: true });
+            renameSync(join(dir, "moved-derived"), join(dir, "derived"));
+          }
+          if (f)
+            for (const namespace of ["originals", "derived", "uploads"])
+              rmSync(join(dir, namespace, f.familyId), {
+                recursive: true,
+                force: true,
+              });
+          await control.close({ recheck: true });
+        }
         gate.close();
         store.close();
         root.close();
         rmSync(dir, { recursive: true, force: true });
       }
     },
+    45_000,
   );
 });

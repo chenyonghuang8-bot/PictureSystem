@@ -277,6 +277,7 @@ export function handleAuthFrameworkError(
     !request.url.startsWith("/api/v1/families/") &&
     !request.url.startsWith("/api/v1/invitations/") &&
     !request.url.startsWith("/api/v1/android/invitations/") &&
+    !request.url.startsWith("/api/v1/admin/") &&
     !request.url.startsWith("/api/v1/albums")
   )
     throw error;

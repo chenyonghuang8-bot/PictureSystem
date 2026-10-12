@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { Pool } from "mysql2/promise";
 import { MetadataJobDriver } from "./metadata-driver.js";
 import { MetadataJobLoop } from "./metadata-job-loop.js";
+import { unitAdmissionFixture } from "../../../tests/helpers/unit-control-admission.js";
 
 function barrier() {
   let release!: () => void;
@@ -23,6 +24,8 @@ it("stop during discovery selects no recovery or claim", async () => {
     } as unknown as Pool,
     {} as never,
     {} as never,
+    undefined,
+    unitAdmissionFixture,
   );
   const recoverExpiredLease = vi.fn(),
     claimNext = vi.fn();
@@ -53,6 +56,8 @@ it("stop drains one active recovery and selects no remaining recovery or new cla
     } as unknown as Pool,
     {} as never,
     {} as never,
+    undefined,
+    unitAdmissionFixture,
   );
   const recoverExpiredLease = vi.fn(async () => {
       entered.release();

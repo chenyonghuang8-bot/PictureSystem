@@ -1,6 +1,8 @@
 import { freshStorageRootPath } from "../../../tests/fixtures/fresh-storage-root.js";
+import { OperationGate } from "./operation-gate.js";
+import { readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   chmodSync,
   lstatSync,
@@ -184,6 +186,52 @@ function partPath(rootPath: string) {
 }
 
 describe("isolated verify-output", () => {
+  it("bridges the actual native-internal verifier before spawn and releases only after the full unit", async () => {
+    const path = mkdtempSync(
+      join(realpathSync(tmpdir()), "phase11-native-verifier-"),
+    );
+    const gate = OperationGate.provisionDev({
+      path,
+      deploymentId: randomUUID(),
+    });
+    try {
+      await withStore(async ({ capability, store }) => {
+        const coordination = new ContentCoordination(capability.root, {
+          familyId: "7",
+          sha256Hex: "b".repeat(64),
+          byteSize: "5",
+        });
+        const life = await coordination.acquireLifecycle("S", 0),
+          read = await coordination.acquireRead(life, "S", 0);
+        const s = await gate.acquire("S", 0);
+        try {
+          await s.run(async () => {
+            const sealed = await sealBytes(store, capability, opaque);
+            expect(
+              sealed.verify(store, { ...binding, readGuard: read }),
+            ).toMatchObject({ width: 8, height: 4 });
+            expect(
+              readdirSync(path).filter((n) => n.startsWith("bridge.")),
+            ).toHaveLength(1);
+            sealed.consume(store);
+            await expect(gate.acquire("X", 0)).rejects.toThrow(
+              "OPERATION_GATE_BUSY",
+            );
+          });
+        } finally {
+          s.close();
+          read.close();
+          life.close();
+        }
+        const x = await gate.acquire("X", 0);
+        expect(x.drained).toBe(true);
+        x.close();
+      });
+    } finally {
+      rmSync(path, { recursive: true, force: true });
+    }
+  });
+
   it("settles a registered Derived handoff while the parent sealed capability retains its own occupancy", async () => {
     await withStore(async ({ capability, store }) => {
       const coordination = new ContentCoordination(capability.root, {

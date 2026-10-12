@@ -1,0 +1,20 @@
+
+> family-album@0.0.0 test:e2e /Users/toby/PictureSystem
+> playwright test
+
+[WebServer] (node:56705) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 5 tests using 2 workers
+
+(node:56707) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:56706) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e/health.spec.ts:3:1 › API health smoke (23ms)
+  ✓  2 tests/e2e/phase2-permissions.spec.ts:158:5 › Phase 2 album permission E2E › owner receives 200 for the CUSTOM album (30ms)
+  ✓  3 tests/e2e/phase2-permissions.spec.ts:158:5 › Phase 2 album permission E2E › viewer receives 200 for the CUSTOM album (7ms)
+  ✓  4 tests/e2e/phase2-permissions.spec.ts:158:5 › Phase 2 album permission E2E › unauthorized receives 404 for the CUSTOM album (9ms)
+  ✓  5 tests/e2e/phase2-permissions.spec.ts:158:5 › Phase 2 album permission E2E › super receives 404 for the CUSTOM album (7ms)
+
+  5 passed (1.9s)

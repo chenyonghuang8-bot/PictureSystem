@@ -51,3 +51,26 @@ export async function assessStorageStartup(
     };
   }
 }
+
+/** Fresh automatic startup inspects without reconciliation or filesystem repair. */
+export async function confirmStorageStartup(
+  repository: MySqlUploadRepository,
+  capability: StorageCapability,
+  mutex: UploadMutex,
+) {
+  if (capability.state !== "READ_WRITE") throw Error("WRITER_NOT_READY");
+  const report = await new StorageReconciler(repository, capability, mutex).run(
+    {
+      mode: "dry-run",
+      confirmOnly: true,
+      scope: "startup",
+      maxCandidates: 20_000,
+    },
+  );
+  if (
+    !startupRecoveryComplete(report) ||
+    report.finalizingCandidatesVerified > 0 ||
+    report.knownRecoverableFinalizingCandidates > 0
+  )
+    throw Error("STORAGE_STARTUP_RECOVERY_INCOMPLETE");
+}

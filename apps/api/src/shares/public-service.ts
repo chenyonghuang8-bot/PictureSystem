@@ -2,7 +2,12 @@ import type {
   MySqlDerivedReadRepository,
   MySqlShareRepository,
 } from "@family-album/db";
-import { StorageSafetyError } from "@family-album/storage";
+import {
+  StorageSafetyError,
+  ControlAdmissionError,
+  denyControlAdmission,
+  type ControlAdmission,
+} from "@family-album/storage";
 import { hashShareToken } from "@family-album/auth";
 
 import {
@@ -28,6 +33,7 @@ export class PublicShareService {
       "findReadyDerivedInAlbum" | "recheckSharedReadyDerived"
     >,
     private readonly reader: DerivedByteReader,
+    private readonly admission: ControlAdmission = denyControlAdmission,
   ) {}
 
   async openAlbum(token: unknown, input: { limit: number; cursor?: string }) {
@@ -44,12 +50,20 @@ export class PublicShareService {
       }),
     );
     if (!page) throw new PublicAuthError(404, "NOT_FOUND");
-    await this.notFound(() =>
-      this.pages.recordAccess({
-        familyId: capability.familyId,
-        shareId: capability.shareId,
-      }),
-    );
+    try {
+      await this.admission.run("MEDIA_WRITE", () =>
+        this.notFound(() =>
+          this.pages.recordAccess({
+            familyId: capability.familyId,
+            shareId: capability.shareId,
+          }),
+        ),
+      );
+    } catch (error) {
+      // Viewing already-authorized public content remains read-only. Activity
+      // counters must not mutate relations/audit while the deployment is paused.
+      if (!(error instanceof ControlAdmissionError)) throw error;
+    }
     const media = page.media.map((item) => publicGalleryMediaItem(item));
     return {
       shareId: capability.shareId,

@@ -6,6 +6,18 @@ process.loadEnvFile(resolve(import.meta.dirname, ".env"));
 
 export default defineConfig({
   tsconfig: "tsconfig.vitest.json",
+  resolve: {
+    alias: {
+      "@family-album/db": resolve(
+        import.meta.dirname,
+        "packages/db/src/index.ts",
+      ),
+      "@family-album/storage": resolve(
+        import.meta.dirname,
+        "packages/storage/src/index.ts",
+      ),
+    },
+  },
   test: {
     environment: "node",
     exclude: ["tests/e2e/**", "**/dist/**", "**/node_modules/**"],
@@ -24,6 +36,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "integration",
+          server: { deps: { inline: [/\/packages\/storage\//] } },
           include: ["tests/integration/**/*.test.ts"],
           fileParallelism: false,
         },

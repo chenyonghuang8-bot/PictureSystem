@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { unitAdmissionFixture } from "../../../../tests/helpers/unit-control-admission.js";
+import {
+  denyControlAdmission,
+  type ControlAdmission,
+} from "@family-album/storage";
 
 import { createShareToken } from "@family-album/auth";
 import type { ReadyDerivedView } from "@family-album/db";
@@ -9,7 +14,7 @@ import { PublicShareService } from "./public-service.js";
 const token = createShareToken();
 const timelineKey = new Date("2026-01-03T00:00:00.000Z");
 
-function setup() {
+function setup(admission: ControlAdmission = unitAdmissionFixture) {
   const shares = {
     verifyShareToken: vi.fn(async () => ({
       shareId: "15",
@@ -62,11 +67,18 @@ function setup() {
     derived,
     reader,
     bytes,
-    service: new PublicShareService(shares, pages, derived, reader),
+    service: new PublicShareService(shares, pages, derived, reader, admission),
   };
 }
 
 describe("public share service", () => {
+  it("keeps an authorized public view read-only when activity writes are paused", async () => {
+    const { service, pages } = setup(denyControlAdmission);
+    expect((await service.openAlbum(token, { limit: 20 })).album).toEqual({
+      name: "家庭旅行",
+    });
+    expect(pages.recordAccess).not.toHaveBeenCalled();
+  });
   it("returns album display data and one access event", async () => {
     const { service, pages } = setup();
     const opened = await service.openAlbum(token, { limit: 20 });

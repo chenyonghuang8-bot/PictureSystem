@@ -5,6 +5,7 @@ import {
   TransactionRollbackFailedError,
 } from "@family-album/db";
 import { ImageDerivativeDriver } from "./image-derivative-driver.js";
+import { unitAdmissionFixture } from "../../../tests/helpers/unit-control-admission.js";
 
 it("uncertain recovery stops before any claim", async () => {
   const error = new CommitOutcomeUnknownError(),
@@ -17,6 +18,7 @@ it("uncertain recovery stops before any claim", async () => {
       pool as unknown as Pool,
       {} as never,
       {} as never,
+      unitAdmissionFixture,
     ),
     run = vi.fn();
   Object.assign(driver, { processor: { run } });
@@ -38,6 +40,7 @@ it("unresolved unknown and thrown DB failures latch stopped until a new driver, 
       {} as Pool,
       {} as never,
       {} as never,
+      unitAdmissionFixture,
     );
     const run = vi.fn(async () => {
       if (failure) throw failure;

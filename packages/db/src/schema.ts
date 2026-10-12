@@ -13,6 +13,7 @@ import {
   phase4WarningFlags,
 } from "@family-album/contracts";
 import {
+  type AnyMySqlColumn,
   bigint,
   boolean,
   check,
@@ -24,6 +25,7 @@ import {
   int,
   mysqlEnum,
   mysqlTable,
+  primaryKey,
   smallint,
   tinyint,
   uniqueIndex,
@@ -213,6 +215,11 @@ export const familyMembers = mysqlTable(
       table.userId,
     ),
     uniqueIndex("uq_family_members_family_id").on(table.familyId, table.id),
+    uniqueIndex("uq_family_members_binding").on(
+      table.familyId,
+      table.id,
+      table.userId,
+    ),
     index("idx_family_members_user").on(table.userId),
   ],
 );
@@ -1813,6 +1820,392 @@ export const uploadAlbumTargets = mysqlTable(
     check(
       "chk_upload_album_targets_applied",
       sql`(${table.state} = 'APPLIED' AND ${table.appliedAt} IS NOT NULL) OR (${table.state} = 'PENDING' AND ${table.appliedAt} IS NULL)`,
+    ),
+  ],
+);
+
+// Phase 11 deployment control is separate from family content authorization.
+const controlModes = ["NORMAL", "READ_ONLY", "MAINTENANCE"] as const;
+const controlStates = [
+  "STABLE",
+  "DRAINING",
+  "RESUMING",
+  "RECOVERY_REQUIRED",
+] as const;
+export const systemControl = mysqlTable(
+  "system_control",
+  {
+    id: tinyint("id", { unsigned: true }).primaryKey(),
+    deploymentId: varchar("deployment_id", { length: 36 }).notNull(),
+    namespaceIdentity: sha256Digest("namespace_identity"),
+    requestedMode: mysqlEnum("requested_mode", controlModes)
+      .notNull()
+      .default("READ_ONLY"),
+    enforcedMode: mysqlEnum("enforced_mode", controlModes)
+      .notNull()
+      .default("READ_ONLY"),
+    transitionState: mysqlEnum("transition_state", controlStates)
+      .notNull()
+      .default("RECOVERY_REQUIRED"),
+    revision: foreignId("revision")
+      .notNull()
+      .default(sql`1`),
+    healthGeneration: foreignId("health_generation")
+      .notNull()
+      .default(sql`1`),
+    faultLatched: boolean("fault_latched").notNull().default(true),
+    reasonCode: varchar("reason_code", { length: 48 })
+      .notNull()
+      .default("NOT_INITIALIZED"),
+    currentRunId: varchar("current_run_id", { length: 36 }).references(
+      (): AnyMySqlColumn => systemControlRuns.id,
+      { onDelete: "restrict", onUpdate: "restrict" },
+    ),
+    runEpoch: foreignId("run_epoch")
+      .notNull()
+      .default(sql`0`),
+    activeOperationId: varchar("active_operation_id", { length: 36 }),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (t) => [
+    check("chk_system_control_singleton", sql`${t.id} = 1`),
+    check(
+      "chk_system_control_revision",
+      sql`${t.revision} >= 1 AND ${t.healthGeneration} >= 1`,
+    ),
+    check(
+      "chk_system_control_stable",
+      sql`${t.transitionState} <> 'STABLE' OR ${t.requestedMode} = ${t.enforcedMode}`,
+    ),
+    check(
+      "chk_system_control_protected",
+      sql`(${t.transitionState} <> 'RECOVERY_REQUIRED' AND ${t.faultLatched} = 0) OR ${t.enforcedMode} <> 'NORMAL'`,
+    ),
+    check(
+      "chk_system_control_initialized",
+      sql`${t.enforcedMode} <> 'NORMAL' OR (${t.namespaceIdentity} IS NOT NULL AND ${t.faultLatched} = 0)`,
+    ),
+  ],
+);
+
+export const systemAdminGrants = mysqlTable(
+  "system_admin_grants",
+  {
+    id: id(),
+    userId: foreignId("user_id").notNull(),
+    memberId: foreignId("member_id").notNull(),
+    familyId: foreignId("family_id").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    revision: foreignId("revision")
+      .notNull()
+      .default(sql`1`),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (t) => [
+    uniqueIndex("uq_system_admin_grants_binding").on(
+      t.userId,
+      t.memberId,
+      t.familyId,
+    ),
+    foreignKey({
+      name: "fk_system_admin_grants_member",
+      columns: [t.familyId, t.memberId, t.userId],
+      foreignColumns: [
+        familyMembers.familyId,
+        familyMembers.id,
+        familyMembers.userId,
+      ],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    check("chk_system_admin_grants_revision", sql`${t.revision} >= 1`),
+  ],
+);
+
+export const systemControlOperations = mysqlTable(
+  "system_control_operations",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    kind: mysqlEnum("kind", ["MODE", "RECHECK", "BOOTSTRAP"]).notNull(),
+    fingerprint: sha256Digest("fingerprint").notNull(),
+    actorUserId: foreignId("actor_user_id"),
+    actorMemberId: foreignId("actor_member_id"),
+    actorFamilyId: foreignId("actor_family_id"),
+    sessionId: foreignId("session_id"),
+    clientType: mysqlEnum("client_type", ["WEB", "ANDROID"]),
+    grantId: foreignId("grant_id"),
+    expectedRevision: foreignId("expected_revision").notNull(),
+    requestedMode: mysqlEnum("requested_mode", controlModes).notNull(),
+    status: mysqlEnum("status", [
+      "PENDING",
+      "APPLIED",
+      "REJECTED",
+      "RECOVERY_REQUIRED",
+    ])
+      .notNull()
+      .default("PENDING"),
+    resultRevision: foreignId("result_revision"),
+    reasonCode: varchar("reason_code", { length: 48 }).notNull(),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    finishedAt: timestamp("finished_at"),
+  },
+  (t) => [
+    index("idx_system_control_operations_pending").on(t.status, t.createdAt),
+    check(
+      "chk_system_control_operations_actor",
+      sql`(${t.kind} = 'BOOTSTRAP' AND ${t.actorUserId} IS NULL AND ${t.actorMemberId} IS NULL AND ${t.actorFamilyId} IS NULL AND ${t.sessionId} IS NULL AND ${t.clientType} IS NULL AND ${t.grantId} IS NULL) OR (${t.kind} <> 'BOOTSTRAP' AND ${t.actorUserId} IS NOT NULL AND ${t.actorMemberId} IS NOT NULL AND ${t.actorFamilyId} IS NOT NULL AND ${t.sessionId} IS NOT NULL AND ${t.clientType} IS NOT NULL AND ${t.grantId} IS NOT NULL)`,
+    ),
+    check(
+      "chk_system_control_operations_revision",
+      sql`${t.expectedRevision} >= 1 AND (${t.resultRevision} IS NULL OR ${t.resultRevision} >= 1)`,
+    ),
+    check(
+      "chk_system_control_operations_finish",
+      sql`(${t.status} IN ('PENDING','RECOVERY_REQUIRED') AND ${t.finishedAt} IS NULL) OR (${t.status} IN ('APPLIED','REJECTED') AND ${t.finishedAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export const adminAuditEvents = mysqlTable(
+  "admin_audit_events",
+  {
+    id: id(),
+    scope: mysqlEnum("scope", ["SYSTEM", "FAMILY"]).notNull(),
+    familyId: foreignId("family_id"),
+    actorKind: mysqlEnum("actor_kind", ["SYSTEM", "MEMBER"]).notNull(),
+    actorUserId: foreignId("actor_user_id"),
+    actorMemberId: foreignId("actor_member_id"),
+    actorRole: mysqlEnum("actor_role", ["SUPER_ADMIN", "ADMIN", "MEMBER"]),
+    action: mysqlEnum("action", [
+      "MEMBER_DISABLED",
+      "MEMBER_RESTORED",
+      "MEMBER_ROLE_CHANGED",
+      "INVITATION_CREATED",
+      "INVITATION_REVOKED",
+      "INVITATION_CONSUMED",
+      "GRANT_PROVISIONED",
+      "GRANT_REVOKED",
+      "CONTROL_REQUESTED",
+      "CONTROL_APPLIED",
+      "RECOVERY_REJECTED",
+      "HEALTH_LATCHED",
+      "OUTCOME_OBSERVED",
+      "BOOTSTRAP_APPLIED",
+      "RUN_STARTED",
+      "RUN_STOPPING",
+      "RUN_CLEAN_CLOSED",
+      "STARTUP_AUTO_CONFIRMED",
+      "STARTUP_RECHECK_REQUIRED",
+    ]).notNull(),
+    targetType: mysqlEnum("target_type", [
+      "MEMBER",
+      "INVITATION",
+      "GRANT",
+      "CONTROL",
+    ]).notNull(),
+    targetId: foreignId("target_id"),
+    operationId: varchar("operation_id", { length: 36 }).notNull(),
+    transitionToken: varchar("transition_token", { length: 36 }).notNull(),
+    resultCategory: mysqlEnum("result_category", [
+      "SUCCESS",
+      "REJECTED",
+      "RECOVERY_REQUIRED",
+      "COMMIT_UNKNOWN",
+      "UNAVAILABLE",
+    ]).notNull(),
+    revision: foreignId("revision"),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+  },
+  (t) => [
+    uniqueIndex("uq_admin_audit_events_transition").on(
+      t.operationId,
+      t.transitionToken,
+    ),
+    index("idx_admin_audit_events_scope_time").on(
+      t.scope,
+      t.familyId,
+      t.createdAt,
+      t.id,
+    ),
+    check(
+      "chk_admin_audit_events_scope",
+      sql`(${t.scope} = 'SYSTEM' AND ${t.familyId} IS NULL) OR (${t.scope} = 'FAMILY' AND ${t.familyId} IS NOT NULL)`,
+    ),
+    check(
+      "chk_admin_audit_events_actor",
+      sql`(${t.actorKind} = 'SYSTEM' AND ${t.actorUserId} IS NULL AND ${t.actorMemberId} IS NULL AND ${t.actorRole} IS NULL) OR (${t.actorKind} = 'MEMBER' AND ${t.actorUserId} IS NOT NULL AND ${t.actorMemberId} IS NOT NULL AND ${t.actorRole} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export const adminRuntimeObservations = mysqlTable(
+  "admin_runtime_observations",
+  {
+    role: mysqlEnum("role", [
+      "API",
+      "DERIVATIVE",
+      "METADATA",
+      "PURGE",
+    ]).notNull(),
+    bootId: varchar("boot_id", { length: 36 }).primaryKey(),
+    receivedAt: timestamp("received_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    lastSuccessfulAt: timestamp("last_successful_at"),
+    controlRevision: foreignId("control_revision").notNull(),
+    state: mysqlEnum("state", [
+      "STARTING",
+      "IDLE",
+      "RUNNING",
+      "PAUSED",
+      "RECOVERY_REQUIRED",
+      "STOPPED",
+    ]).notNull(),
+    reasonCode: varchar("reason_code", { length: 48 }).notNull(),
+    completedUnits: foreignId("completed_units")
+      .notNull()
+      .default(sql`0`),
+    exitedAt: timestamp("exited_at"),
+  },
+  (t) => [
+    index("idx_admin_runtime_observations_role_time").on(t.role, t.receivedAt),
+    check(
+      "chk_admin_runtime_observations_revision",
+      sql`${t.controlRevision} >= 1`,
+    ),
+    check(
+      "chk_admin_runtime_observations_exit",
+      sql`(${t.state} = 'STOPPED' AND ${t.exitedAt} IS NOT NULL) OR (${t.state} <> 'STOPPED' AND ${t.exitedAt} IS NULL)`,
+    ),
+  ],
+);
+
+export const systemControlRuns = mysqlTable(
+  "system_control_runs",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    epoch: foreignId("epoch").notNull(),
+    predecessorId: varchar("predecessor_id", { length: 36 }).references(
+      (): AnyMySqlColumn => systemControlRuns.id,
+      { onDelete: "restrict", onUpdate: "restrict" },
+    ),
+    deploymentId: varchar("deployment_id", { length: 36 }).notNull(),
+    namespaceIdentity: sha256Digest("namespace_identity").notNull(),
+    runNamespaceIdentity: sha256Digest("run_namespace_identity").notNull(),
+    protocolVersion: int("protocol_version", { unsigned: true }).notNull(),
+    configDigest: sha256Digest("config_digest").notNull(),
+    phase: mysqlEnum("phase", [
+      "PREPARING",
+      "ACTIVE",
+      "STOPPING",
+      "CLEAN",
+      "CONSUMED",
+      "RECOVERY_REQUIRED",
+    ]).notNull(),
+    expectedRoles: varchar("expected_roles", { length: 48 }).notNull(),
+    ownerRole: mysqlEnum("owner_role", ["API", "PURGE"]).notNull(),
+    coordinatorProcessId: varchar("coordinator_process_id", {
+      length: 36,
+    }).notNull(),
+    coordinatorOsBootId: varchar("coordinator_os_boot_id", {
+      length: 36,
+    }).notNull(),
+    coordinatorPid: int("coordinator_pid", { unsigned: true }).notNull(),
+    coordinatorStartSec: foreignId("coordinator_start_sec").notNull(),
+    coordinatorStartUsec: int("coordinator_start_usec", {
+      unsigned: true,
+    }).notNull(),
+    startupOperationId: varchar("startup_operation_id", {
+      length: 36,
+    }).notNull(),
+    startupFingerprint: sha256Digest("startup_fingerprint").notNull(),
+    automatic: boolean("automatic").notNull().default(false),
+    shutdownOperationId: varchar("shutdown_operation_id", { length: 36 }),
+    shutdownFingerprint: sha256Digest("shutdown_fingerprint"),
+    cleanRequestedMode: mysqlEnum("clean_requested_mode", controlModes),
+    cleanEnforcedMode: mysqlEnum("clean_enforced_mode", controlModes),
+    cleanRevision: foreignId("clean_revision"),
+    cleanHealthGeneration: foreignId("clean_health_generation"),
+    memberManifest: sha256Digest("member_manifest"),
+    createdAt: timestamp("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP(3)`),
+    cleanAt: timestamp("clean_at"),
+  },
+  (t) => [
+    uniqueIndex("uq_system_control_runs_epoch").on(t.epoch),
+    uniqueIndex("uq_system_control_runs_predecessor").on(t.predecessorId),
+    uniqueIndex("uq_system_control_runs_startup").on(t.startupOperationId),
+    uniqueIndex("uq_system_control_runs_shutdown").on(t.shutdownOperationId),
+    check(
+      "chk_system_control_runs_identity",
+      sql`${t.epoch}>0 AND ${t.protocolVersion}=1 AND ${t.coordinatorPid}>0 AND ${t.coordinatorStartSec}>0 AND ${t.coordinatorStartUsec}<1000000`,
+    ),
+    check(
+      "chk_system_control_runs_clean",
+      sql`${t.phase} NOT IN ('CLEAN','CONSUMED') OR (${t.shutdownOperationId} IS NOT NULL AND ${t.shutdownFingerprint} IS NOT NULL AND ${t.cleanRequestedMode} IS NOT NULL AND ${t.cleanEnforcedMode} IS NOT NULL AND ${t.cleanEnforcedMode}=${t.cleanRequestedMode} AND ${t.cleanRevision} IS NOT NULL AND ${t.cleanRevision}>0 AND ${t.cleanHealthGeneration} IS NOT NULL AND ${t.cleanHealthGeneration}>0 AND ${t.memberManifest} IS NOT NULL AND ${t.cleanAt} IS NOT NULL)`,
+    ),
+    check(
+      "chk_system_control_runs_owner",
+      sql`FIND_IN_SET(${t.ownerRole},${t.expectedRoles})>0`,
+    ),
+  ],
+);
+export const systemControlRunMembers = mysqlTable(
+  "system_control_run_members",
+  {
+    runId: varchar("run_id", { length: 36 })
+      .notNull()
+      .references(() => systemControlRuns.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    role: mysqlEnum("role", [
+      "API",
+      "DERIVATIVE",
+      "METADATA",
+      "PURGE",
+    ]).notNull(),
+    bootId: varchar("boot_id", { length: 36 }).notNull(),
+    processId: varchar("process_id", { length: 36 }).notNull(),
+    epoch: foreignId("epoch").notNull(),
+    state: mysqlEnum("state", [
+      "REGISTERED",
+      "READY",
+      "CLEAN_CLOSED",
+      "FAULTED",
+    ]).notNull(),
+    ackOperationId: varchar("ack_operation_id", { length: 36 }),
+    ackFingerprint: sha256Digest("ack_fingerprint"),
+    closedAt: timestamp("closed_at"),
+  },
+  (t) => [
+    foreignKey({
+      name: "fk_run_members_boot",
+      columns: [t.bootId],
+      foreignColumns: [adminRuntimeObservations.bootId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    primaryKey({ columns: [t.runId, t.role] }),
+    uniqueIndex("uq_system_control_run_members_role").on(t.runId, t.role),
+    uniqueIndex("uq_system_control_run_members_boot").on(t.bootId),
+    uniqueIndex("uq_system_control_run_members_ack").on(t.ackOperationId),
+    check("chk_system_control_run_members_epoch", sql`${t.epoch}>0`),
+    check(
+      "chk_system_control_run_members_ack",
+      sql`${t.state}<>'CLEAN_CLOSED' OR (${t.ackOperationId} IS NOT NULL AND ${t.ackFingerprint} IS NOT NULL AND ${t.closedAt} IS NOT NULL)`,
     ),
   ],
 );

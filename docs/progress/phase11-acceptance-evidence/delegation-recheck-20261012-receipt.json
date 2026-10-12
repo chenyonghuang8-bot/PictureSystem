@@ -1,0 +1,57 @@
+{
+  "status": "CURRENT_DEV_ACCEPTANCE_BASELINE_RECONFIRMED",
+  "capturedAtUTC": "2026-10-12T08:14:06.982711+00:00",
+  "HEAD": "209b8d36e4a9337ee6c9975878f6031e52a62ace",
+  "existingAcceptanceFingerprintSHA256": "b7cad12bd6e3e9b7653fa4d2099ce01a6243025bacad4effbd5ea0df54e2599d",
+  "readOnlyProofPath": ".cache/phase11-r1/delegation-recheck-20261012-dev-proof.json",
+  "readOnlyProofSHA256": "2076d91e51a3ad06ef2dd532a557ef9be9dd9bc27420f34c02da04bb97e481c3",
+  "readOnlyProofExit": 0,
+  "readiness": {
+    "migrationCount": 12
+  },
+  "counts": [
+    {
+      "families": "20",
+      "users": "44",
+      "retainedMemberUsers": "44",
+      "albums": "0",
+      "placements": "0",
+      "invitations": "0",
+      "derived": "0",
+      "media": "0",
+      "objects": "0",
+      "uploads": "0",
+      "jobs": "0",
+      "retainedPurges": "13",
+      "unfinishedPurges": "0",
+      "operations": "73",
+      "grants": "0",
+      "sessions": "0",
+      "adminAuditEvents": "7971",
+      "lifecycleAuditEvents": "62",
+      "runtimeHistory": "1302",
+      "activeRuntime": "0",
+      "runHistory": "882"
+    }
+  ],
+  "migrationByteMismatches": [],
+  "oldSupportingEvidenceNotes": [
+    {
+      "path": ".cache/phase11-current/database-outage-proof.json",
+      "status": "OLD_SUPPORTING_HASH_DIFFERS_FROM_CURRENT_FILE;NOT_USED_FOR_FINAL_RECHECK"
+    },
+    {
+      "path": ".cache/phase11-current/marker-durability-proof.json",
+      "status": "OLD_SUPPORTING_HASH_DIFFERS_FROM_CURRENT_FILE;NOT_USED_FOR_FINAL_RECHECK"
+    },
+    {
+      "path": ".cache/phase11-current/two-control-api-proof.json",
+      "status": "OLD_SUPPORTING_HASH_DIFFERS_FROM_CURRENT_FILE;NOT_USED_FOR_FINAL_RECHECK"
+    }
+  ],
+  "newImplementationOrTests": false,
+  "databaseMutation": false,
+  "gitMutation": false,
+  "phase12": false,
+  "existingFinalDocsAndFingerprintUnchanged": true
+}

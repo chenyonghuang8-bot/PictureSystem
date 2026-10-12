@@ -18,6 +18,9 @@ export default async function MyPage() {
           <h2>{family.displayName}</h2>
           <p>{family.familyName}</p>
           <AccountForm signedIn />
+          <p>
+            <a href="/admin">家庭管理</a>
+          </p>
         </section>
         <section className="mobile-account-card">
           <h2>手机使用</h2>
